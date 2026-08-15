@@ -1,0 +1,145 @@
+From a5d3baa193e6e126ef8c273824224df498d9c255 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Tue, 28 Apr 2026 10:06:33 +0800
+Subject: [PATCH 923/960] downstream: mm: mark node as critical_err on remote
+ RAS error
+
+When a critical RAS error occurs on a remote node,
+ghes_handle_critical_ras() is called with MF_ACTION_REQUIRED.
+This function:
+  1. Identifies the node via page_to_nid()
+  2. Sets PGDAT_CRITICAL_ERR flag via set_node_critical_err()
+  3. Sends SIGBUS to the current process
+
+The PGDAT_CRITICAL_ERR flag prevents further memory ops on the
+corrupted node. In folio_migrate_mc_copy(), when migrating pages:
+
+  if (node_is_critical_err(folio_nid(src)))
+      return -EHWPOISON;
+
+This avoids migrating pages from corrupted node, which would
+trigger additional SEA notifications and cause more hardware
+errors.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/apei/ghes.c | 14 +++++++++-----
+ include/linux/mm.h       | 19 +++++++++++++++++++
+ include/linux/mmzone.h   |  4 ++++
+ mm/migrate.c             |  3 +++
+ 4 files changed, 35 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/acpi/apei/ghes.c b/drivers/acpi/apei/ghes.c
+index baa233518675..ea99a29c194c 100644
+--- a/drivers/acpi/apei/ghes.c
++++ b/drivers/acpi/apei/ghes.c
+@@ -478,13 +478,13 @@ static void ghes_clear_estatus(struct ghes *ghes,
+  *   terminating the corresponding host process (e.g., the VMM/QEMU task) is the
+  *   expected behavior to ensure system stability.
+  */
+-static void ghes_handle_critical_ras(unsigned long pfn)
++static void ghes_handle_critical_ras(unsigned long pfn, unsigned long flags)
+ {
+ 	struct mm_struct *mm = current->mm;
+ 	struct page *p;
+ 	int nid;
+ 
+-	if (!IS_ENABLED(CONFIG_ACPI_APEI_RAS_CRITICAL))
++	if (!IS_ENABLED(CONFIG_ACPI_APEI_RAS_CRITICAL) || !(flags & MF_ACTION_REQUIRED))
+ 		return;
+ 
+ 	p = pfn_to_online_page(pfn);
+@@ -495,6 +495,10 @@ static void ghes_handle_critical_ras(unsigned long pfn)
+ 	if (!numa_is_remote_node(nid))
+ 		return;
+ 
++	set_node_critical_err(nid);
++	if (!mm)
++		return;
++
+ 	if (test_bit(MMF_CRITICAL_ERR, &mm->flags))
+ 		return;
+ 
+@@ -553,10 +557,10 @@ static bool ghes_do_memory_failure(u64 physical_addr, int flags, bool critical)
+ 		return false;
+ 	}
+ 
+-	if (flags == MF_ACTION_REQUIRED && current->mm) {
+-		if (critical)
+-			ghes_handle_critical_ras(pfn);
++	if (critical)
++		ghes_handle_critical_ras(pfn, flags);
+ 
++	if (flags == MF_ACTION_REQUIRED && current->mm) {
+ 		twcb = (void *)gen_pool_alloc(ghes_estatus_pool, sizeof(*twcb));
+ 		if (!twcb)
+ 			return false;
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index f850c2845a94..7b78cd76c4b9 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -4360,11 +4360,30 @@ static inline bool mm_is_critical_error(struct mm_struct *mm)
+ {
+ 	return mm && test_bit(MMF_CRITICAL_ERR, &mm->flags);
+ }
++
++static inline void set_node_critical_err(int nid)
++{
++	set_bit(PGDAT_CRITICAL_ERR, &NODE_DATA(nid)->flags);
++}
++
++static inline void clear_node_critical_err(int nid)
++{
++	clear_bit(PGDAT_CRITICAL_ERR, &NODE_DATA(nid)->flags);
++}
++
++static inline bool node_is_critical_err(int nid)
++{
++	return test_bit(PGDAT_CRITICAL_ERR, &NODE_DATA(nid)->flags);
++}
+ #else
+ static inline bool mm_is_critical_error(struct mm_struct *mm)
+ {
+ 	return false;
+ }
++
++static inline void set_node_critical_err(int nid) { return; }
++static inline void clear_node_critical_err(int nid) { return; }
++static inline bool node_is_critical_err(int nid) { return false; }
+ #endif
+ 
+ #endif /* _LINUX_MM_H */
+diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
+index 744728d7bf44..3ca6282a6cc7 100644
+--- a/include/linux/mmzone.h
++++ b/include/linux/mmzone.h
+@@ -1021,6 +1021,10 @@ enum pgdat_flags {
+ 					 * many pages under writeback
+ 					 */
+ 	PGDAT_RECLAIM_LOCKED,		/* prevents concurrent reclaim */
++
++#ifdef CONFIG_ACPI_APEI_RAS_CRITICAL
++	PGDAT_CRITICAL_ERR = 31,	/* the whole node is unusable */
++#endif
+ };
+ 
+ enum zone_flags {
+diff --git a/mm/migrate.c b/mm/migrate.c
+index 03952c3514c8..6bf410484eb4 100644
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -534,6 +534,9 @@ static int folio_migrate_mc_copy(struct folio *dst, struct folio *src,
+ 	if (mode == MIGRATE_SYNC_NO_COPY)
+ 		return 0;
+ 
++	if (node_is_critical_err(folio_nid(src)))
++		return -EHWPOISON;
++
+ 	return folio_mc_copy(dst, src);
+ }
+ 
+-- 
+2.43.0
+

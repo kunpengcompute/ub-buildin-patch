@@ -1,0 +1,124 @@
+From 20395f0529bb5714093577722fe434839c8bf712 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Wed, 27 Mar 2024 10:24:17 +0800
+Subject: [PATCH 740/960] downstream: ACPI: Move acpi_bus_trim_one() before
+ acpi_scan_hot_remove()
+
+A subsequent patch will change acpi_scan_hot_remove() to call
+acpi_bus_trim_one() instead of acpi_bus_trim(), meaning it can no longer
+rely on the prototype in the header file.
+
+Move these functions further up the file.
+No change in behaviour.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Reviewed-by: Gavin Shan <gshan@redhat.com>
+Tested-by: Miguel Luis <miguel.luis@oracle.com>
+Tested-by: Vishnu Pajjuri <vishnu@os.amperecomputing.com>
+Tested-by: Jianyong Wu <jianyong.wu@arm.com>
+Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Signed-off-by: liwei <liwei728@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/scan.c | 76 ++++++++++++++++++++++-----------------------
+ 1 file changed, 38 insertions(+), 38 deletions(-)
+
+diff --git a/drivers/acpi/scan.c b/drivers/acpi/scan.c
+index 4bfba378dfaf..aa7338398132 100644
+--- a/drivers/acpi/scan.c
++++ b/drivers/acpi/scan.c
+@@ -244,6 +244,44 @@ static int acpi_scan_try_to_offline(struct acpi_device *device)
+ 	return 0;
+ }
+ 
++static int acpi_bus_trim_one(struct acpi_device *adev, void *not_used)
++{
++	struct acpi_scan_handler *handler = adev->handler;
++
++	acpi_dev_for_each_child_reverse(adev, acpi_bus_trim_one, NULL);
++
++	adev->flags.match_driver = false;
++	if (handler) {
++		if (handler->detach)
++			handler->detach(adev);
++
++		adev->handler = NULL;
++	} else {
++		device_release_driver(&adev->dev);
++	}
++	/*
++	 * Most likely, the device is going away, so put it into D3cold before
++	 * that.
++	 */
++	acpi_device_set_power(adev, ACPI_STATE_D3_COLD);
++	adev->flags.initialized = false;
++	acpi_device_clear_enumerated(adev);
++
++	return 0;
++}
++
++/**
++ * acpi_bus_trim - Detach scan handlers and drivers from ACPI device objects.
++ * @adev: Root of the ACPI namespace scope to walk.
++ *
++ * Must be called under acpi_scan_lock.
++ */
++void acpi_bus_trim(struct acpi_device *adev)
++{
++	acpi_bus_trim_one(adev, NULL);
++}
++EXPORT_SYMBOL_GPL(acpi_bus_trim);
++
+ static int acpi_scan_hot_remove(struct acpi_device *device)
+ {
+ 	acpi_handle handle = device->handle;
+@@ -2513,44 +2551,6 @@ int acpi_bus_scan(acpi_handle handle)
+ }
+ EXPORT_SYMBOL(acpi_bus_scan);
+ 
+-static int acpi_bus_trim_one(struct acpi_device *adev, void *not_used)
+-{
+-	struct acpi_scan_handler *handler = adev->handler;
+-
+-	acpi_dev_for_each_child_reverse(adev, acpi_bus_trim_one, NULL);
+-
+-	adev->flags.match_driver = false;
+-	if (handler) {
+-		if (handler->detach)
+-			handler->detach(adev);
+-
+-		adev->handler = NULL;
+-	} else {
+-		device_release_driver(&adev->dev);
+-	}
+-	/*
+-	 * Most likely, the device is going away, so put it into D3cold before
+-	 * that.
+-	 */
+-	acpi_device_set_power(adev, ACPI_STATE_D3_COLD);
+-	adev->flags.initialized = false;
+-	acpi_device_clear_enumerated(adev);
+-
+-	return 0;
+-}
+-
+-/**
+- * acpi_bus_trim - Detach scan handlers and drivers from ACPI device objects.
+- * @adev: Root of the ACPI namespace scope to walk.
+- *
+- * Must be called under acpi_scan_lock.
+- */
+-void acpi_bus_trim(struct acpi_device *adev)
+-{
+-	acpi_bus_trim_one(adev, NULL);
+-}
+-EXPORT_SYMBOL_GPL(acpi_bus_trim);
+-
+ int acpi_bus_register_early_device(int type)
+ {
+ 	struct acpi_device *device = NULL;
+-- 
+2.43.0
+

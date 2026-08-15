@@ -1,0 +1,32 @@
+From 64b5469762bcf5062d5a2eb67b504ecdd1c0d62a Mon Sep 17 00:00:00 2001
+From: Jia Qingtong <jiaqingtong@huawei.com>
+Date: Thu, 2 Jan 2025 17:25:56 +0800
+Subject: [PATCH 610/960] downstream: irqchip/gic-v3-its: Add ACPI_IORT as
+ VIRT_PLAT_DEV's dependency
+
+Make VIRT_PLAT_DEV dependent on ACPI_IORT, as VIRT_PLAT_DEV will
+use DeviceID used info generated from ACPI IORT table.
+
+Signed-off-by: Jia Qingtong <jiaqingtong@huawei.com>
+Signed-off-by: Jie Yang <yangjieyj.yang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/misc/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index ad59859eafdb..50d4f1137fb8 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -495,7 +495,7 @@ config HISI_HIKEY_USB
+ 
+ config VIRT_PLAT_DEV
+ 	bool "virt platform device driver"
+-        depends on KVM && ARM64 && ARCH_HISI
++        depends on KVM && ARM64 && ARCH_HISI && ACPI_IORT
+         default n
+         help
+           Enable this configuration option to probe the virtual platform device,
+-- 
+2.43.0
+

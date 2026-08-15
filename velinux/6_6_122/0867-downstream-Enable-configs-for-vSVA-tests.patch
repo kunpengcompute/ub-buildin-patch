@@ -1,0 +1,60 @@
+From 6715d28701e977a4905a31a1b412bfcb59ee2a05 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Mon, 18 Nov 2024 16:11:37 +0800
+Subject: [PATCH 867/960] downstream: Enable configs for vSVA tests
+
+Enabled CONFIG_ARM_SMMU_V3_IOMMUFD.
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ config.aarch64     | 3 ++-
+ config.aarch64-64k | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 3de4da7f64e0..78894d731b04 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -8709,7 +8709,7 @@ CONFIG_IOMMU_DEFAULT_PASSTHROUGH=y
+ CONFIG_OF_IOMMU=y
+ CONFIG_IOMMU_DMA=y
+ CONFIG_IOMMU_SVA=y
+-# CONFIG_IOMMUFD is not set
++CONFIG_IOMMUFD=m
+ CONFIG_ROCKCHIP_IOMMU=y
+ # CONFIG_SUN50I_IOMMU is not set
+ CONFIG_TEGRA_IOMMU_SMMU=y
+@@ -8722,6 +8722,7 @@ CONFIG_ARM_SMMU_V3=y
+ CONFIG_ARM_SMMU_V3_SVA=y
+ CONFIG_ARM_SMMU_V3_HTTU=y
+ CONFIG_QCOM_IOMMU=y
++CONFIG_ARM_SMMU_V3_IOMMUFD=y
+ # CONFIG_VIRTIO_IOMMU is not set
+ 
+ #
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 4219c2d98f86..64361973ac02 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -8702,7 +8702,7 @@ CONFIG_IOMMU_DEFAULT_PASSTHROUGH=y
+ CONFIG_OF_IOMMU=y
+ CONFIG_IOMMU_DMA=y
+ CONFIG_IOMMU_SVA=y
+-# CONFIG_IOMMUFD is not set
++CONFIG_IOMMUFD=m
+ CONFIG_ROCKCHIP_IOMMU=y
+ # CONFIG_SUN50I_IOMMU is not set
+ CONFIG_TEGRA_IOMMU_SMMU=y
+@@ -8714,6 +8714,7 @@ CONFIG_ARM_SMMU_QCOM=y
+ CONFIG_ARM_SMMU_V3=y
+ CONFIG_ARM_SMMU_V3_SVA=y
+ CONFIG_ARM_SMMU_V3_HTTU=y
++CONFIG_ARM_SMMU_V3_IOMMUFD=y
+ CONFIG_QCOM_IOMMU=y
+ # CONFIG_VIRTIO_IOMMU is not set
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,128 @@
+From 1ec59f59b824f4627f629a042229984413a7a613 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:57:37 +0800
+Subject: [PATCH 625/960] downstream: ACPI / PPTT: Find PPTT cache level by ID
+
+The MPAM table identifies caches by id, but the driver also wants to know
+the cache level, without having to wait for whichever core has that cache
+to come online.
+
+Add a helper that walks every possible cache, until it finds the one
+identified by id, then return the level.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/pptt.c  | 74 ++++++++++++++++++++++++++++++++++++++++++++
+ include/linux/acpi.h |  5 +++
+ 2 files changed, 79 insertions(+)
+
+diff --git a/drivers/acpi/pptt.c b/drivers/acpi/pptt.c
+index 177623c5b00e..035efca14c38 100644
+--- a/drivers/acpi/pptt.c
++++ b/drivers/acpi/pptt.c
+@@ -873,3 +873,77 @@ int find_acpi_cpu_topology_hetero_id(unsigned int cpu)
+ 	return find_acpi_cpu_topology_tag(cpu, PPTT_ABORT_PACKAGE,
+ 					  ACPI_PPTT_ACPI_IDENTICAL);
+ }
++
++
++/**
++ * find_acpi_cache_level_from_id() - Get the level of the specified cache
++ * @cache_id: The id field of the unified cache
++ *
++ * Determine the level relative to any CPU for the unified cache identified by
++ * cache_id. This allows the property to be found even if the CPUs are offline.
++ *
++ * The returned level can be used to group unified caches that are peers.
++ *
++ * The PPTT table must be rev 3 or later,
++ *
++ * If one CPUs L2 is shared with another as L3, this function will return
++ * and unpredictable value.
++ *
++ * Return: -ENOENT if the PPTT doesn't exist, or the cache cannot be found.
++ * Otherwise returns a value which represents the level of the specified cache.
++ */
++int find_acpi_cache_level_from_id(u32 cache_id)
++{
++	u32 acpi_cpu_id;
++	acpi_status status;
++	int level, cpu, num_levels;
++	struct acpi_pptt_cache *cache;
++	struct acpi_table_header *table;
++	struct acpi_pptt_cache_v1 *cache_v1;
++	struct acpi_pptt_processor *cpu_node;
++
++	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table);
++	if (ACPI_FAILURE(status)) {
++		acpi_pptt_warn_missing();
++		return -ENOENT;
++	}
++
++	if (table->revision < 3) {
++		acpi_put_table(table);
++		return -ENOENT;
++	}
++
++	/*
++	 * If we found the cache first, we'd still need to walk from each CPU
++	 * to find the level...
++	 */
++	for_each_possible_cpu(cpu) {
++		acpi_cpu_id = get_acpi_id_for_cpu(cpu);
++		cpu_node = acpi_find_processor_node(table, acpi_cpu_id);
++		if (!cpu_node)
++			break;
++		acpi_count_levels(table, cpu_node, &num_levels, NULL);
++
++		/* Start at 1 for L1 */
++		for (level = 1; level <= num_levels; level++) {
++			cache = acpi_find_cache_node(table, acpi_cpu_id,
++						     ACPI_PPTT_CACHE_TYPE_UNIFIED,
++						     level, &cpu_node);
++			if (!cache)
++				continue;
++
++			cache_v1 = ACPI_ADD_PTR(struct acpi_pptt_cache_v1,
++						cache,
++						sizeof(struct acpi_pptt_cache));
++
++			if (cache->flags & ACPI_PPTT_CACHE_ID_VALID &&
++			    cache_v1->cache_id == cache_id) {
++				acpi_put_table(table);
++				return level;
++			}
++		}
++	}
++
++	acpi_put_table(table);
++	return -ENOENT;
++}
+diff --git a/include/linux/acpi.h b/include/linux/acpi.h
+index 2389f1c4638f..96ac10f0d9a5 100644
+--- a/include/linux/acpi.h
++++ b/include/linux/acpi.h
+@@ -1507,6 +1507,7 @@ int find_acpi_cpu_topology(unsigned int cpu, int level);
+ int find_acpi_cpu_topology_cluster(unsigned int cpu);
+ int find_acpi_cpu_topology_package(unsigned int cpu);
+ int find_acpi_cpu_topology_hetero_id(unsigned int cpu);
++int find_acpi_cache_level_from_id(u32 cache_id);
+ #else
+ static inline int acpi_pptt_cpu_is_thread(unsigned int cpu)
+ {
+@@ -1528,6 +1529,10 @@ static inline int find_acpi_cpu_topology_hetero_id(unsigned int cpu)
+ {
+ 	return -EINVAL;
+ }
++static inline int find_acpi_cache_level_from_id(u32 cache_id)
++{
++	return -EINVAL;
++}
+ #endif
+ 
+ #ifdef CONFIG_ARM64
+-- 
+2.43.0
+

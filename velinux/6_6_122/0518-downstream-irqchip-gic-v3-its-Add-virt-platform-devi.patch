@@ -1,0 +1,143 @@
+From 876ee23e184a54dbaf36f3c2e3027d660925869a Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:24 +0800
+Subject: [PATCH 518/960] downstream: irqchip/gic-v3-its: Add virt platform
+ devices MSI support
+
+Implement the virtual platform device MSI with the GICv3 ITS.
+Compared with phycial platform device msi, msi_prepare implementation
+need consider the devid alloc.
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3-its-platform-msi.c | 44 +++++++++++++++++--
+ drivers/irqchip/irq-gic-v3-its.c              |  2 +-
+ include/linux/msi.h                           |  5 +++
+ 3 files changed, 47 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3-its-platform-msi.c b/drivers/irqchip/irq-gic-v3-its-platform-msi.c
+index daa6d5053bc3..7334598ec133 100644
+--- a/drivers/irqchip/irq-gic-v3-its-platform-msi.c
++++ b/drivers/irqchip/irq-gic-v3-its-platform-msi.c
+@@ -10,6 +10,19 @@
+ #include <linux/of.h>
+ #include <linux/of_irq.h>
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++static struct irq_domain *vp_irq_domain;
++
++struct irq_domain *vp_get_irq_domain(void)
++{
++	if (!vp_irq_domain)
++		pr_err("virtual platform irqdomain hasn't be initialized!\n");
++
++	return vp_irq_domain;
++}
++EXPORT_SYMBOL_GPL(vp_get_irq_domain);
++#endif
++
+ static struct irq_chip its_pmsi_irq_chip = {
+ 	.name			= "ITS-pMSI",
+ };
+@@ -52,6 +65,19 @@ static int its_pmsi_prepare(struct irq_domain *domain, struct device *dev,
+ 
+ 	msi_info = msi_get_domain_info(domain->parent);
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++	if (rsv_devid_pool_cap && !dev->of_node && !dev->fwnode) {
++		WARN_ON_ONCE(domain != vp_irq_domain);
++		/*
++		 * virtual platform device doesn't have a DeviceID which
++		 * will be allocated with core ITS's help.
++		 */
++		info->scratchpad[0].ul = -1;
++
++		goto vdev_pmsi_prepare;
++	}
++#endif
++
+ 	if (dev->of_node)
+ 		ret = of_pmsi_get_dev_id(domain, dev, &dev_id);
+ 	else
+@@ -62,6 +88,9 @@ static int its_pmsi_prepare(struct irq_domain *domain, struct device *dev,
+ 	/* ITS specific DeviceID, as the core ITS ignores dev. */
+ 	info->scratchpad[0].ul = dev_id;
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++vdev_pmsi_prepare:
++#endif
+ 	/* Allocate at least 32 MSIs, and always as a power of 2 */
+ 	nvec = max_t(int, 32, roundup_pow_of_two(nvec));
+ 	return msi_info->ops->msi_prepare(domain->parent,
+@@ -86,7 +115,7 @@ static const struct of_device_id its_device_id[] = {
+ static int __init its_pmsi_init_one(struct fwnode_handle *fwnode,
+ 				const char *name)
+ {
+-	struct irq_domain *parent;
++	struct irq_domain *pmsi_irqdomain, *parent;
+ 
+ 	parent = irq_find_matching_fwnode(fwnode, DOMAIN_BUS_NEXUS);
+ 	if (!parent || !msi_get_domain_info(parent)) {
+@@ -94,13 +123,22 @@ static int __init its_pmsi_init_one(struct fwnode_handle *fwnode,
+ 		return -ENXIO;
+ 	}
+ 
+-	if (!platform_msi_create_irq_domain(fwnode, &its_pmsi_domain_info,
+-					    parent)) {
++	pmsi_irqdomain = platform_msi_create_irq_domain(fwnode,
++							&its_pmsi_domain_info,
++							parent);
++	if (!pmsi_irqdomain) {
+ 		pr_err("%s: unable to create platform domain\n", name);
+ 		return -ENXIO;
+ 	}
+ 
+ 	pr_info("Platform MSI: %s domain created\n", name);
++
++#ifdef CONFIG_VIRT_PLAT_DEV
++	/* Should we take other irqdomains into account? */
++	if (!vp_irq_domain)
++		vp_irq_domain = pmsi_irqdomain;
++#endif
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 4192104125de..d6deab462e61 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -67,7 +67,7 @@ static LIST_HEAD(rsv_devid_pools);
+ static DEFINE_RAW_SPINLOCK(rsv_devid_pools_lock);
+ 
+ /* Do we have usable rsv_devid_pool? Initialized to be true. */
+-static bool rsv_devid_pool_cap = true;
++bool rsv_devid_pool_cap = true;
+ static u8 rsv_buses_start, rsv_buses_count;
+ 
+ static int __init rsv_buses_start_cfg(char *buf)
+diff --git a/include/linux/msi.h b/include/linux/msi.h
+index 2cf15cf5d060..2de6f1c5910b 100644
+--- a/include/linux/msi.h
++++ b/include/linux/msi.h
+@@ -675,6 +675,11 @@ struct irq_domain *pci_msi_create_irq_domain(struct fwnode_handle *fwnode,
+ 					     struct irq_domain *parent);
+ u32 pci_msi_domain_get_msi_rid(struct irq_domain *domain, struct pci_dev *pdev);
+ struct irq_domain *pci_msi_get_device_domain(struct pci_dev *pdev);
++
++#ifdef CONFIG_VIRT_PLAT_DEV
++struct irq_domain *vp_get_irq_domain(void);
++extern bool rsv_devid_pool_cap;
++#endif
+ #else /* CONFIG_PCI_MSI */
+ static inline struct irq_domain *pci_msi_get_device_domain(struct pci_dev *pdev)
+ {
+-- 
+2.43.0
+

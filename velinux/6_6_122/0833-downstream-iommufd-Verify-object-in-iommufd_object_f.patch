@@ -1,0 +1,64 @@
+From de02cb238e6a7cbf3cd585e77bdb766add5a2c0e Mon Sep 17 00:00:00 2001
+From: Nicolin Chen <nicolinc@nvidia.com>
+Date: Tue, 29 Oct 2024 23:10:13 +0000
+Subject: [PATCH 833/960] downstream: iommufd: Verify object in
+ iommufd_object_finalize/abort()
+
+To support driver-allocated vIOMMU objects, it's required for IOMMU driver
+to call the provided iommufd_viommu_alloc helper to embed the core struct.
+However, there is no guarantee that every driver will call it and allocate
+objects properly.
+
+Make the iommufd_object_finalize/abort functions more robust to verify if
+the xarray slot indexed by the input obj->id is having an XA_ZERO_ENTRY,
+which is the reserved value stored by xa_alloc via iommufd_object_alloc.
+
+Suggested-by: Jason Gunthorpe <jgg@nvidia.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/main.c | 16 +++++++++++-----
+ 1 file changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/iommu/iommufd/main.c b/drivers/iommu/iommufd/main.c
+index 6a7cd29ed8fd..d64820e84bc1 100644
+--- a/drivers/iommu/iommufd/main.c
++++ b/drivers/iommu/iommufd/main.c
+@@ -42,20 +42,26 @@ static struct miscdevice vfio_misc_dev;
+ void iommufd_object_finalize(struct iommufd_ctx *ictx,
+ 			     struct iommufd_object *obj)
+ {
++	XA_STATE(xas, &ictx->objects, obj->id);
+ 	void *old;
+ 
+-	old = xa_store(&ictx->objects, obj->id, obj, GFP_KERNEL);
+-	/* obj->id was returned from xa_alloc() so the xa_store() cannot fail */
+-	WARN_ON(old);
++	xa_lock(&ictx->objects);
++	old = xas_store(&xas, obj);
++	xa_unlock(&ictx->objects);
++	/* obj->id was returned from xa_alloc() so the xas_store() cannot fail */
++	WARN_ON(old != XA_ZERO_ENTRY);
+ }
+ 
+ /* Undo _iommufd_object_alloc() if iommufd_object_finalize() was not called */
+ void iommufd_object_abort(struct iommufd_ctx *ictx, struct iommufd_object *obj)
+ {
++	XA_STATE(xas, &ictx->objects, obj->id);
+ 	void *old;
+ 
+-	old = xa_erase(&ictx->objects, obj->id);
+-	WARN_ON(old);
++	xa_lock(&ictx->objects);
++	old = xas_store(&xas, NULL);
++	xa_unlock(&ictx->objects);
++	WARN_ON(old != XA_ZERO_ENTRY);
+ 	kfree(obj);
+ }
+ 
+-- 
+2.43.0
+

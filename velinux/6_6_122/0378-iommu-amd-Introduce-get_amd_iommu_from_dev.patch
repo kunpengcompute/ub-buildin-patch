@@ -1,0 +1,55 @@
+From 7af5d28a78117b392833f7a495e6da4796dd262f Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Mon, 5 Feb 2024 11:56:01 +0000
+Subject: [PATCH 378/960] iommu/amd: Introduce get_amd_iommu_from_dev()
+
+commit 6f35fe5d8a0ad0125c52fb20f5d67000e369eb3a upstream.
+
+Introduce get_amd_iommu_from_dev() and get_amd_iommu_from_dev_data().
+And replace rlookup_amd_iommu() with the new helper function where
+applicable to avoid unnecessary loop to look up struct amd_iommu from
+struct device.
+
+Suggested-by: Jason Gunthorpe <jgg@ziepe.ca>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Signed-off-by: Vasant Hegde <vasant.hegde@amd.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Link: https://lore.kernel.org/r/20240205115615.6053-4-vasant.hegde@amd.com
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ include/linux/iommu.h | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index 38fd946afef1..b89f40241039 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -764,6 +764,22 @@ static inline struct iommu_device *dev_to_iommu_device(struct device *dev)
+ 	return (struct iommu_device *)dev_get_drvdata(dev);
+ }
+ 
++/**
++ * iommu_get_iommu_dev - Get iommu_device for a device
++ * @dev: an end-point device
++ *
++ * Note that this function must be called from the iommu_ops
++ * to retrieve the iommu_device for a device, which the core code
++ * guarentees it will not invoke the op without an attached iommu.
++ */
++static inline struct iommu_device *__iommu_get_iommu_dev(struct device *dev)
++{
++	return dev->iommu->iommu_dev;
++}
++
++#define iommu_get_iommu_dev(dev, type, member) \
++	container_of(__iommu_get_iommu_dev(dev), type, member)
++
+ static inline void iommu_iotlb_gather_init(struct iommu_iotlb_gather *gather)
+ {
+ 	*gather = (struct iommu_iotlb_gather) {
+-- 
+2.43.0
+

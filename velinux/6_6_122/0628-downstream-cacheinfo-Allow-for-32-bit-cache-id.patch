@@ -1,0 +1,79 @@
+From 3c8b4374300b29b94e9a74042a275d70d5bae487 Mon Sep 17 00:00:00 2001
+From: Rob Herring <robh@kernel.org>
+Date: Mon, 22 Jan 2024 14:57:40 +0800
+Subject: [PATCH 628/960] downstream: cacheinfo: Allow for >32-bit cache 'id'
+
+In preparation to set the cache 'id' based on the CPU h/w ids, allow for
+64-bit bit 'id' value. The only case that needs this is arm64, so
+unsigned long is sufficient.
+
+Cc: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Cc: "Rafael J. Wysocki" <rafael@kernel.org>
+Signed-off-by: Rob Herring <robh@kernel.org>
+[ Update get_cpu_cacheinfo_id() too. Use UL instead of ULL. ]
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Conflicts:
+	arch/x86/kernel/cpu/resctrl/rdtgroup.c
+[ Context conflicts. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/base/cacheinfo.c  | 8 +++++++-
+ include/linux/cacheinfo.h | 6 +++---
+ 2 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/base/cacheinfo.c b/drivers/base/cacheinfo.c
+index 0fbb1575e297..6ad1ac0723a6 100644
+--- a/drivers/base/cacheinfo.c
++++ b/drivers/base/cacheinfo.c
+@@ -622,13 +622,19 @@ static ssize_t file_name##_show(struct device *dev,		\
+ 	return sysfs_emit(buf, "%u\n", this_leaf->object);	\
+ }
+ 
+-show_one(id, id);
+ show_one(level, level);
+ show_one(coherency_line_size, coherency_line_size);
+ show_one(number_of_sets, number_of_sets);
+ show_one(physical_line_partition, physical_line_partition);
+ show_one(ways_of_associativity, ways_of_associativity);
+ 
++static ssize_t id_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct cacheinfo *this_leaf = dev_get_drvdata(dev);
++
++	return sysfs_emit(buf, "%lu\n", this_leaf->id);
++}
++
+ static ssize_t size_show(struct device *dev,
+ 			 struct device_attribute *attr, char *buf)
+ {
+diff --git a/include/linux/cacheinfo.h b/include/linux/cacheinfo.h
+index ef701ba043e9..73b5bdf363a0 100644
+--- a/include/linux/cacheinfo.h
++++ b/include/linux/cacheinfo.h
+@@ -48,7 +48,7 @@ extern unsigned int coherency_max_size;
+  * keeping, the remaining members form the core properties of the cache
+  */
+ struct cacheinfo {
+-	unsigned int id;
++	unsigned long id;
+ 	enum cache_type type;
+ 	unsigned int level;
+ 	unsigned int coherency_line_size;
+@@ -140,11 +140,11 @@ static inline struct cacheinfo *get_cpu_cacheinfo_level(int cpu, int level)
+  * Get the id of the cache associated with @cpu at level @level.
+  * cpuhp lock must be held.
+  */
+-static inline int get_cpu_cacheinfo_id(int cpu, int level)
++static inline unsigned long get_cpu_cacheinfo_id(int cpu, int level)
+ {
+ 	struct cacheinfo *ci = get_cpu_cacheinfo_level(cpu, level);
+ 
+-	return ci ? ci->id : -1;
++	return ci ? ci->id : ~0UL;
+ }
+ 
+ #ifdef CONFIG_ARM64
+-- 
+2.43.0
+

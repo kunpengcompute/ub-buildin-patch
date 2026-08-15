@@ -1,0 +1,51 @@
+From 550ef47e574ec82a60b4aab46e9aa8654cbd9fb7 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Wed, 27 Sep 2023 20:47:32 -0300
+Subject: [PATCH 184/960] iommu/vt-d: Update the definition of the blocking
+ domain
+
+commit 7b6dd84e703147f5c71f163b84b0cb729a320541 upstream.
+
+The global static should pre-define the type and the NOP free function can
+be now left as NULL.
+
+Reviewed-by: Lu Baolu <baolu.lu@linux.intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Acked-by: Sven Peter <sven@svenpeter.dev>
+Link: https://lore.kernel.org/r/2-v2-bff223cf6409+282-dart_paging_jgg@nvidia.com
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/intel/iommu.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/iommu/intel/iommu.c b/drivers/iommu/intel/iommu.c
+index c47fe809486c..6f8333ff8c6b 100644
+--- a/drivers/iommu/intel/iommu.c
++++ b/drivers/iommu/intel/iommu.c
+@@ -4041,9 +4041,9 @@ static int blocking_domain_attach_dev(struct iommu_domain *domain,
+ }
+ 
+ static struct iommu_domain blocking_domain = {
++	.type = IOMMU_DOMAIN_BLOCKED,
+ 	.ops = &(const struct iommu_domain_ops) {
+ 		.attach_dev	= blocking_domain_attach_dev,
+-		.free		= intel_iommu_domain_free
+ 	}
+ };
+ 
+@@ -4136,7 +4136,7 @@ intel_iommu_domain_alloc_user(struct device *dev, u32 flags,
+ 
+ static void intel_iommu_domain_free(struct iommu_domain *domain)
+ {
+-	if (domain != &si_domain->domain && domain != &blocking_domain)
++	if (domain != &si_domain->domain)
+ 		domain_exit(to_dmar_domain(domain));
+ }
+ 
+-- 
+2.43.0
+

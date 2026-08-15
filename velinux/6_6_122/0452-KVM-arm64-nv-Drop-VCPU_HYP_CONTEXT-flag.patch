@@ -1,0 +1,66 @@
+From d381ea8c53e3c39efd7320366f074066f24a5654 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Fri, 19 Apr 2024 11:29:24 +0100
+Subject: [PATCH 452/960] KVM: arm64: nv: Drop VCPU_HYP_CONTEXT flag
+
+commit 6f57c6be2a0889cc0fd32b0cd2eb25dfee20dde3 upstream.
+
+It has become obvious that HCR_EL2.NV serves the exact same use
+as VCPU_HYP_CONTEXT, only in an architectural way. So just drop
+the flag for good.
+
+Reviewed-by: Joey Gouly <joey.gouly@arm.com>
+Reviewed-by: Oliver Upton <oliver.upton@linux.dev>
+Link: https://lore.kernel.org/r/20240419102935.1935571-5-maz@kernel.org
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Junhao He <hejunhao3@huawei.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h | 2 --
+ arch/arm64/kvm/hyp/vhe/switch.c   | 7 +------
+ 2 files changed, 1 insertion(+), 8 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 8dd619e662bb..8a0cebf24d31 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -729,8 +729,6 @@ struct kvm_vcpu_arch {
+ #define DEBUG_STATE_SAVE_SPE	__vcpu_single_flag(iflags, BIT(5))
+ /* Save TRBE context if active  */
+ #define DEBUG_STATE_SAVE_TRBE	__vcpu_single_flag(iflags, BIT(6))
+-/* vcpu running in HYP context */
+-#define VCPU_HYP_CONTEXT	__vcpu_single_flag(iflags, BIT(7))
+ 
+ /* Physical CPU not in supported_cpus */
+ #define ON_UNSUPPORTED_CPU	__vcpu_single_flag(sflags, BIT(2))
+diff --git a/arch/arm64/kvm/hyp/vhe/switch.c b/arch/arm64/kvm/hyp/vhe/switch.c
+index e9eb477a202d..a38bafc27d65 100644
+--- a/arch/arm64/kvm/hyp/vhe/switch.c
++++ b/arch/arm64/kvm/hyp/vhe/switch.c
+@@ -180,7 +180,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
+ 	 * If we were in HYP context on entry, adjust the PSTATE view
+ 	 * so that the usual helpers work correctly.
+ 	 */
+-	if (unlikely(vcpu_get_flag(vcpu, VCPU_HYP_CONTEXT))) {
++	if (vcpu_has_nv(vcpu) && (read_sysreg(hcr_el2) & HCR_NV)) {
+ 		u64 mode = *vcpu_cpsr(vcpu) & (PSR_MODE_MASK | PSR_MODE32_BIT);
+ 
+ 		switch (mode) {
+@@ -233,11 +233,6 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
+ 	sysreg_restore_guest_state_vhe(guest_ctxt);
+ 	__debug_switch_to_guest(vcpu);
+ 
+-	if (is_hyp_ctxt(vcpu))
+-		vcpu_set_flag(vcpu, VCPU_HYP_CONTEXT);
+-	else
+-		vcpu_clear_flag(vcpu, VCPU_HYP_CONTEXT);
+-
+ 	do {
+ 		/* Jump in the fire! */
+ 		exit_code = __guest_enter(vcpu);
+-- 
+2.43.0
+

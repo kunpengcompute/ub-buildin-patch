@@ -1,0 +1,55 @@
+From f1bc4eef01b8021175240bdba73252c9ef94d2cd Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Wed, 23 Apr 2025 17:16:24 +0800
+Subject: [PATCH 564/960] downstream: kvm: arm64: avoid sending multi-SGIs in
+ IPIV
+
+IPIV optimizes unicast scenarios and does not support multicast or
+broadcast. To prevent GuestOS from generating multicast and broadcast,
+the MPIDR  of vCPUs is modified to ensure that the [aff3, aff2, aff1]
+fields are uniquely assigned for each vCPU within a virtual machine,
+while all aff0 fields are set to zero. This configuration guarantees
+the uniqueness of vCPU affinity identifiers at the architecture level,
+thereby suppressing the generation of SGI multicast and broadcast
+signals by the GuestOS.
+
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/sys_regs.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/arch/arm64/kvm/sys_regs.c b/arch/arm64/kvm/sys_regs.c
+index d08b4fdab666..c6cd83578dfa 100644
+--- a/arch/arm64/kvm/sys_regs.c
++++ b/arch/arm64/kvm/sys_regs.c
+@@ -694,6 +694,8 @@ static u64 reset_actlr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
+ 	return actlr;
+ }
+ 
++extern struct static_key_false ipiv_enable;
++
+ static u64 reset_mpidr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
+ {
+ 	u64 mpidr;
+@@ -708,6 +710,15 @@ static u64 reset_mpidr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
+ 	mpidr = (vcpu->vcpu_id & 0x0f) << MPIDR_LEVEL_SHIFT(0);
+ 	mpidr |= ((vcpu->vcpu_id >> 4) & 0xff) << MPIDR_LEVEL_SHIFT(1);
+ 	mpidr |= ((vcpu->vcpu_id >> 12) & 0xff) << MPIDR_LEVEL_SHIFT(2);
++
++	if (static_branch_unlikely(&ipiv_enable)) {
++		/*
++		 * To avoid sending multi-SGIs in guest OS, make aff1/aff2 unique
++		 */
++		mpidr = (vcpu->vcpu_id & 0x0f) << MPIDR_LEVEL_SHIFT(1);
++		mpidr |= ((vcpu->vcpu_id >> 4) & 0xff) << MPIDR_LEVEL_SHIFT(2);
++	}
++
+ 	mpidr |= (1ULL << 31);
+ 	vcpu_write_sys_reg(vcpu, mpidr, MPIDR_EL1);
+ 
+-- 
+2.43.0
+

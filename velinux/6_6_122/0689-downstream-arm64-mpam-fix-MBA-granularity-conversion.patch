@@ -1,0 +1,31 @@
+From 4f1aefdefa0fefafe50711750d734ee65be9f714 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 22 Feb 2025 11:55:12 +0800
+Subject: [PATCH 689/960] downstream: arm64/mpam: fix MBA granularity
+ conversion formula
+
+Correct MBA granularity conversion formula.
+
+Fixes: 58db5c68e84a ("untested: arm_mpam: resctrl: Add support for MB resource")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index d91baa96bc99..71392238950e 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -519,7 +519,7 @@ static u32 get_mba_granularity(struct mpam_props *cprops)
+ 		 * bwa_wd is the number of bits implemented in the 0.xxx
+ 		 * fixed point fraction. 1 bit is 50%, 2 is 25% etc.
+ 		 */
+-		return MAX_MBA_BW / (cprops->bwa_wd + 1);
++		return MAX_MBA_BW / (1 << cprops->bwa_wd);
+ 	}
+ 
+ 	return 0;
+-- 
+2.43.0
+

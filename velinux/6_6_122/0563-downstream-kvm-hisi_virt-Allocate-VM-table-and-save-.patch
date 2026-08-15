@@ -1,0 +1,125 @@
+From a44c8a406e0009dc43f40208db99dbd66c327170 Mon Sep 17 00:00:00 2001
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Wed, 23 Apr 2025 17:16:23 +0800
+Subject: [PATCH 563/960] downstream: kvm: hisi_virt: Allocate VM table and
+ save vpeid in it
+
+When guest access register ICC_SGI1R_EL1, GIC will access
+VM table to get the vpeid of vcpu for IPIV feature. So when
+IPIV feature is enabled, allocate VM table and save vpeid in it.
+The index of the entries in VM table is vcpu id.
+
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3-its.c      | 29 +++++++++++++++++++++++++--
+ drivers/irqchip/irq-gic-v3.c          |  3 +++
+ include/linux/irqchip/arm-gic-v4.h    |  1 +
+ include/linux/irqchip/arm-vgic-info.h |  2 ++
+ 4 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index db99dddc166b..4aff22a810e7 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -4820,6 +4820,10 @@ static void its_vpe_irq_domain_free(struct irq_domain *domain,
+ 	if (bitmap_empty(vm->db_bitmap, vm->nr_db_lpis)) {
+ 		its_lpi_free(vm->db_bitmap, vm->db_lpi_base, vm->nr_db_lpis);
+ 		its_free_prop_table(vm->vprop_page);
++		if (static_branch_unlikely(&ipiv_enable)) {
++			free_pages((unsigned long)page_address(vm->vpeid_page),
++				    get_order(nr_irqs * 2));
++		}
+ 	}
+ }
+ 
+@@ -4829,8 +4833,10 @@ static int its_vpe_irq_domain_alloc(struct irq_domain *domain, unsigned int virq
+ 	struct irq_chip *irqchip = &its_vpe_irq_chip;
+ 	struct its_vm *vm = args;
+ 	unsigned long *bitmap;
+-	struct page *vprop_page;
++	struct page *vprop_page, *vpeid_page;
+ 	int base, nr_ids, i, err = 0;
++	void *vpeid_table_va;
++	u16 *vpeid_entry;
+ 
+ 	bitmap = its_lpi_alloc(roundup_pow_of_two(nr_irqs), &base, &nr_ids);
+ 	if (!bitmap)
+@@ -4853,14 +4859,33 @@ static int its_vpe_irq_domain_alloc(struct irq_domain *domain, unsigned int virq
+ 	vm->vprop_page = vprop_page;
+ 	raw_spin_lock_init(&vm->vmapp_lock);
+ 
+-	if (gic_rdists->has_rvpeid)
++	if (gic_rdists->has_rvpeid) {
+ 		irqchip = &its_vpe_4_1_irq_chip;
++		if (static_branch_unlikely(&ipiv_enable)) {
++			/*
++			 * The vpeid's size is 2 bytes, so we need to allocate 2 *
++			 * (num of vcpus). nr_irqs is equal to the number of vCPUs.
++			 */
++			vpeid_page = alloc_pages(GFP_KERNEL, get_order(nr_irqs * 2));
++			if (!vpeid_page) {
++				its_lpi_free(bitmap, base, nr_ids);
++				its_free_prop_table(vprop_page);
++				return -ENOMEM;
++			}
++			vm->vpeid_page = vpeid_page;
++			vpeid_table_va = page_address(vpeid_page);
++		}
++	}
+ 
+ 	for (i = 0; i < nr_irqs; i++) {
+ 		vm->vpes[i]->vpe_db_lpi = base + i;
+ 		err = its_vpe_init(vm->vpes[i]);
+ 		if (err)
+ 			break;
++		if (static_branch_unlikely(&ipiv_enable)) {
++			vpeid_entry = (u16 *)vpeid_table_va + i;
++			*vpeid_entry = vm->vpes[i]->vpe_id;
++		}
+ 		err = its_irq_gic_domain_alloc(domain, virq + i,
+ 					       vm->vpes[i]->vpe_db_lpi);
+ 		if (err)
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 35ad0555d764..9d70477f04ba 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -105,6 +105,9 @@ static DEFINE_STATIC_KEY_FALSE(supports_pseudo_nmis);
+ DEFINE_STATIC_KEY_FALSE(gic_nonsecure_priorities);
+ EXPORT_SYMBOL(gic_nonsecure_priorities);
+ 
++DEFINE_STATIC_KEY_FALSE(ipiv_enable);
++EXPORT_SYMBOL(ipiv_enable);
++
+ /*
+  * When the Non-secure world has access to group 0 interrupts (as a
+  * consequence of SCR_EL3.FIQ == 0), reading the ICC_RPR_EL1 register will
+diff --git a/include/linux/irqchip/arm-gic-v4.h b/include/linux/irqchip/arm-gic-v4.h
+index fea618f43947..4ff871269f7c 100644
+--- a/include/linux/irqchip/arm-gic-v4.h
++++ b/include/linux/irqchip/arm-gic-v4.h
+@@ -20,6 +20,7 @@ struct its_vm {
+ 	struct fwnode_handle	*fwnode;
+ 	struct irq_domain	*domain;
+ 	struct page		*vprop_page;
++	struct page		*vpeid_page;
+ 	struct its_vpe		**vpes;
+ 	int			nr_vpes;
+ 	irq_hw_number_t		db_lpi_base;
+diff --git a/include/linux/irqchip/arm-vgic-info.h b/include/linux/irqchip/arm-vgic-info.h
+index ac362587d2fb..4d7144487136 100644
+--- a/include/linux/irqchip/arm-vgic-info.h
++++ b/include/linux/irqchip/arm-vgic-info.h
+@@ -46,4 +46,6 @@ void vgic_set_kvm_info(const struct gic_kvm_info *info);
+ static inline void vgic_set_kvm_info(const struct gic_kvm_info *info) {}
+ #endif
+ 
++extern struct static_key_false ipiv_enable;
++
+ #endif
+-- 
+2.43.0
+

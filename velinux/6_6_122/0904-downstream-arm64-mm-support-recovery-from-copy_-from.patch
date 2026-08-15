@@ -1,0 +1,181 @@
+From 8ed1e273b674a0005f722f3fc334b0f89d0c4548 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Tue, 3 Mar 2026 15:31:56 +0800
+Subject: [PATCH 904/960] downstream: arm64: mm: support recovery from
+ copy_{from/to}_user_page()
+
+During our test. kernel panic with the following trace:
+
+  Internal error: synchronous external abort: 0000000096000410 [#1] SMP
+  pc : __memcpy+0x70/0x230
+  lr : __access_remote_vm+0x1ac/0x390
+  Call trace:
+   __memcpy+0x70/0x230
+   access_remote_vm+0x18/0x30
+   proc_pid_cmdline_read+0x1ac/0x490
+   vfs_read+0xcc/0x2b8
+   ksys_read+0x78/0x118
+   __arm64_sys_read+0x24/0x38
+
+Kernel panic due to UCE happens during page copy.
+
+Similar to other poison recovery, use memcpy_mc() to avoid potentially
+kernel panic during copy page in access_remote_vm().
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm/include/asm/cacheflush.h   | 24 ++++++++++++++++++++++++
+ arch/arm64/include/asm/cacheflush.h |  7 +++++++
+ arch/arm64/mm/flush.c               | 11 +++++++++++
+ include/asm-generic/cacheflush.h    | 24 ++++++++++++++++++++++++
+ mm/memory.c                         | 15 +++++++++++----
+ 5 files changed, 77 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/include/asm/cacheflush.h b/arch/arm/include/asm/cacheflush.h
+index 1075534b0a2e..28cd17662a47 100644
+--- a/arch/arm/include/asm/cacheflush.h
++++ b/arch/arm/include/asm/cacheflush.h
+@@ -473,4 +473,28 @@ void check_cpu_icache_size(int cpuid);
+ static inline void check_cpu_icache_size(int cpuid) { }
+ #endif
+ 
++#ifndef copy_mc_to_user_page
++static inline int copy_mc_to_user_page(struct vm_area_struct *vma,
++				       struct page *page, unsigned long vaddr,
++				       void *dst, const void *src,
++				       unsigned long len)
++{
++	copy_to_user_page(vma, page, vaddr, dst, src, len);
++	return 0;
++}
++#define copy_mc_to_user_page copy_mc_to_user_page
++#endif
++
++#ifndef copy_mc_from_user_page
++static inline int copy_mc_from_user_page(struct vm_area_struct *vma,
++					 struct page *page, unsigned long vaddr,
++					 void *dst, const void *src,
++					 unsigned long len)
++{
++	copy_from_user_page(vma, page, vaddr, dst, src, len);
++	return 0;
++}
++#define copy_mc_from_user_page copy_mc_from_user_page
++#endif
++
+ #endif
+diff --git a/arch/arm64/include/asm/cacheflush.h b/arch/arm64/include/asm/cacheflush.h
+index fefac75fa009..41943835932d 100644
+--- a/arch/arm64/include/asm/cacheflush.h
++++ b/arch/arm64/include/asm/cacheflush.h
+@@ -113,6 +113,13 @@ extern void copy_to_user_page(struct vm_area_struct *, struct page *,
+ 	unsigned long, void *, const void *, unsigned long);
+ #define copy_to_user_page copy_to_user_page
+ 
++extern int copy_mc_to_user_page(struct vm_area_struct *, struct page *,
++	unsigned long, void *, const void *, unsigned long);
++#define copy_mc_to_user_page copy_mc_to_user_page
++
++#define copy_mc_from_user_page(vma, page, vaddr, dst, src, len) \
++	memcpy_mc(dst, src, len)
++
+ /*
+  * flush_dcache_folio is used when the kernel has written to the page
+  * cache page at virtual address page->virtual.
+diff --git a/arch/arm64/mm/flush.c b/arch/arm64/mm/flush.c
+index 013eead9b695..cbb3cf20fc7c 100644
+--- a/arch/arm64/mm/flush.c
++++ b/arch/arm64/mm/flush.c
+@@ -49,6 +49,17 @@ void copy_to_user_page(struct vm_area_struct *vma, struct page *page,
+ 	flush_ptrace_access(vma, (unsigned long)dst, (unsigned long)dst + len);
+ }
+ 
++int copy_mc_to_user_page(struct vm_area_struct *vma, struct page *page,
++		unsigned long uaddr, void *dst, const void *src,
++		unsigned long len)
++{
++	if (memcpy_mc(dst, src, len))
++		return -EHWPOISON;
++
++	flush_ptrace_access(vma, (unsigned long)dst, (unsigned long)dst + len);
++	return 0;
++}
++
+ void __sync_icache_dcache(pte_t pte)
+ {
+ 	struct folio *folio = page_folio(pte_page(pte));
+diff --git a/include/asm-generic/cacheflush.h b/include/asm-generic/cacheflush.h
+index 7ee8a179d103..2a20f4ed6a31 100644
+--- a/include/asm-generic/cacheflush.h
++++ b/include/asm-generic/cacheflush.h
+@@ -124,4 +124,28 @@ static inline void flush_cache_vunmap(unsigned long start, unsigned long end)
+ 	} while (0)
+ #endif
+ 
++#ifndef copy_mc_to_user_page
++static inline int copy_mc_to_user_page(struct vm_area_struct *vma,
++				       struct page *page, unsigned long vaddr,
++				       void *dst, const void *src,
++				       unsigned long len)
++{
++	copy_to_user_page(vma, page, vaddr, dst, src, len);
++	return 0;
++}
++#define copy_mc_to_user_page copy_mc_to_user_page
++#endif
++
++#ifndef copy_mc_from_user_page
++static inline int copy_mc_from_user_page(struct vm_area_struct *vma,
++					 struct page *page, unsigned long vaddr,
++					 void *dst, const void *src,
++					 unsigned long len)
++{
++	copy_from_user_page(vma, page, vaddr, dst, src, len);
++	return 0;
++}
++#define copy_mc_from_user_page copy_mc_from_user_page
++#endif
++
+ #endif /* _ASM_GENERIC_CACHEFLUSH_H */
+diff --git a/mm/memory.c b/mm/memory.c
+index 36aa31e5c806..cfacabfaca4f 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -5945,6 +5945,7 @@ int __access_remote_vm(struct mm_struct *mm, unsigned long addr, void *buf,
+ 			if (bytes <= 0)
+ 				break;
+ 		} else {
++			int ret = 0;
+ 			bytes = len;
+ 			offset = addr & (PAGE_SIZE-1);
+ 			if (bytes > PAGE_SIZE-offset)
+@@ -5952,15 +5953,21 @@ int __access_remote_vm(struct mm_struct *mm, unsigned long addr, void *buf,
+ 
+ 			maddr = kmap(page);
+ 			if (write) {
+-				copy_to_user_page(vma, page, addr,
+-						  maddr + offset, buf, bytes);
+-				set_page_dirty_lock(page);
++				ret = copy_mc_to_user_page(vma, page, addr,
++							   maddr + offset,
++							   buf, bytes);
++				if (!ret)
++					set_page_dirty_lock(page);
+ 			} else {
+-				copy_from_user_page(vma, page, addr,
++				ret = copy_mc_from_user_page(vma, page, addr,
+ 						    buf, maddr + offset, bytes);
+ 			}
+ 			kunmap(page);
+ 			put_page(page);
++			if (ret) {
++				mmap_read_unlock(mm);
++				return 0;
++			}
+ 		}
+ 		len -= bytes;
+ 		buf += bytes;
+-- 
+2.43.0
+

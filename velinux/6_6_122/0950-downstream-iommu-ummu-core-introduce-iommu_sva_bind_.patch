@@ -1,0 +1,236 @@
+From 7b0f9fe0220abd0ddc287490592a00626f8cf21e Mon Sep 17 00:00:00 2001
+From: Lei Gong <gonglei25@huawei.com>
+Date: Wed, 20 Aug 2025 17:58:20 +0800
+Subject: [PATCH 950/960] downstream: iommu/ummu-core: introduce
+ iommu_sva_bind_isolated interface
+
+The current IOMMU SVA interfaces share the binding. If the device and mm
+has been bond, they will reuse the binding and pasid.  However, in some
+scence, it causes a problem to isolate resource/permission.
+
+This patch introduces a new interface iommu_sva_bind_device_isolated as a
+supplement of the iommu sva framework. We believe it will enhance sva's
+flexibility and safety.
+
+In the iommu_sva_bind_device_isolated, it allocates a new pasid and
+creates a new bond. It also provides a data parameter passed to iommu
+driver.
+
+This pattern is incompatible with vt-d, which forces each mm bind with one
+pasid. The arch with vt-d saved pasid in the registers and dispatch jobs
+with enqcmd.
+
+Programming model:
+1. Enable the SVA via `iommu_dev_enable_feature()`.
+2. Create the bond by calling `iommu_sva_bind_device_isolated()`.
+3. Get the PASID by `iommu_sva_get_priv_pasid()`.
+4. Assign the PASID to the device.
+5. To stop the device's access, call `iommu_sva_unbind_device_isolated()`.
+6. Disable the SVA via `iommu_dev_disable_feature()` after unbinding.
+
+Signed-off-by: Yuhao Zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Lei Gong <gonglei25@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/iommu/Kconfig     |   8 +++
+ drivers/iommu/iommu-sva.c | 107 ++++++++++++++++++++++++++++++++++++++
+ include/linux/iommu.h     |  27 ++++++++++
+ 3 files changed, 142 insertions(+)
+
+diff --git a/drivers/iommu/Kconfig b/drivers/iommu/Kconfig
+index 5ff143d2d2f5..4c997a005c24 100644
+--- a/drivers/iommu/Kconfig
++++ b/drivers/iommu/Kconfig
+@@ -166,6 +166,14 @@ config IOMMU_SVA
+ config IOMMU_IOPF
+ 	bool
+ 
++# Shared Kernel Virtual Addressing
++config IOMMU_KSVA
++	bool
++	default n
++	help
++	  Enable sharing kernel virtual address to devices.
++	  Say N unless you know you need this.
++
+ config FSL_PAMU
+ 	bool "Freescale IOMMU support"
+ 	depends on PCI
+diff --git a/drivers/iommu/iommu-sva.c b/drivers/iommu/iommu-sva.c
+index f545c22c32f1..138e35c7da4c 100644
+--- a/drivers/iommu/iommu-sva.c
++++ b/drivers/iommu/iommu-sva.c
+@@ -318,6 +318,113 @@ static struct iommu_domain *iommu_sva_domain_alloc(struct device *dev,
+ 	domain->mm = mm;
+ 	domain->owner = ops;
+ 	domain->iopf_handler = iommu_sva_iopf_handler;
++#ifdef CONFIG_IOMMU_KSVA
++	domain->isolated_pasid = IOMMU_NO_PASID;
++#endif
+ 
+ 	return domain;
+ }
++
++#ifdef CONFIG_IOMMU_KSVA
++/**
++ * iommu_sva_bind_device_isolated() - Create a isolated sva bond.
++ * @dev: the device to bind
++ * @mm: the memory management structure to bind
++ * @data: driver-specific data for the binding domain
++ *
++ * This function is an extension of iommu_sva_bind_device.
++ * Unlike the latter, which may reuse the binding, this function creates a
++ * isolated binding between the device and the process address space. It
++ * allocates a non shareable PASID for the binding. IOMMU Drivers can use the
++ * provided `data` to configure the binding context.
++ *
++ * Notice:
++ * 1. The PASID is not stored in the `mm` struct. Multiple PASIDs may be bond to
++ *    the same process address space, making this function incompatible with `enqcmd`.
++ * 2. The PASID is released during the unbinding process. The device must stop
++ *    using the PASID before calling `iommu_sva_unbind_device()`.
++ *
++ * On error, returns an ERR_PTR value.
++ */
++struct iommu_sva *iommu_sva_bind_device_isolated(struct device *dev,
++					    struct mm_struct *mm,
++					    void *data)
++{
++	struct iommu_group *group = dev->iommu_group;
++	struct iommu_domain *domain;
++	struct iommu_sva *handle;
++	u32 pasid;
++	int ret;
++
++	if (!group)
++		return ERR_PTR(-ENODEV);
++
++	mutex_lock(&iommu_sva_lock);
++	pasid = iommu_alloc_global_pasid(dev);
++	if (pasid == IOMMU_PASID_INVALID) {
++		ret = -ENOSPC;
++		goto out_unlock;
++	}
++
++	handle = kzalloc(sizeof(*handle), GFP_KERNEL);
++	if (!handle) {
++		ret = -ENOMEM;
++		goto out_release_pasid;
++	}
++
++	/* Allocate a new domain and set it on device pasid. */
++	domain = iommu_sva_domain_alloc(dev, mm);
++	if (IS_ERR(domain)) {
++		ret = PTR_ERR(domain);
++		goto out_free_handle;
++	}
++	domain->sva_data = data;
++	domain->isolated_pasid = pasid;
++	ret = iommu_attach_device_pasid(domain, dev, pasid, &handle->handle);
++	if (ret)
++		goto out_free_domain;
++
++	mutex_unlock(&iommu_sva_lock);
++	handle->dev = dev;
++	return handle;
++
++out_free_domain:
++	iommu_domain_free(domain);
++out_free_handle:
++	kfree(handle);
++out_release_pasid:
++	iommu_free_global_pasid(pasid);
++out_unlock:
++	mutex_unlock(&iommu_sva_lock);
++	return ERR_PTR(ret);
++}
++EXPORT_SYMBOL_GPL(iommu_sva_bind_device_isolated);
++
++/**
++ * iommu_sva_unbind_device_isolated() - Remove a bond created with isolated bond
++ * @handle: the handle returned by iommu_sva_unbind_device_isolated()
++ *
++ * Release the bond and related private pasid.
++ */
++void iommu_sva_unbind_device_isolated(struct iommu_sva *handle)
++{
++	struct iommu_domain *domain = handle->handle.domain;
++	struct device *dev = handle->dev;
++
++	mutex_lock(&iommu_sva_lock);
++	iommu_detach_device_pasid(domain, dev, domain->isolated_pasid);
++	iommu_free_global_pasid(domain->isolated_pasid);
++	iommu_domain_free(domain);
++	mutex_unlock(&iommu_sva_lock);
++	kfree(handle);
++}
++EXPORT_SYMBOL_GPL(iommu_sva_unbind_device_isolated);
++
++u32 iommu_sva_get_isolated_pasid(struct iommu_sva *handle)
++{
++	struct iommu_domain *domain = handle->handle.domain;
++
++	return domain->isolated_pasid;
++}
++EXPORT_SYMBOL_GPL(iommu_sva_get_isolated_pasid);
++#endif
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index f13ed3347083..939de79a171b 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -232,6 +232,9 @@ struct iommu_domain {
+ 		struct {	/* IOMMU_DOMAIN_SVA */
+ 			struct mm_struct *mm;
+ 			int users;
++#ifdef CONFIG_IOMMU_KSVA
++			u32 isolated_pasid;
++#endif
+ 			/*
+ 			 * Next iommu_domain in mm->iommu_mm->sva-domains list
+ 			 * protected by iommu_sva_lock.
+@@ -240,6 +243,9 @@ struct iommu_domain {
+ 		};
+ 	};
+ 	struct mutex switch_log_lock;
++#ifdef CONFIG_IOMMU_KSVA
++	void *sva_data;
++#endif
+ };
+ 
+ static inline bool iommu_is_dma_domain(struct iommu_domain *domain)
+@@ -1716,6 +1722,7 @@ static inline u32 iommu_sva_get_pasid(struct iommu_sva *handle)
+ {
+ 	return IOMMU_PASID_INVALID;
+ }
++
+ static inline void mm_pasid_init(struct mm_struct *mm) {}
+ static inline bool mm_valid_pasid(struct mm_struct *mm) { return false; }
+ 
+@@ -1789,4 +1796,24 @@ static inline void iopf_group_dequeue(struct iopf_group *group)
+ {
+ }
+ #endif /* CONFIG_IOMMU_IOPF */
++
++#ifdef CONFIG_IOMMU_KSVA
++struct iommu_sva *iommu_sva_bind_device_isolated(struct device *dev,
++					    struct mm_struct *mm, void *data);
++void iommu_sva_unbind_device_isolated(struct iommu_sva *handle);
++u32 iommu_sva_get_isolated_pasid(struct iommu_sva *handle);
++#else
++static inline struct iommu_sva *
++iommu_sva_bind_device_isolated(struct device *dev, struct mm_struct *mm, void *data)
++{
++	return ERR_PTR(-ENODEV);
++}
++
++static inline void iommu_sva_unbind_device_isolated(struct iommu_sva *handle) {}
++
++static inline u32 iommu_sva_get_isolated_pasid(struct iommu_sva *handle)
++{
++	return IOMMU_PASID_INVALID;
++}
++#endif /* CONFIG_IOMMU_KSVA */
+ #endif /* __LINUX_IOMMU_H */
+-- 
+2.43.0
+

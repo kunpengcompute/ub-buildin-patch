@@ -1,0 +1,47 @@
+From 075223285046712209aecb5e18f9c227fa17d1b0 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:01 +0800
+Subject: [PATCH 576/960] downstream: KVM: arm64: vgic-v3: Use the NMI
+ attribute as part of the AP-list sorting
+
+Since we want NMIs to make it quicker into the LRs, add them to
+the priority sorting.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic.c b/arch/arm64/kvm/vgic/vgic.c
+index 6e1fa6f2918f..2459b0adea08 100644
+--- a/arch/arm64/kvm/vgic/vgic.c
++++ b/arch/arm64/kvm/vgic/vgic.c
+@@ -252,6 +252,7 @@ static struct kvm_vcpu *vgic_target_oracle(struct vgic_irq *irq)
+  *
+  * Otherwise things should be sorted by the priority field and the GIC
+  * hardware support will take care of preemption of priority groups etc.
++ * NMI acts as a super-priority.
+  *
+  * Return negative if "a" sorts before "b", 0 to preserve order, and positive
+  * to sort "b" before "a".
+@@ -287,7 +288,12 @@ static int vgic_irq_cmp(void *priv, const struct list_head *a,
+ 		goto out;
+ 	}
+ 
+-	/* Both pending and enabled, sort by priority */
++	/* Both pending and enabled, sort by NMI and then priority */
++	if (irqa->nmi != irqb->nmi) {
++		ret = (int)irqb->nmi - (int)irqa->nmi;
++		goto out;
++	}
++
+ 	ret = irqa->priority - irqb->priority;
+ out:
+ 	raw_spin_unlock(&irqb->irq_lock);
+-- 
+2.43.0
+

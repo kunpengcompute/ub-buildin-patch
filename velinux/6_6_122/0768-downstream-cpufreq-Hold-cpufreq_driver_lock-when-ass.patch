@@ -1,0 +1,43 @@
+From 365f993877241d9f88c6285d4ea051053b350de7 Mon Sep 17 00:00:00 2001
+From: Lifeng Zheng <zhenglifeng1@huawei.com>
+Date: Thu, 21 Aug 2025 15:16:05 +0800
+Subject: [PATCH 768/960] downstream: cpufreq: Hold cpufreq_driver_lock when
+ assigning cpufreq_driver->set_boost
+
+Hold the lock to avoid concurrency problems in
+cpufreq_enable_boost_support() when assigning cpufreq_driver->set_boost.
+
+Fixes: 7a6c79f2fe53 ("cpufreq: Simplify core code related to boost support")
+Signed-off-by: Lifeng Zheng <zhenglifeng1@huawei.com>
+Signed-off-by: Hongye Lin <linhongye@h-partners.com>
+Signed-off-by: heppen <hepeng68@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/cpufreq/cpufreq.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
+index effa9b177717..b2d48673d7f7 100644
+--- a/drivers/cpufreq/cpufreq.c
++++ b/drivers/cpufreq/cpufreq.c
+@@ -2892,13 +2892,17 @@ static void remove_boost_sysfs_file(void)
+ 
+ int cpufreq_enable_boost_support(void)
+ {
++	unsigned long flags;
++
+ 	if (!cpufreq_driver)
+ 		return -EINVAL;
+ 
+ 	if (cpufreq_boost_supported())
+ 		return 0;
+ 
++	write_lock_irqsave(&cpufreq_driver_lock, flags);
+ 	cpufreq_driver->set_boost = cpufreq_boost_set_sw;
++	write_unlock_irqrestore(&cpufreq_driver_lock, flags);
+ 
+ 	/* This will get removed on driver unregister */
+ 	return create_boost_sysfs_file();
+-- 
+2.43.0
+

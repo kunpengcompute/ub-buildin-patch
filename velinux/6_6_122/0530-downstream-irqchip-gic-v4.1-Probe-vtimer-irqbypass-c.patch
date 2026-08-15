@@ -1,0 +1,117 @@
+From 62d3d2ecd01bdeb2764ecbd96377661990984546 Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:05 +0800
+Subject: [PATCH 530/960] downstream: irqchip/gic-v4.1: Probe vtimer irqbypass
+ capability at RD level
+
+Hisilicon hardware use GICv4.1 to indicate whether vtimer bypass is
+supported in GICR.
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3-its.c      |  4 +++-
+ drivers/irqchip/irq-gic-v3.c          | 14 ++++++++++++++
+ include/linux/irqchip/arm-gic-v3.h    |  3 +++
+ include/linux/irqchip/arm-vgic-info.h |  4 ++++
+ 4 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 093444943f08..db99dddc166b 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -6033,8 +6033,10 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
+ 
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+ 	/* vtimer irqbypass depends on rvpeid support */
+-	if (WARN_ON(!has_v4_1 && has_vtimer_irqbypass))
++	if (WARN_ON(!has_v4_1 && has_vtimer_irqbypass)) {
+ 		has_vtimer_irqbypass = false;
++		rdists->has_vtimer = false;
++	}
+ #endif
+ 
+ 	if (has_v4 & rdists->has_vlpis) {
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index b85a1213ea31..35ad0555d764 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -1182,6 +1182,11 @@ static int __gic_update_rdist_properties(struct redist_region *region,
+ 		gic_data.rdists.has_rvpeid = false;
+ 	}
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	/* HiSilicon implement: if GICv4.1 is supported, vtimer irqbypass is supported */
++	gic_data.rdists.has_vtimer = gic_data.rdists.has_rvpeid;
++#endif
++
+ 	gic_data.ppi_nr = min(GICR_TYPER_NR_PPIS(typer), gic_data.ppi_nr);
+ 
+ 	return 1;
+@@ -2147,6 +2152,9 @@ static int __init gic_init_bases(phys_addr_t dist_phys_base,
+ 		gic_data.rdists.has_vlpis = true;
+ 		gic_data.rdists.has_direct_lpi = true;
+ 		gic_data.rdists.has_vpend_valid_dirty = true;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++		gic_data.rdists.has_vtimer = false;
++#endif
+ 	}
+ 
+ 	if (WARN_ON(!gic_data.domain) || WARN_ON(!gic_data.rdists.rdist)) {
+@@ -2327,6 +2335,9 @@ static void __init gic_of_setup_kvm_info(struct device_node *node)
+ 
+ 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
+ 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
++#endif
+ 	vgic_set_kvm_info(&gic_v3_kvm_info);
+ }
+ 
+@@ -2667,6 +2678,9 @@ static void __init gic_acpi_setup_kvm_info(void)
+ 
+ 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
+ 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
++#endif
+ 	vgic_set_kvm_info(&gic_v3_kvm_info);
+ }
+ 
+diff --git a/include/linux/irqchip/arm-gic-v3.h b/include/linux/irqchip/arm-gic-v3.h
+index 22375e3bcaf6..7a91ec9e2afd 100644
+--- a/include/linux/irqchip/arm-gic-v3.h
++++ b/include/linux/irqchip/arm-gic-v3.h
+@@ -657,6 +657,9 @@ struct rdists {
+ 	bool			has_rvpeid;
+ 	bool			has_direct_lpi;
+ 	bool			has_vpend_valid_dirty;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	bool			has_vtimer;
++#endif
+ };
+ 
+ struct irq_domain;
+diff --git a/include/linux/irqchip/arm-vgic-info.h b/include/linux/irqchip/arm-vgic-info.h
+index a75b2c7de69d..ac362587d2fb 100644
+--- a/include/linux/irqchip/arm-vgic-info.h
++++ b/include/linux/irqchip/arm-vgic-info.h
+@@ -32,6 +32,10 @@ struct gic_kvm_info {
+ 	bool		has_v4;
+ 	/* rvpeid support */
+ 	bool		has_v4_1;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	/* vtimer irqbypass support */
++	bool            has_vtimer;
++#endif
+ 	/* Deactivation impared, subpar stuff */
+ 	bool		no_hw_deactivation;
+ };
+-- 
+2.43.0
+

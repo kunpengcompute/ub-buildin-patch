@@ -1,0 +1,44 @@
+From 16cf150b33391ddc2678bed4b9de7bdf11053a3d Mon Sep 17 00:00:00 2001
+From: yangjinqian <yangjinqian1@huawei.com>
+Date: Thu, 27 Mar 2025 15:55:53 +0800
+Subject: [PATCH 560/960] downstream: kvm: hisi_virt: fix kernel panic when
+ enable DVMBM in nVHE
+
+When the kernel is in nvhe mode and is in EL1, the original judgment
+logic causes the hardware_disable_dvmbm function to read the EL2
+register in EL1, causing a panic during kernel startup.
+
+Signed-off-by: yangjinqian <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: gongzt <gongzhengtang@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hisilicon/hisi_virt.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index ea6ab834a46e..9cac8947af6d 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -160,12 +160,17 @@ bool hisi_dvmbm_supported(void)
+ 	if (cpu_type != HI_IP10 && cpu_type != HI_IP10C)
+ 		return false;
+ 
++	if (!is_kernel_in_hyp_mode()) {
++		kvm_info("Hisi dvmbm not supported by KVM nVHE mode\n");
++		return false;
++	}
++
+ 	/* Determine whether DVMBM is supported by the hardware */
+ 	if (!(read_sysreg(aidr_el1) & AIDR_EL1_DVMBM_MASK))
+ 		return false;
+ 
+ 	/* User provided kernel command-line parameter */
+-	if (!dvmbm_enabled || !is_kernel_in_hyp_mode()) {
++	if (!dvmbm_enabled) {
+ 		on_each_cpu(hardware_disable_dvmbm, NULL, 1);
+ 		return false;
+ 	}
+-- 
+2.43.0
+

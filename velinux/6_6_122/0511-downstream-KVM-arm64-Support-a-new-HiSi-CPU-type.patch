@@ -1,0 +1,55 @@
+From 6215031b8de280c2a9e06f949b1bcf508479954b Mon Sep 17 00:00:00 2001
+From: lishusen <lishusen2@huawei.com>
+Date: Tue, 6 Feb 2024 21:34:56 +0800
+Subject: [PATCH 511/960] downstream: KVM: arm64: Support a new HiSi CPU type
+
+Add a new entry ("HIP09") in oem_str[] to support detection of the new HiSi
+CPU type.
+
+Signed-off-by: Quan Zhou <zhouquan65@huawei.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hisilicon/hisi_virt.c | 4 +++-
+ arch/arm64/kvm/hisilicon/hisi_virt.h | 1 +
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index 9587f9508a79..90c363ed642e 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -15,6 +15,7 @@ static const char * const hisi_cpu_type_str[] = {
+ 	"Hisi1612",
+ 	"Hisi1616",
+ 	"Hisi1620",
++	"HIP09",
+ 	"Unknown"
+ };
+ 
+@@ -22,7 +23,8 @@ static const char * const hisi_cpu_type_str[] = {
+ static const char * const oem_str[] = {
+ 	"HIP06",	/* Hisi 1612 */
+ 	"HIP07",	/* Hisi 1616 */
+-	"HIP08"		/* Hisi 1620 */
++	"HIP08",	/* Hisi 1620 */
++	"HIP09"		/* HIP09 */
+ };
+ 
+ /*
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index c4b5acc93fec..9231b1dca7f2 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -10,6 +10,7 @@ enum hisi_cpu_type {
+ 	HI_1612,
+ 	HI_1616,
+ 	HI_1620,
++	HI_IP09,
+ 	UNKNOWN_HI_TYPE
+ };
+ 
+-- 
+2.43.0
+

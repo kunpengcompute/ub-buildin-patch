@@ -1,0 +1,69 @@
+From f18e09db0e679633b3847a8d21a34aeb9e755dc5 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Wed, 10 Jan 2024 19:36:34 +0800
+Subject: [PATCH 822/960] downstream: iommu/arm-smmu-v3: Realize sync_dirty_log
+ iommu ops
+
+This realizes sync_dirty_log iommu ops based on sync_dirty_log
+io-pgtable ops.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: jiaqingtong <jiaqingtong@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 30 +++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index a75d79885e85..71b2d2b8aa83 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -3560,6 +3560,35 @@ static int arm_smmu_switch_dirty_log(struct iommu_domain *domain, bool enable,
+ 	return 0;
+ }
+ 
++static int arm_smmu_sync_dirty_log(struct iommu_domain *domain,
++				   unsigned long iova, size_t size,
++				   unsigned long *bitmap,
++				   unsigned long base_iova,
++				   unsigned long bitmap_pgshift)
++{
++	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
++	struct io_pgtable_ops *ops = smmu_domain->pgtbl_ops;
++	struct arm_smmu_device *smmu = smmu_domain->smmu;
++
++	if (!(smmu->features & ARM_SMMU_FEAT_HD))
++		return -ENODEV;
++	if (smmu_domain->stage != ARM_SMMU_DOMAIN_S1)
++		return -EINVAL;
++
++	if (!ops || !ops->sync_dirty_log) {
++		pr_err("io-pgtable don't realize sync dirty log\n");
++		return -ENODEV;
++	}
++
++	/*
++	 * Flush iotlb to ensure all inflight transactions are completed.
++	 * See doc IHI0070Da 3.13.4 "HTTU behavior summary".
++	 */
++	arm_smmu_flush_iotlb_all(domain);
++	return ops->sync_dirty_log(ops, iova, size, bitmap, base_iova,
++				   bitmap_pgshift);
++}
++
+ static int arm_smmu_of_xlate(struct device *dev, struct of_phandle_args *args)
+ {
+ 	return iommu_fwspec_add_ids(dev, args->args, 1);
+@@ -3685,6 +3714,7 @@ static struct iommu_ops arm_smmu_ops = {
+ 		.iova_to_phys		= arm_smmu_iova_to_phys,
+ 		.enable_nesting		= arm_smmu_enable_nesting,
+ 		.switch_dirty_log	= arm_smmu_switch_dirty_log,
++		.sync_dirty_log		= arm_smmu_sync_dirty_log,
+ 		.free			= arm_smmu_domain_free_paging,
+ 	}
+ };
+-- 
+2.43.0
+

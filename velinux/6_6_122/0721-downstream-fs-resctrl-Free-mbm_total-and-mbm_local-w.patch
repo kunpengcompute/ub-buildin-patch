@@ -1,0 +1,34 @@
+From ac0a98e9fc2e81347ecd5d9f8991494427443949 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 29 May 2025 09:34:49 +0800
+Subject: [PATCH 721/960] downstream: fs/resctrl: Free mbm_total and mbm_local
+ when fails
+
+When the allocation of mbm_core fails due to insufficient system memory
+resources, it is necessary to also release the previously allocated
+mbm_total and mbm_local to prevent memory leakage.
+
+Fixes: 556688623b2b ("fs/resctrl: Create l2 cache monitors")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/rdtgroup.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/resctrl/rdtgroup.c b/fs/resctrl/rdtgroup.c
+index df7736e9a8af..9252781360c4 100644
+--- a/fs/resctrl/rdtgroup.c
++++ b/fs/resctrl/rdtgroup.c
+@@ -3875,7 +3875,8 @@ static int domain_setup_mon_state(struct rdt_resource *r, struct rdt_domain *d)
+ 		d->mbm_core = kcalloc(idx_limit, tsize, GFP_KERNEL);
+ 		if (!d->mbm_core) {
+ 			bitmap_free(d->rmid_busy_llc);
+-			kfree(d->mbm_core);
++			kfree(d->mbm_total);
++			kfree(d->mbm_local);
+ 			return -ENOMEM;
+ 		}
+ 	}
+-- 
+2.43.0
+

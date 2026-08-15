@@ -1,0 +1,39 @@
+From 6a853532fed2a7fc0120f2b486b77403887c8a7f Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Tue, 22 Jul 2025 21:24:08 +0800
+Subject: [PATCH 731/960] downstream: arm64/mpam: Fix typo in
+ resctrl_arch_set_cdp_enabled()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+After CDP mode is enabled, MPAM uses different PartIDs to track CPU
+instruction-port and data-port memory-access requests. If these PartIDs
+are configured in reverse, the root directory group’s isolation settings
+for data and instruction ports will not behave as expected.
+
+Fixes: b4280653f60d ("arm_mpam: resctrl: Add CDP emulation")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 0606abffa939..be1286b260c8 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -110,8 +110,8 @@ int resctrl_arch_set_cdp_enabled(enum resctrl_res_level ignored, bool enable)
+ 	partid = RESCTRL_RESERVED_CLOSID;
+ 
+ 	if (enable) {
+-		partid_d = resctrl_get_config_index(partid, CDP_CODE);
+-		partid_i = resctrl_get_config_index(partid, CDP_DATA);
++		partid_d = resctrl_get_config_index(partid, CDP_DATA);
++		partid_i = resctrl_get_config_index(partid, CDP_CODE);
+ 		regval = FIELD_PREP(MPAM_SYSREG_PARTID_D, partid_d) |
+ 			 FIELD_PREP(MPAM_SYSREG_PARTID_I, partid_i);
+ 
+-- 
+2.43.0
+

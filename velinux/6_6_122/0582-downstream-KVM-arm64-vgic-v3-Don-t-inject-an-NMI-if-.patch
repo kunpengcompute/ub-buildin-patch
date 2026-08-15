@@ -1,0 +1,36 @@
+From cd7a19e224044b5a67984ae17433f0e35c3d9495 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:07 +0800
+Subject: [PATCH 582/960] downstream: KVM: arm64: vgic-v3: Don't inject an NMI
+ if the vcpu doesn't have FEAT_NMI
+
+Since it is allowed to have any combination of CPU and GIC supporting
+NMIs or not, let's drop the NMI feature at the point where it is
+injected in the LR if the vcpu doesn't have FEAT_NMI.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-v3.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-v3.c b/arch/arm64/kvm/vgic/vgic-v3.c
+index 9973167d5b12..57014c93ad3c 100644
+--- a/arch/arm64/kvm/vgic/vgic-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-v3.c
+@@ -181,7 +181,8 @@ void vgic_v3_populate_lr(struct kvm_vcpu *vcpu, struct vgic_irq *irq, int lr)
+ 	if (irq->group)
+ 		val |= ICH_LR_GROUP;
+ 
+-	if (irq->nmi)
++	if (vcpu->kvm->arch.pfr1_nmi == ID_AA64PFR1_EL1_NMI_IMP &&
++	    irq->nmi)
+ 		val |= ICH_LR_NMI;
+ 	else
+ 		val |= (u64)irq->priority << ICH_LR_PRIORITY_SHIFT;
+-- 
+2.43.0
+

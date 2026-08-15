@@ -1,0 +1,47 @@
+From c8603c86401627b1cfdc6acc366cefd8e18f2202 Mon Sep 17 00:00:00 2001
+From: JiangShui Yang <yangjiangshui@h-partners.com>
+Date: Mon, 18 Nov 2024 10:42:02 +0800
+Subject: [PATCH 507/960] downstream: config: Add configuration to enable
+ FEAT_HAFT
+
+The FEAT_HAFT feature depends on the LRU_GEN and ARCH_HAS
+configurations
+
+Signed-off-by: JiangShui Yang <yangjiangshui@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 2 ++
+ config.aarch64-64k | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index bc716ed954ec..d38f8aa6f6f1 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -408,6 +408,8 @@ CONFIG_HISI_SOC_CACHE=m
+ CONFIG_HISI_SOC_HHA=m
+ CONFIG_ARM64_NMI=y
+ CONFIG_HARDLOCKUP_DETECTOR_PERF=y
++CONFIG_ARM64_HAFT=y
++CONFIG_ARCH_HAS_NONLEAF_PMD_YOUNG=y
+ 
+ CONFIG_ARM64_4K_PAGES=y
+ # CONFIG_ARM64_16K_PAGES is not set
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 5ce36fe8e7ff..0c607f208ba7 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -408,6 +408,8 @@ CONFIG_HISI_SOC_CACHE=m
+ CONFIG_HISI_SOC_HHA=m
+ CONFIG_ARM64_NMI=y
+ CONFIG_HARDLOCKUP_DETECTOR_PERF=y
++CONFIG_ARM64_HAFT=y
++CONFIG_ARCH_HAS_NONLEAF_PMD_YOUNG=y
+ 
+ # CONFIG_ARM64_4K_PAGES is not set
+ # CONFIG_ARM64_16K_PAGES is not set
+-- 
+2.43.0
+

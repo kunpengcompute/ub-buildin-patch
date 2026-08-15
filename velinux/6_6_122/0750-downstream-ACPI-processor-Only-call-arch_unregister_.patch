@@ -1,0 +1,43 @@
+From 567ce543d6dab240fd5849cae371eb3ef3800574 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Wed, 27 Mar 2024 10:24:29 +0800
+Subject: [PATCH 750/960] downstream: ACPI: processor: Only call
+ arch_unregister_cpu() if HOTPLUG_CPU is selected
+
+The kbuild robot points out that configurations without HOTPLUG_CPU
+selected can try to build acpi_processor_post_eject() without success
+as arch_unregister_cpu() is not defined.
+
+Check this explicitly. This will be merged into:
+| ACPI: Add post_eject to struct acpi_scan_handler for cpu hotplug
+for any subsequent posting.
+
+Reported-by: kbuild test robot <lkp@intel.com>
+Signed-off-by: James Morse <james.morse@arm.com>
+Tested-by: Miguel Luis <miguel.luis@oracle.com>
+Tested-by: Vishnu Pajjuri <vishnu@os.amperecomputing.com>
+Tested-by: Jianyong Wu <jianyong.wu@arm.com>
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Signed-off-by: liwei <liwei728@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/acpi_processor.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/acpi/acpi_processor.c b/drivers/acpi/acpi_processor.c
+index e62b8b8dbb18..3b78d139ed68 100644
+--- a/drivers/acpi/acpi_processor.c
++++ b/drivers/acpi/acpi_processor.c
+@@ -538,7 +538,7 @@ static void acpi_processor_post_eject(struct acpi_device *device)
+ 	unsigned long long sta;
+ 	acpi_status status;
+ 
+-	if (!device)
++	if (!IS_ENABLED(CONFIG_HOTPLUG_CPU) || !device)
+ 		return;
+ 
+ 	pr = acpi_driver_data(device);
+-- 
+2.43.0
+

@@ -1,0 +1,108 @@
+From b821569c9d05fe4e6375964246fc4f53f43e7fa6 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Tue, 3 Mar 2026 15:32:01 +0800
+Subject: [PATCH 909/960] downstream: arm64: add ras log during do_sea
+
+Enhance the logging within the do_sea by adding more locatable log
+entries to facilitate issue diagnosis and troubleshooting within that
+specific function.
+
+Fixes: b87ed4452095 ("arm64: add support for ARCH_HAS_COPY_MC")
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/acpi.c |  2 ++
+ arch/arm64/mm/extable.c  |  5 ++++-
+ arch/arm64/mm/fault.c    | 26 +++++++++++++++++++-------
+ 3 files changed, 25 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm64/kernel/acpi.c b/arch/arm64/kernel/acpi.c
+index dba8fcec7f33..68860df660af 100644
+--- a/arch/arm64/kernel/acpi.c
++++ b/arch/arm64/kernel/acpi.c
+@@ -405,6 +405,8 @@ int apei_claim_sea(struct pt_regs *regs)
+ 
+ 	local_daif_restore(current_flags);
+ 
++	if (err)
++		pr_warn_ratelimited("ghes_notify_sea failed, err: %d\n", err);
+ 	return err;
+ }
+ 
+diff --git a/arch/arm64/mm/extable.c b/arch/arm64/mm/extable.c
+index 8c690ae61944..f6ca49ae7937 100644
+--- a/arch/arm64/mm/extable.c
++++ b/arch/arm64/mm/extable.c
+@@ -84,8 +84,10 @@ bool fixup_exception_me(struct pt_regs *regs)
+ 	const struct exception_table_entry *ex;
+ 
+ 	ex = search_exception_tables(instruction_pointer(regs));
+-	if (!ex)
++	if (!ex) {
++		pr_warn_ratelimited("fixup search failed\n");
+ 		return false;
++	}
+ 
+ 	switch (ex->type) {
+ 	case EX_TYPE_UACCESS_ERR_ZERO:
+@@ -93,5 +95,6 @@ bool fixup_exception_me(struct pt_regs *regs)
+ 		return ex_handler_uaccess_err_zero(ex, regs);
+ 	}
+ 
++	pr_warn_ratelimited("fixup type: %d invalid\n", ex->type);
+ 	return false;
+ }
+diff --git a/arch/arm64/mm/fault.c b/arch/arm64/mm/fault.c
+index 8968462cf930..9636ba4589c8 100644
+--- a/arch/arm64/mm/fault.c
++++ b/arch/arm64/mm/fault.c
+@@ -758,18 +758,30 @@ static int do_bad(unsigned long far, unsigned long esr, struct pt_regs *regs)
+  * APEI claimed this as a firmware-first notification.
+  * Some processing deferred to task_work before ret_to_user().
+  */
+-static bool do_apei_claim_sea(struct pt_regs *regs)
++static bool do_apei_claim_sea(unsigned long esr, struct pt_regs *regs,
++			      unsigned long siaddr)
+ {
+ 	if (user_mode(regs)) {
+ 		if (!apei_claim_sea(regs))
+ 			return true;
+-	} else if (IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC)) {
+-		if (sysctl_machine_check_safe &&
+-		    fixup_exception_me(regs) &&
+-		    !apei_claim_sea(regs))
+-			return true;
++
++		return false;
+ 	}
+ 
++	if (!IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC) || !sysctl_machine_check_safe)
++		return false;
++
++	pr_warn_ratelimited("%s, addr: %#lx comm: %.20s tgid: %d pid: %d cpu: %d\n",
++		user_mode(regs) ? "userspace" : "kernelspace", siaddr,
++		current->comm, current->tgid, current->pid,
++		raw_smp_processor_id());
++
++	if (!fixup_exception_me(regs))
++		return false;
++
++	if (apei_claim_sea(regs))
++		return true;
++
+ 	return false;
+ }
+ 
+@@ -791,7 +803,7 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
+ 	}
+ 	add_taint(TAINT_MACHINE_CHECK, LOCKDEP_STILL_OK);
+ 
+-	if (do_apei_claim_sea(regs))
++	if (do_apei_claim_sea(esr, regs, siaddr))
+ 		return 0;
+ 
+ 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
+-- 
+2.43.0
+

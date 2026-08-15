@@ -1,0 +1,37 @@
+From 12d8bce81fdeda520bd672dc6bd03a5700e9e873 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Wed, 10 Jan 2024 19:36:44 +0800
+Subject: [PATCH 819/960] downstream: iommu/arm-smmu-v3: Enable HTTU for stage1
+ with io-pgtable mapping
+
+As nested mode is not upstreamed now, we just aim to support dirty
+log tracking for stage1 with io-pgtable mapping (means not support
+SVA mapping). If HTTU is supported, we enable HA/HD bits in the SMMU
+CD and transfer ARM_HD quirk to io-pgtable.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: jiaqingtong <jiaqingtong@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index dbb0ec641713..104f2ffd2dbc 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -2425,6 +2425,9 @@ static int arm_smmu_domain_finalise(struct arm_smmu_domain *smmu_domain,
+ 		return -EINVAL;
+ 	}
+ 
++	if (smmu->features & ARM_SMMU_FEAT_HD)
++		pgtbl_cfg.quirks |= IO_PGTABLE_QUIRK_ARM_HD;
++
+ 	pgtbl_ops = alloc_io_pgtable_ops(fmt, &pgtbl_cfg, smmu_domain);
+ 	if (!pgtbl_ops)
+ 		return -ENOMEM;
+-- 
+2.43.0
+

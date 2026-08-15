@@ -1,0 +1,98 @@
+From ceee69abd6a15131ffb33ab63a37b4340f6fb29d Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:08 +0800
+Subject: [PATCH 583/960] downstream: KVM: arm64: Allow GICv3.3 NMI if the host
+ supports it
+
+Let the GICv3 driver populate a has_nmi flag in the kvm_gic_info
+structure, and communicate it to the rest of KVM.
+
+We disallow the use of NMI if trapping of the CPU interface is
+enabled, because life is definitely too short to write more
+emulation.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/arm.c                  | 2 +-
+ arch/arm64/kvm/sys_regs.c             | 3 ++-
+ arch/arm64/kvm/vgic/vgic-v3.c         | 6 ++++++
+ drivers/irqchip/irq-gic-v3.c          | 1 +
+ include/linux/irqchip/arm-vgic-info.h | 2 ++
+ 5 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 2c90ee8e2ebd..415e3914ace7 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -306,7 +306,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
+ 	/* The maximum number of VCPUs is limited by the host's GIC model */
+ 	kvm->max_vcpus = kvm_arm_default_max_vcpus();
+ 
+-	if (system_uses_nmi())
++	if (system_uses_nmi() && !static_branch_unlikely(&vgic_v3_cpuif_trap))
+ 		kvm->arch.pfr1_nmi = ID_AA64PFR1_EL1_NMI_IMP;
+ 
+ 	kvm_arm_init_hypercalls(kvm);
+diff --git a/arch/arm64/kvm/sys_regs.c b/arch/arm64/kvm/sys_regs.c
+index ceb94abbf0fa..fc515e0afa40 100644
+--- a/arch/arm64/kvm/sys_regs.c
++++ b/arch/arm64/kvm/sys_regs.c
+@@ -1623,7 +1623,8 @@ static int set_id_aa64pfr1_el1(struct kvm_vcpu *vcpu,
+ 	u8 nmi;
+ 
+ 	nmi = cpuid_feature_extract_unsigned_field(val, ID_AA64PFR1_EL1_NMI_SHIFT);
+-	if (nmi > ID_AA64PFR1_EL1_NMI_IMP || (nmi && !system_uses_nmi()))
++	if (nmi > ID_AA64PFR1_EL1_NMI_IMP ||
++	    (nmi && (!system_uses_nmi() || static_branch_unlikely(&vgic_v3_cpuif_trap))))
+ 		return -EINVAL;
+ 
+ 	/* We can only differ with NMI, and anything else is an error */
+diff --git a/arch/arm64/kvm/vgic/vgic-v3.c b/arch/arm64/kvm/vgic/vgic-v3.c
+index 57014c93ad3c..43db28773de9 100644
+--- a/arch/arm64/kvm/vgic/vgic-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-v3.c
+@@ -724,6 +724,12 @@ int vgic_v3_probe(const struct gic_kvm_info *info)
+ 		static_branch_enable(&vgic_v3_cpuif_trap);
+ 	}
+ 
++	if (info->has_nmi) {
++		kvm_vgic_global_state.has_nmi = !static_branch_unlikely(&vgic_v3_cpuif_trap);
++		kvm_info("GICv3 NMI support %s\n",
++			 kvm_vgic_global_state.has_nmi ? "enabled" : "disabled due to trapping");
++	}
++
+ 	kvm_vgic_global_state.vctrl_base = NULL;
+ 	kvm_vgic_global_state.type = VGIC_V3;
+ 	kvm_vgic_global_state.max_gic_vcpus = VGIC_V3_MAX_CPUS;
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index f4a9ed0e0778..cc1b9f1d525a 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -2711,6 +2711,7 @@ static void __init gic_acpi_setup_kvm_info(void)
+ 
+ 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
+ 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
++	gic_v3_kvm_info.has_nmi = has_v3_3_nmi();
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+ 	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
+ #endif
+diff --git a/include/linux/irqchip/arm-vgic-info.h b/include/linux/irqchip/arm-vgic-info.h
+index 4d7144487136..a2acf86a2e1b 100644
+--- a/include/linux/irqchip/arm-vgic-info.h
++++ b/include/linux/irqchip/arm-vgic-info.h
+@@ -32,6 +32,8 @@ struct gic_kvm_info {
+ 	bool		has_v4;
+ 	/* rvpeid support */
+ 	bool		has_v4_1;
++	/* NMI support */
++	bool            has_nmi;
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+ 	/* vtimer irqbypass support */
+ 	bool            has_vtimer;
+-- 
+2.43.0
+

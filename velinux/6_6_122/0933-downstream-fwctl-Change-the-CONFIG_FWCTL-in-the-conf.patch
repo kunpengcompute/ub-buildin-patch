@@ -1,0 +1,60 @@
+From 636f0b0808948242033a799be07c97480ccaf373 Mon Sep 17 00:00:00 2001
+From: Jiaqi Cheng <chengjiaqi3@huawei.com>
+Date: Wed, 19 Nov 2025 17:11:45 +0800
+Subject: [PATCH 933/960] downstream: fwctl: Change the CONFIG_FWCTL in the
+ config options to m
+
+Change the CONFIG_FWCTL in the config optionsto m
+
+Fixes: aabc3d653349 ("ub: ub_fwctl: Add the ub_fwctl driver and its basic features.")
+Signed-off-by: Jiaqi Cheng <chengjiaqi3@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ config.aarch64     | 2 +-
+ config.aarch64-64k | 3 +++
+ config.x86_64      | 2 +-
+ 3 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/config.aarch64 b/config.aarch64
+index ff3e30e4063c..8f7e93c705f0 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -2197,7 +2197,7 @@ CONFIG_FW_CACHE=y
+ # end of Firmware loader
+ 
+ # fwctl
+-CONFIG_FWCTL=y
++CONFIG_FWCTL=m
+ 
+ CONFIG_WANT_DEV_COREDUMP=y
+ CONFIG_ALLOW_DEV_COREDUMP=y
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 531a7d7b221b..bac2abc8cf88 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -2218,6 +2218,9 @@ CONFIG_GENERIC_ARCH_NUMA=y
+ # CONFIG_FW_DEVLINK_SYNC_STATE_TIMEOUT is not set
+ # end of Generic Driver Options
+ 
++# fwctl
++CONFIG_FWCTL=m
++
+ #
+ # Bus devices
+ #
+diff --git a/config.x86_64 b/config.x86_64
+index 56fed63d3e2c..c9dac24edf70 100644
+--- a/config.x86_64
++++ b/config.x86_64
+@@ -2204,7 +2204,7 @@ CONFIG_FW_UPLOAD=y
+ # end of Firmware loader
+ 
+ # fwctl
+-CONFIG_FWCTL=y
++CONFIG_FWCTL=m
+ 
+ CONFIG_WANT_DEV_COREDUMP=y
+ CONFIG_ALLOW_DEV_COREDUMP=y
+-- 
+2.43.0
+

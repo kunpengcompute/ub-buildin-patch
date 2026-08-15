@@ -1,0 +1,112 @@
+From b9071395915eff21494f8326d8212dc2f769024f Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:05 +0800
+Subject: [PATCH 580/960] downstream: KVM: arm64: Allow userspace to control
+ ID_AA64PFR1_EL1.NMI
+
+In order for userspace to be able to control the CPU side of
+the NMI distribution (just like we have it on the GIC side),
+allow it to set/clear ID_AA64PFR1_EL1.NMI.
+
+This relies on a per-VM property that defaults to the host
+value.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h |  2 ++
+ arch/arm64/kvm/arm.c              |  3 +++
+ arch/arm64/kvm/sys_regs.c         | 30 +++++++++++++++++++-----------
+ 3 files changed, 24 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 6bd0530260fc..fea1caaf68c9 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -209,6 +209,8 @@ struct kvm_arch {
+ 	/* VTCR_EL2 value for this VM */
+ 	u64    vtcr;
+ 
++	u8 pfr1_nmi;
++
+ 	/* Interrupt controller */
+ 	struct vgic_dist	vgic;
+ 
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 1c1c0c210b21..2c90ee8e2ebd 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -306,6 +306,9 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
+ 	/* The maximum number of VCPUs is limited by the host's GIC model */
+ 	kvm->max_vcpus = kvm_arm_default_max_vcpus();
+ 
++	if (system_uses_nmi())
++		kvm->arch.pfr1_nmi = ID_AA64PFR1_EL1_NMI_IMP;
++
+ 	kvm_arm_init_hypercalls(kvm);
+ 
+ 	bitmap_zero(kvm->arch.vcpu_features, KVM_VCPU_MAX_FEATURES);
+diff --git a/arch/arm64/kvm/sys_regs.c b/arch/arm64/kvm/sys_regs.c
+index c6cd83578dfa..ceb94abbf0fa 100644
+--- a/arch/arm64/kvm/sys_regs.c
++++ b/arch/arm64/kvm/sys_regs.c
+@@ -1351,6 +1351,8 @@ static u64 __kvm_read_sanitised_id_reg(const struct kvm_vcpu *vcpu,
+ 		val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_SME);
+ 		val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_MPAM_frac);
+ 		val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_NMI);
++		val |= FIELD_PREP(ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_NMI),
++				  vcpu->kvm->arch.pfr1_nmi);
+ 		break;
+ 	case SYS_ID_AA64ISAR1_EL1:
+ 		if (!vcpu_has_ptrauth(vcpu))
+@@ -1615,16 +1617,24 @@ static int set_id_aa64pfr0_el1(struct kvm_vcpu *vcpu,
+ }
+ 
+ static int set_id_aa64pfr1_el1(struct kvm_vcpu *vcpu,
+-			       const struct sys_reg_desc *rd, u64 user_val)
++			       const struct sys_reg_desc *rd,
++			       u64 val)
+ {
+-	u64 hw_val = read_sanitised_ftr_reg(SYS_ID_AA64PFR1_EL1);
+-	u64 mpam_mask = ID_AA64PFR1_EL1_MPAM_frac_MASK;
++	u8 nmi;
+ 
+-	/* See set_id_aa64pfr0_el1 for comment about MPAM */
+-	if ((hw_val & mpam_mask) == (user_val & mpam_mask))
+-		user_val &= ~ID_AA64PFR1_EL1_MPAM_frac_MASK;
++	nmi = cpuid_feature_extract_unsigned_field(val, ID_AA64PFR1_EL1_NMI_SHIFT);
++	if (nmi > ID_AA64PFR1_EL1_NMI_IMP || (nmi && !system_uses_nmi()))
++		return -EINVAL;
+ 
+-	return set_id_reg(vcpu, rd, user_val);
++	/* We can only differ with NMI, and anything else is an error */
++	val ^= read_id_reg(vcpu, rd);
++	val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_NMI);
++	if (val)
++		return -EINVAL;
++
++	vcpu->kvm->arch.pfr1_nmi = nmi;
++
++	return 0;
+ }
+ 
+ /*
+@@ -2136,10 +2146,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
+ 	  .set_user = set_id_aa64pfr0_el1,
+ 	  .reset = read_sanitised_id_aa64pfr0_el1,
+ 	  .val = ID_AA64PFR0_EL1_CSV2_MASK | ID_AA64PFR0_EL1_CSV3_MASK, },
+-	{ SYS_DESC(SYS_ID_AA64PFR1_EL1),
+-	  .access = access_id_reg,
+-	  .get_user = get_id_reg,
+-	  .set_user = set_id_aa64pfr1_el1,
++	{ SYS_DESC(SYS_ID_AA64PFR1_EL1), .access = access_id_reg,
++	  .get_user = get_id_reg, .set_user = set_id_aa64pfr1_el1,
+ 	  .reset = kvm_read_sanitised_id_reg, },
+ 	ID_UNALLOCATED(4,2),
+ 	ID_UNALLOCATED(4,3),
+-- 
+2.43.0
+

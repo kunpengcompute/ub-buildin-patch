@@ -1,0 +1,98 @@
+From fd4a1fa28f2d3c727836455778116990868fb37e Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@nvidia.com>
+Date: Thu, 27 Feb 2025 20:26:32 -0400
+Subject: [PATCH 440/960] taint: Add TAINT_FWCTL
+
+commit 8eea4e74475804285507c077bec87d40be87ff06 upstream.
+
+Requesting a fwctl scope of access that includes mutating device debug
+data will cause the kernel to be tainted. Changing the device operation
+through things in the debug scope may cause the device to malfunction in
+undefined ways. This should be reflected in the TAINT flags to help any
+debuggers understand that something has been done.
+
+Link: https://patch.msgid.link/r/4-v5-642aa0c94070+4447f-fwctl_jgg@nvidia.com
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Reviewed-by: Dave Jiang <dave.jiang@intel.com>
+Reviewed-by: Shannon Nelson <shannon.nelson@amd.com>
+Tested-by: Dave Jiang <dave.jiang@intel.com>
+Tested-by: Shannon Nelson <shannon.nelson@amd.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Jiaqi Cheng <chengjiaqi3@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ Documentation/admin-guide/tainted-kernels.rst | 6 ++++++
+ include/linux/panic.h                         | 3 ++-
+ kernel/panic.c                                | 1 +
+ tools/debugging/kernel-chktaint               | 8 ++++++++
+ 4 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/admin-guide/tainted-kernels.rst b/Documentation/admin-guide/tainted-kernels.rst
+index 92a8a07f5c43..6a63aede0d86 100644
+--- a/Documentation/admin-guide/tainted-kernels.rst
++++ b/Documentation/admin-guide/tainted-kernels.rst
+@@ -101,6 +101,7 @@ Bit  Log  Number  Reason that got the kernel tainted
+  16  _/X   65536  auxiliary taint, defined for and used by distros
+  17  _/T  131072  kernel was built with the struct randomization plugin
+  18  _/N  262144  an in-kernel test has been run
++ 19  _/J  524288  userspace used a mutating debug operation in fwctl
+ ===  ===  ======  ========================================================
+ 
+ Note: The character ``_`` is representing a blank in this table to make reading
+@@ -182,3 +183,8 @@ More detailed explanation for tainting
+      produce extremely unusual kernel structure layouts (even performance
+      pathological ones), which is important to know when debugging. Set at
+      build time.
++
++ 19) ``J`` if userpace opened /dev/fwctl/* and performed a FWTCL_RPC_DEBUG_WRITE
++     to use the devices debugging features. Device debugging features could
++     cause the device to malfunction in undefined ways.
++
+diff --git a/include/linux/panic.h b/include/linux/panic.h
+index 6717b15e798c..5dfd5295effd 100644
+--- a/include/linux/panic.h
++++ b/include/linux/panic.h
+@@ -73,7 +73,8 @@ static inline void set_arch_panic_timeout(int timeout, int arch_default_timeout)
+ #define TAINT_AUX			16
+ #define TAINT_RANDSTRUCT		17
+ #define TAINT_TEST			18
+-#define TAINT_FLAGS_COUNT		19
++#define TAINT_FWCTL			19
++#define TAINT_FLAGS_COUNT		20
+ #define TAINT_FLAGS_MAX			((1UL << TAINT_FLAGS_COUNT) - 1)
+ 
+ struct taint_flag {
+diff --git a/kernel/panic.c b/kernel/panic.c
+index d7973e975474..2abebcc65240 100644
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -487,6 +487,7 @@ const struct taint_flag taint_flags[TAINT_FLAGS_COUNT] = {
+ 	[ TAINT_AUX ]			= { 'X', ' ', true },
+ 	[ TAINT_RANDSTRUCT ]		= { 'T', ' ', true },
+ 	[ TAINT_TEST ]			= { 'N', ' ', true },
++	[ TAINT_FWCTL ]			= { 'J', ' ', true },
+ };
+ 
+ /**
+diff --git a/tools/debugging/kernel-chktaint b/tools/debugging/kernel-chktaint
+index 279be06332be..e7da0909d097 100755
+--- a/tools/debugging/kernel-chktaint
++++ b/tools/debugging/kernel-chktaint
+@@ -204,6 +204,14 @@ else
+ 	echo " * an in-kernel test (such as a KUnit test) has been run (#18)"
+ fi
+ 
++T=`expr $T / 2`
++if [ `expr $T % 2` -eq 0 ]; then
++	addout " "
++else
++	addout "J"
++	echo " * fwctl's mutating debug interface was used (#19)"
++fi
++
+ echo "For a more detailed explanation of the various taint flags see"
+ echo " Documentation/admin-guide/tainted-kernels.rst in the Linux kernel sources"
+ echo " or https://kernel.org/doc/html/latest/admin-guide/tainted-kernels.html"
+-- 
+2.43.0
+

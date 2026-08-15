@@ -1,0 +1,158 @@
+From 8e95b344bbb4f698142fe4d5de01eba3c6f8391d Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:17 +0800
+Subject: [PATCH 665/960] downstream: arm_mpam: resctrl: Allow resctrl to
+ allocate monitors
+
+When resctrl wants to read a domain's 'QOS_L3_OCCUP', it needs
+to allocate a monitor on the corresponding resource. Monitors are
+allocated by class instead of component.
+
+Add helpers to do this.
+
+The MBM events depend on having their monitors allocated at init
+time so that they can be left running. The value USE_RMID_IDX
+is out of range for a monitor, and is used to indicate this
+behaviour.
+
+resctrl_arch_mon_ctx_alloc() is implemented to have a no_wait
+version and a waitqueue for callers that sleep. The no_wait
+version will later become an interface for the resctrl_pmu
+to use.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_internal.h |  3 ++
+ drivers/platform/mpam/mpam_resctrl.c  | 72 +++++++++++++++++++++++++++
+ include/linux/arm_mpam.h              |  4 ++
+ 3 files changed, 79 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index fd073f27fe45..fac93795c318 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -17,6 +17,9 @@
+ 
+ DECLARE_STATIC_KEY_FALSE(mpam_enabled);
+ 
++/* Value to indicate the allocated monitor is derived from the RMID index. */
++#define USE_RMID_IDX	(U16_MAX + 1)
++
+ static inline bool mpam_is_enabled(void)
+ {
+ 	return static_branch_likely(&mpam_enabled);
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 1c6b35a81ab5..431ef972a93c 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -22,6 +22,8 @@
+ 
+ u64 mpam_resctrl_default_group;
+ 
++DECLARE_WAIT_QUEUE_HEAD(resctrl_mon_ctx_waiters);
++
+ /*
+  * The classes we've picked to map to resctrl resources.
+  * Class pointer may be NULL.
+@@ -39,6 +41,10 @@ static struct mpam_class *mbm_total_class;
+  */
+ static bool cdp_enabled;
+ 
++/* A dummy mon context to use when the monitors were allocated up front */
++u32 __mon_is_rmid_idx = USE_RMID_IDX;
++void *mon_is_rmid_idx = &__mon_is_rmid_idx;
++
+ bool resctrl_arch_alloc_capable(void)
+ {
+ 	return exposed_alloc_capable;
+@@ -232,6 +238,72 @@ struct rdt_resource *resctrl_arch_get_resource(enum resctrl_res_level l)
+ 	return &mpam_resctrl_exports[l].resctrl_res;
+ }
+ 
++static void *resctrl_arch_mon_ctx_alloc_no_wait(struct rdt_resource *r,
++						int evtid)
++{
++	struct mpam_resctrl_res *res;
++	u32 *ret = kmalloc(sizeof(*ret), GFP_KERNEL);
++
++	if (!ret)
++		return ERR_PTR(-ENOMEM);
++
++	switch (evtid) {
++	case QOS_L3_OCCUP_EVENT_ID:
++		res = container_of(r, struct mpam_resctrl_res, resctrl_res);
++
++		*ret = mpam_alloc_csu_mon(res->class);
++		return ret;
++	case QOS_L3_MBM_LOCAL_EVENT_ID:
++	case QOS_L3_MBM_TOTAL_EVENT_ID:
++		return mon_is_rmid_idx;
++	}
++
++	return ERR_PTR(-EOPNOTSUPP);
++}
++
++void *resctrl_arch_mon_ctx_alloc(struct rdt_resource *r, int evtid)
++{
++	DEFINE_WAIT(wait);
++	void *ret;
++
++	might_sleep();
++
++	do {
++		prepare_to_wait(&resctrl_mon_ctx_waiters, &wait,
++				TASK_INTERRUPTIBLE);
++		ret = resctrl_arch_mon_ctx_alloc_no_wait(r, evtid);
++		if (PTR_ERR(ret) == -ENOSPC)
++			schedule();
++	} while (PTR_ERR(ret) == -ENOSPC && !signal_pending(current));
++	finish_wait(&resctrl_mon_ctx_waiters, &wait);
++
++	return ret;
++}
++
++void resctrl_arch_mon_ctx_free(struct rdt_resource *r, int evtid,
++			       void *arch_mon_ctx)
++{
++	struct mpam_resctrl_res *res;
++	u32 mon = *(u32 *)arch_mon_ctx;
++
++	if (mon == USE_RMID_IDX)
++		return;
++	kfree(arch_mon_ctx);
++	arch_mon_ctx = NULL;
++
++	res = container_of(r, struct mpam_resctrl_res, resctrl_res);
++
++	switch (evtid) {
++	case QOS_L3_OCCUP_EVENT_ID:
++		mpam_free_csu_mon(res->class, mon);
++		wake_up(&resctrl_mon_ctx_waiters);
++		return;
++	case QOS_L3_MBM_TOTAL_EVENT_ID:
++	case QOS_L3_MBM_LOCAL_EVENT_ID:
++		return;
++	}
++}
++
+ static bool cache_has_usable_cpor(struct mpam_class *class)
+ {
+ 	struct mpam_props *cprops = &class->props;
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index 9ed13017bb98..5ee848d86708 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -72,4 +72,8 @@ u32 resctrl_arch_rmid_idx_encode(u32 closid, u32 rmid);
+ void resctrl_arch_rmid_idx_decode(u32 idx, u32 *closid, u32 *rmid);
+ u32 resctrl_arch_system_num_rmid_idx(void);
+ 
++struct rdt_resource;
++void *resctrl_arch_mon_ctx_alloc(struct rdt_resource *r, int evtid);
++void resctrl_arch_mon_ctx_free(struct rdt_resource *r, int evtid, void *ctx);
++
+ #endif /* __LINUX_ARM_MPAM_H */
+-- 
+2.43.0
+

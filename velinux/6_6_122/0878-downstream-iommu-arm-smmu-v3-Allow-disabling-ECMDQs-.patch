@@ -1,0 +1,48 @@
+From 7a64a4d92c7268281c8c4e68e383578b35532005 Mon Sep 17 00:00:00 2001
+From: Zhen Lei <thunder.leizhen@huawei.com>
+Date: Sat, 17 Feb 2024 09:11:49 +0800
+Subject: [PATCH 878/960] downstream: iommu/arm-smmu-v3: Allow disabling ECMDQs
+ at boot time
+
+Add boot option arm_smmu_v3.disable_ecmdq to support disabling ECMDQ
+during startup. For example, add arm_smmu_v3.disable_ecmdq=1 in command
+line to disable ECMDQ and use normal CMDQ.
+
+Signed-off-by: Zhen Lei <thunder.leizhen@huawei.com>
+Signed-off-by: Zhang Zekun <zhangzekun11@huawei.com>
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+Signed-off-by: Zhang Guangzhi <zhangguangzhi3@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index ec65ccfbf27e..1a940d617a8e 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -40,6 +40,12 @@ MODULE_PARM_DESC(disable_msipolling,
+ static struct iommu_ops arm_smmu_ops;
+ static struct iommu_dirty_ops arm_smmu_dirty_ops;
+ 
++#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
++static bool disable_ecmdq;
++module_param(disable_ecmdq, bool, 0444);
++MODULE_PARM_DESC(disable_ecmdq,	"Disable the use of ECMDQs");
++#endif
++
+ #ifdef CONFIG_SMMU_BYPASS_DEV
+ struct smmu_bypass_device {
+ 	unsigned short vendor;
+@@ -5208,7 +5214,7 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
+ 		 smmu->ias, smmu->oas, smmu->features);
+ 
+ #ifdef CONFIG_ARM_SMMU_V3_ECMDQ
+-	if (smmu->features & ARM_SMMU_FEAT_ECMDQ) {
++	if (smmu->features & ARM_SMMU_FEAT_ECMDQ && !disable_ecmdq) {
+ 		int err;
+ 
+ 		err = arm_smmu_ecmdq_probe(smmu);
+-- 
+2.43.0
+

@@ -1,0 +1,32 @@
+From bbe826e00ca7592f939879b3bd775cf0e582235d Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Fri, 8 Aug 2025 11:12:18 +0800
+Subject: [PATCH 758/960] downstream: arm64/mpam: Set 1 as the minimum setting
+ value for CMAX
+
+The MPAM hardware does not allow setting 0 as the cache occupancy limit
+value of CMAX. Otherwise, L3 msc would exhibit undefined behavior.
+
+Fixes: 83c4315c75ba ("arm64/mpam: Add CMAX feature")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index be1286b260c8..a2225c1a11b0 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -945,7 +945,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		if (cache_has_usable_cmax(class))
+ 			r->alloc_capable = true;
+ 
+-		r->membw.min_bw = 0;
++		r->membw.min_bw = 1;
+ 		r->membw.bw_gran = max(100 / (1 << cprops->cmax_wd), 1);
+ 		break;
+ 
+-- 
+2.43.0
+

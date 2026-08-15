@@ -1,0 +1,72 @@
+From c4bed0b44b292e2252f1b871acdd884014b492d6 Mon Sep 17 00:00:00 2001
+From: Nicolin Chen <nicolinc@nvidia.com>
+Date: Sat, 5 Oct 2024 00:09:25 +0000
+Subject: [PATCH 848/960] downstream: iommufd/viommu: Add
+ iommufd_viommu_find_dev helper
+
+This avoids a bigger trouble of exposing struct iommufd_device and struct
+iommufd_vdevice in the public header.
+
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/driver.c | 13 +++++++++++++
+ include/linux/iommufd.h        |  8 ++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/drivers/iommu/iommufd/driver.c b/drivers/iommu/iommufd/driver.c
+index 2bc47d92a0ab..7b67fdf44134 100644
+--- a/drivers/iommu/iommufd/driver.c
++++ b/drivers/iommu/iommufd/driver.c
+@@ -36,5 +36,18 @@ struct iommufd_object *_iommufd_object_alloc(struct iommufd_ctx *ictx,
+ }
+ EXPORT_SYMBOL_NS_GPL(_iommufd_object_alloc, IOMMUFD);
+ 
++/* Caller should xa_lock(&viommu->vdevs) to protect the return value */
++struct device *iommufd_viommu_find_dev(struct iommufd_viommu *viommu,
++				       unsigned long vdev_id)
++{
++	struct iommufd_vdevice *vdev;
++
++	lockdep_assert_held(&viommu->vdevs.xa_lock);
++
++	vdev = xa_load(&viommu->vdevs, vdev_id);
++	return vdev ? vdev->dev : NULL;
++}
++EXPORT_SYMBOL_NS_GPL(iommufd_viommu_find_dev, IOMMUFD);
++
+ MODULE_DESCRIPTION("iommufd code shared with builtin modules");
+ MODULE_LICENSE("GPL");
+diff --git a/include/linux/iommufd.h b/include/linux/iommufd.h
+index 2bc735ff9511..11110c749200 100644
+--- a/include/linux/iommufd.h
++++ b/include/linux/iommufd.h
+@@ -185,6 +185,8 @@ static inline int iommufd_vfio_compat_set_no_iommu(struct iommufd_ctx *ictx)
+ struct iommufd_object *_iommufd_object_alloc(struct iommufd_ctx *ictx,
+ 					     size_t size,
+ 					     enum iommufd_object_type type);
++struct device *iommufd_viommu_find_dev(struct iommufd_viommu *viommu,
++				       unsigned long vdev_id);
+ #else /* !CONFIG_IOMMUFD_DRIVER_CORE */
+ static inline struct iommufd_object *
+ _iommufd_object_alloc(struct iommufd_ctx *ictx, size_t size,
+@@ -192,6 +194,12 @@ _iommufd_object_alloc(struct iommufd_ctx *ictx, size_t size,
+ {
+ 	return ERR_PTR(-EOPNOTSUPP);
+ }
++
++static inline struct device *
++iommufd_viommu_find_dev(struct iommufd_viommu *viommu, unsigned long vdev_id)
++{
++	return NULL;
++}
+ #endif /* CONFIG_IOMMUFD_DRIVER_CORE */
+ 
+ /*
+-- 
+2.43.0
+

@@ -1,0 +1,50 @@
+From 8095bf1a38013938cc1f0643fe5def637f633a0d Mon Sep 17 00:00:00 2001
+From: Joao Martins <joao.m.martins@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:48 +0800
+Subject: [PATCH 792/960] downstream: arm64: define TIF_POLLING_NRFLAG
+
+Commit 842514849a61 ("arm64: Remove TIF_POLLING_NRFLAG") had removed
+TIF_POLLING_NRFLAG because arm64 only supported non-polled idling via
+cpu_do_idle().
+
+To add support for polling via cpuidle-haltpoll, we want to use the
+standard poll_idle() interface, which sets TIF_POLLING_NRFLAG while
+polling.
+
+Reuse the same bit to define TIF_POLLING_NRFLAG.
+
+Signed-off-by: Joao Martins <joao.m.martins@oracle.com>
+Signed-off-by: Mihai Carabas <mihai.carabas@oracle.com>
+Reviewed-by: Christoph Lameter <cl@linux.com>
+Acked-by: Will Deacon <will@kernel.org>
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/thread_info.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm64/include/asm/thread_info.h b/arch/arm64/include/asm/thread_info.h
+index 437313e319db..e0844375686d 100644
+--- a/arch/arm64/include/asm/thread_info.h
++++ b/arch/arm64/include/asm/thread_info.h
+@@ -73,6 +73,7 @@ void arch_setup_new_exec(void);
+ #define TIF_SYSCALL_TRACEPOINT	10	/* syscall tracepoint for ftrace */
+ #define TIF_SECCOMP		11	/* syscall secure computing */
+ #define TIF_SYSCALL_EMU		12	/* syscall emulation active */
++#define TIF_POLLING_NRFLAG	16	/* set while polling in poll_idle() */
+ #define TIF_MEMDIE		18	/* is terminating due to OOM killer */
+ #define TIF_FREEZE		19
+ #define TIF_RESTORE_SIGMASK	20
+@@ -94,6 +95,7 @@ void arch_setup_new_exec(void);
+ #define _TIF_SYSCALL_TRACEPOINT	(1 << TIF_SYSCALL_TRACEPOINT)
+ #define _TIF_SECCOMP		(1 << TIF_SECCOMP)
+ #define _TIF_SYSCALL_EMU	(1 << TIF_SYSCALL_EMU)
++#define _TIF_POLLING_NRFLAG	(1 << TIF_POLLING_NRFLAG)
+ #define _TIF_UPROBE		(1 << TIF_UPROBE)
+ #define _TIF_SINGLESTEP		(1 << TIF_SINGLESTEP)
+ #define _TIF_32BIT		(1 << TIF_32BIT)
+-- 
+2.43.0
+

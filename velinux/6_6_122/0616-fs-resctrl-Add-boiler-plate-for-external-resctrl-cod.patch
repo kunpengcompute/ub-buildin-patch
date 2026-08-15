@@ -1,0 +1,130 @@
+From b35a786c5e92e4c2a0cbfb3ed7449f9cc5b96c90 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Thu, 15 May 2025 16:58:45 +0000
+Subject: [PATCH 616/960] fs/resctrl: Add boiler plate for external resctrl
+ code
+
+commit bff70402d6d67843fe319338e4c56e1cba13fbd8 upstream.
+
+Add Makefile and Kconfig for fs/resctrl. Add ARCH_HAS_CPU_RESCTRL
+for the common parts of the resctrl interface and make X86_CPU_RESCTRL
+depend on this.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/Kconfig             |  8 ++++++++
+ fs/Kconfig               |  1 +
+ fs/Makefile              |  1 +
+ fs/resctrl/Kconfig       | 24 ++++++++++++++++++++++++
+ fs/resctrl/Makefile      |  1 +
+ fs/resctrl/ctrlmondata.c |  0
+ fs/resctrl/internal.h    |  0
+ fs/resctrl/monitor.c     |  0
+ fs/resctrl/psuedo_lock.c |  0
+ fs/resctrl/rdtgroup.c    |  0
+ 10 files changed, 35 insertions(+)
+ create mode 100644 fs/resctrl/Kconfig
+ create mode 100644 fs/resctrl/Makefile
+ create mode 100644 fs/resctrl/ctrlmondata.c
+ create mode 100644 fs/resctrl/internal.h
+ create mode 100644 fs/resctrl/monitor.c
+ create mode 100644 fs/resctrl/psuedo_lock.c
+ create mode 100644 fs/resctrl/rdtgroup.c
+
+diff --git a/arch/Kconfig b/arch/Kconfig
+index da16dd35fd1a..6943a9321e34 100644
+--- a/arch/Kconfig
++++ b/arch/Kconfig
+@@ -1338,6 +1338,14 @@ config STRICT_MODULE_RWX
+ config ARCH_HAS_PHYS_TO_DMA
+ 	bool
+ 
++config ARCH_HAS_CPU_RESCTRL
++	bool
++	help
++	  The 'resctrl' filesystem allows cpu controls of shared resources
++	  such as caches and memory bandwidth to be configured. An architecture
++	  selects this if it provides the arch-specific hooks for the filesystem
++	  and needs the per-task closid/rmid properties.
++
+ config HAVE_ARCH_COMPILER_H
+ 	bool
+ 	help
+diff --git a/fs/Kconfig b/fs/Kconfig
+index 30328bb66a57..34e10a338154 100644
+--- a/fs/Kconfig
++++ b/fs/Kconfig
+@@ -333,6 +333,7 @@ source "fs/omfs/Kconfig"
+ source "fs/hpfs/Kconfig"
+ source "fs/qnx4/Kconfig"
+ source "fs/qnx6/Kconfig"
++source "fs/resctrl/Kconfig"
+ source "fs/romfs/Kconfig"
+ source "fs/pstore/Kconfig"
+ source "fs/sysv/Kconfig"
+diff --git a/fs/Makefile b/fs/Makefile
+index f9541f40be4e..b62375770dee 100644
+--- a/fs/Makefile
++++ b/fs/Makefile
+@@ -129,3 +129,4 @@ obj-$(CONFIG_EFIVAR_FS)		+= efivarfs/
+ obj-$(CONFIG_EROFS_FS)		+= erofs/
+ obj-$(CONFIG_VBOXSF_FS)		+= vboxsf/
+ obj-$(CONFIG_ZONEFS_FS)		+= zonefs/
++obj-$(CONFIG_RESCTRL_FS)	+= resctrl/
+diff --git a/fs/resctrl/Kconfig b/fs/resctrl/Kconfig
+new file mode 100644
+index 000000000000..540da76e1189
+--- /dev/null
++++ b/fs/resctrl/Kconfig
+@@ -0,0 +1,24 @@
++config RESCTRL_FS
++	bool "CPU Resource Control Filesystem (resctrl)"
++	depends on ARCH_HAS_CPU_RESCTRL
++	depends on ARM_CPU_RESCTRL
++	select KERNFS
++	select PROC_CPU_RESCTRL               if PROC_FS
++	help
++	  Resctrl is a filesystem interface
++	  to control allocation and
++	  monitoring of system resources
++	  used by the CPUs.
++
++config RESCTRL_FS_PSEUDO_LOCK
++	bool
++	help
++	  Software mechanism to try and pin data in a cache portion using
++	  micro-architecture tricks.
++
++config RESCTRL_RMID_DEPENDS_ON_CLOSID
++	bool
++	help
++	  Enable by the architecture when the RMID values depend on the CLOSID.
++	  This causes the closid allocator to search for CLOSID with clean
++	  RMID.
+diff --git a/fs/resctrl/Makefile b/fs/resctrl/Makefile
+new file mode 100644
+index 000000000000..4c32e5e914b6
+--- /dev/null
++++ b/fs/resctrl/Makefile
+@@ -0,0 +1 @@
++obj-$(CONFIG_RESCTRL_FS) += rdtgroup.o ctrlmondata.o monitor.o psuedo_lock.o
+diff --git a/fs/resctrl/ctrlmondata.c b/fs/resctrl/ctrlmondata.c
+new file mode 100644
+index 000000000000..e69de29bb2d1
+diff --git a/fs/resctrl/internal.h b/fs/resctrl/internal.h
+new file mode 100644
+index 000000000000..e69de29bb2d1
+diff --git a/fs/resctrl/monitor.c b/fs/resctrl/monitor.c
+new file mode 100644
+index 000000000000..e69de29bb2d1
+diff --git a/fs/resctrl/psuedo_lock.c b/fs/resctrl/psuedo_lock.c
+new file mode 100644
+index 000000000000..e69de29bb2d1
+diff --git a/fs/resctrl/rdtgroup.c b/fs/resctrl/rdtgroup.c
+new file mode 100644
+index 000000000000..e69de29bb2d1
+-- 
+2.43.0
+

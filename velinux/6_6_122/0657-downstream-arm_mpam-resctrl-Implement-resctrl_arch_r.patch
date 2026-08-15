@@ -1,0 +1,98 @@
+From e16a34f9173ad4135ed7da8be667556bbcb33de3 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:09 +0800
+Subject: [PATCH 657/960] downstream: arm_mpam: resctrl: Implement
+ resctrl_arch_reset_resources()
+
+We already have a helper for resetting an mpam class. Hook it up to
+resctrl_arch_reset_resources().
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  |  2 +-
+ drivers/platform/mpam/mpam_internal.h |  2 ++
+ drivers/platform/mpam/mpam_resctrl.c  | 27 +++++++++++++++++++++++++++
+ include/linux/arm_mpam.h              |  3 +++
+ 4 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index cddec7ec228e..7eb6c3a57aad 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -2177,7 +2177,7 @@ static void mpam_enable_once(void)
+ 		READ_ONCE(mpam_partid_max) + 1, mpam_pmg_max + 1);
+ }
+ 
+-static void mpam_reset_class(struct mpam_class *class)
++void mpam_reset_class(struct mpam_class *class)
+ {
+ 	int idx;
+ 	struct mpam_msc_ris *ris;
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index f82fc2d1fc0e..6cd7ad9c360b 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -289,6 +289,8 @@ extern u8 mpam_pmg_max;
+ void mpam_enable(struct work_struct *work);
+ void mpam_disable(struct work_struct *work);
+ 
++void mpam_reset_class(struct mpam_class *class);
++
+ int mpam_apply_config(struct mpam_component *comp, u16 partid,
+ 		      struct mpam_config *cfg);
+ 
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index f71f8c466817..82325956a938 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -247,6 +247,33 @@ int mpam_resctrl_setup(void)
+ 	return err;
+ }
+ 
++void resctrl_arch_reset_resources(void)
++{
++	int i, idx;
++	struct mpam_class *class;
++	struct mpam_resctrl_res *res;
++
++	lockdep_assert_cpus_held();
++
++	if (!mpam_is_enabled())
++		return;
++
++	for (i = 0; i < RDT_NUM_RESOURCES; i++) {
++		res = &mpam_resctrl_exports[i];
++
++		if (!res->class)
++			continue;	// dummy resource
++
++		if (!res->resctrl_res.alloc_capable)
++			continue;
++
++		idx = srcu_read_lock(&mpam_srcu);
++		list_for_each_entry_rcu(class, &mpam_classes, classes_list)
++			mpam_reset_class(class);
++		srcu_read_unlock(&mpam_srcu, idx);
++	}
++}
++
+ static struct mpam_resctrl_dom *
+ mpam_resctrl_alloc_domain(unsigned int cpu, struct mpam_resctrl_res *res)
+ {
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index c65a76f28168..0e4f94562ce6 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -50,4 +50,7 @@ static inline bool resctrl_arch_is_mbm_total_enabled(void)
+ 	return false;
+ }
+ 
++/* reset cached configurations, then all devices */
++void resctrl_arch_reset_resources(void);
++
+ #endif /* __LINUX_ARM_MPAM_H */
+-- 
+2.43.0
+

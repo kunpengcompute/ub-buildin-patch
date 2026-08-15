@@ -1,0 +1,84 @@
+From 8aff7536e1317d0b3617dceae25ed8631be074d6 Mon Sep 17 00:00:00 2001
+From: Rohit Mathew <rohit.mathew@arm.com>
+Date: Mon, 22 Jan 2024 14:58:03 +0800
+Subject: [PATCH 651/960] downstream: arm_mpam: Probe for long/lwd mbwu
+ counters
+
+mpam v0.1 and versions above v1.0 support optional long counter for
+memory bandwidth monitoring. The MPAMF_MBWUMON_IDR register have fields
+indicating support for long counters. As of now, a 44 bit counter
+represented by HAS_LONG field (bit 30) and a 63 bit counter represented
+by LWD (bit 29) can be optionally integrated. Probe for these counters
+and set corresponding feature bits if any of these counters are present.
+
+Signed-off-by: Rohit Mathew <rohit.mathew@arm.com>
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  | 22 ++++++++++++++++++++++
+ drivers/platform/mpam/mpam_internal.h |  7 +++++++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index d0deefbd3a15..b6d79c4341bc 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -653,6 +653,7 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
+ 				pr_err_once("Counters are not usable because not-ready timeout was not provided by firmware.");
+ 		}
+ 		if (FIELD_GET(MPAMF_MSMON_IDR_MSMON_MBWU, msmon_features)) {
++			bool has_long;
+ 			u32 mbwumonidr = mpam_read_partsel_reg(msc, MBWUMON_IDR);
+ 
+ 			props->num_mbwu_mon = FIELD_GET(MPAMF_MBWUMON_IDR_NUM_MON, mbwumonidr);
+@@ -661,6 +662,27 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
+ 
+ 			if (FIELD_GET(MPAMF_MBWUMON_IDR_HAS_RWBW, mbwumonidr))
+ 				mpam_set_feature(mpam_feat_msmon_mbwu_rwbw, props);
++
++			/*
++			 * Treat long counter and its extension, lwd as mutually
++			 * exclusive feature bits. Though these are dependent
++			 * fields at the implementation level, there would never
++			 * be a need for mpam_feat_msmon_mbwu_44counter (long
++			 * counter) and mpam_feat_msmon_mbwu_63counter (lwd)
++			 * bits to be set together.
++			 *
++			 * mpam_feat_msmon_mbwu isn't treated as an exclusive
++			 * bit as this feature bit would be used as the "front
++			 * facing feature bit" for any checks related to mbwu
++			 * monitors.
++			 */
++			has_long = FIELD_GET(MPAMF_MBWUMON_IDR_HAS_LONG, mbwumonidr);
++			if (props->num_mbwu_mon && has_long) {
++				if (FIELD_GET(MPAMF_MBWUMON_IDR_LWD, mbwumonidr))
++					mpam_set_feature(mpam_feat_msmon_mbwu_63counter, props);
++				else
++					mpam_set_feature(mpam_feat_msmon_mbwu_44counter, props);
++			}
+ 		}
+ 	}
+ 
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index 401641ea7fae..03745af98f9b 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -87,7 +87,14 @@ enum mpam_device_features {
+ 	mpam_feat_msmon,
+ 	mpam_feat_msmon_csu,
+ 	mpam_feat_msmon_csu_capture,
++	/*
++	 * Having mpam_feat_msmon_mbwu set doesn't mean the regular 31 bit MBWU
++	 * counter would be used. The exact counter used is decided based on the
++	 * status of mpam_feat_msmon_mbwu_l/mpam_feat_msmon_mbwu_lwd as well.
++	 */
+ 	mpam_feat_msmon_mbwu,
++	mpam_feat_msmon_mbwu_44counter,
++	mpam_feat_msmon_mbwu_63counter,
+ 	mpam_feat_msmon_mbwu_capture,
+ 	mpam_feat_msmon_mbwu_rwbw,
+ 	mpam_feat_msmon_capt,
+-- 
+2.43.0
+

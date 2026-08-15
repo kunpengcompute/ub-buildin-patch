@@ -1,0 +1,67 @@
+From e3dbf95b089908dcde240fdd643c9c4f222a8dbd Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Tue, 11 Mar 2025 18:36:52 +0000
+Subject: [PATCH 736/960] x86/resctrl: Add max_bw to struct resctrl_membw
+
+commit 634ebb98b929443ea1a5502c93f26d01aedbd5c8 upstream.
+
+__rdt_get_mem_config_amd() and __get_mem_config_intel() both use the
+default_ctrl property as a maximum value. This is because the MBA schema works
+differently between these platforms. Doing this complicates determining
+whether the default_ctrl property belongs to the arch code, or can be derived
+from the schema format.
+
+Deriving the maximum or default value from the schema format would avoid the
+architecture code having to tell resctrl such obvious things as the maximum
+percentage is 100, and the maximum bitmap is all ones.
+
+Maximum bandwidth is always going to vary per platform. Add max_bw as
+a special case. This is currently used for the maximum MBA percentage on Intel
+platforms, but can be removed from the architecture code if 'percentage'
+becomes a schema format resctrl supports directly.
+
+This value isn't needed for other schema formats.
+
+This will allow the default_ctrl to be generated from the schema properties
+when it is needed.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Borislav Petkov (AMD) <bp@alien8.de>
+Reviewed-by: Shaopeng Tan <tan.shaopeng@jp.fujitsu.com>
+Reviewed-by: Tony Luck <tony.luck@intel.com>
+Reviewed-by: Reinette Chatre <reinette.chatre@intel.com>
+Reviewed-by: Fenghua Yu <fenghuay@nvidia.com>
+Reviewed-by: Babu Moger <babu.moger@amd.com>
+Tested-by: Carl Worth <carl@os.amperecomputing.com> # arm64
+Tested-by: Shaopeng Tan <tan.shaopeng@jp.fujitsu.com>
+Tested-by: Peter Newman <peternewman@google.com>
+Tested-by: Amit Singh Tomar <amitsinght@marvell.com> # arm64
+Tested-by: Shanker Donthineni <sdonthineni@nvidia.com> # arm64
+Tested-by: Babu Moger <babu.moger@amd.com>
+Link: https://lore.kernel.org/r/20250311183715.16445-8-james.morse@arm.com
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/ctrlmondata.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/fs/resctrl/ctrlmondata.c b/fs/resctrl/ctrlmondata.c
+index 35aeff5e04fc..061d2e42f821 100644
+--- a/fs/resctrl/ctrlmondata.c
++++ b/fs/resctrl/ctrlmondata.c
+@@ -62,10 +62,10 @@ static bool bw_validate(char *buf, u32 *data, struct rdt_resource *r)
+ 		return true;
+ 	}
+ 
+-	if (bw < r->membw.min_bw || bw > r->default_ctrl) {
++	if (bw < r->membw.min_bw || bw > r->membw.max_bw) {
+ 		rdt_last_cmd_printf("%s value %d out of range [%d,%d]\n",
+ 				    r->name, bw, r->membw.min_bw,
+-				    r->default_ctrl);
++				    r->membw.max_bw);
+ 		return false;
+ 	}
+ 
+-- 
+2.43.0
+

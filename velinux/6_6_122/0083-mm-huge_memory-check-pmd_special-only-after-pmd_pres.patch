@@ -1,0 +1,45 @@
+From 7e0de9dd0138c892a9f6155552cccd9543e88ba1 Mon Sep 17 00:00:00 2001
+From: David Hildenbrand <david@redhat.com>
+Date: Thu, 26 Sep 2024 17:42:34 +0200
+Subject: [PATCH 083/960] mm/huge_memory: check pmd_special() only after
+ pmd_present()
+
+commit 47fa30118f02dc50e1c57242c6b72542c871b178 upstream.
+
+We should only check for pmd_special() after we made sure that we have a
+present PMD.  For example, if we have a migration PMD, pmd_special() might
+indicate that we have a special PMD although we really don't.
+
+This fixes confusing migration entries as PFN mappings, and not doing what
+we are supposed to do in the "is_swap_pmd()" case further down in the
+function -- including messing up COW, page table handling and accounting.
+
+Link: https://lkml.kernel.org/r/20240926154234.2247217-1-david@redhat.com
+Fixes: bc02afbd4d73 ("mm/fork: accept huge pfnmap entries")
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Reported-by: syzbot+bf2c35fa302ebe3c7471@syzkaller.appspotmail.com
+Closes: https://lore.kernel.org/lkml/66f15c8d.050a0220.c23dd.000f.GAE@google.com/
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Fanhua Li <lifanhua5@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/huge_memory.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/mm/huge_memory.c b/mm/huge_memory.c
+index 18212a09875c..690fd375e8a6 100644
+--- a/mm/huge_memory.c
++++ b/mm/huge_memory.c
+@@ -1065,7 +1065,7 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
+ 	int ret = -ENOMEM;
+ 
+ 	pmd = pmdp_get_lockless(src_pmd);
+-	if (unlikely(pmd_special(pmd))) {
++	if (unlikely(pmd_present(pmd) && pmd_special(pmd))) {
+ 		dst_ptl = pmd_lock(dst_mm, dst_pmd);
+ 		src_ptl = pmd_lockptr(src_mm, src_pmd);
+ 		spin_lock_nested(src_ptl, SINGLE_DEPTH_NESTING);
+-- 
+2.43.0
+

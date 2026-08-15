@@ -1,0 +1,319 @@
+From 033d76eb9847179ba5a23f44619e32c0a26e62b1 Mon Sep 17 00:00:00 2001
+From: Zheng Chuan <zhengchuan@huawei.com>
+Date: Wed, 13 May 2026 16:11:27 +0800
+Subject: [PATCH 926/960] downstream: arm64: Add runtime switch to control ESB
+ for SEI synchronization
+
+Background:
+ESB (Error Synchronization Barrier) is used to synchronize SEI (SError
+Interrupt) at exception boundaries in firmware-first RAS model. However,
+ESB has performance impact and may not be needed on all platforms.
+
+Design:
+Add runtime sysctl (/proc/sys/kernel/arm64_sync_sei) that allows dynamic
+toggling of ESB (Error Synchronization Barrier) instruction patching at
+exception entry boundaries without rebooting.
+insertion:
+- Default is disabled (arm64_sync_sei = false) to minimize impact
+- When enabled via 'arm64_sync_sei', ESB is inserted at:
+  - Exception entry from EL0
+  - Exception return to EL0 (before ERET)
+- Use linker section (.esb_patch_table) to collect ESB patch point
+  addresses at link time, then aarch64_insn_patch_text() to atomically
+  swap ESB/NOP instructions across all CPUs at runtime.
+- Simplify arm64_sync_sei_cb() (alternative_cb for sei_restore_sp_el0)
+  to depend solely on ARM64_HAS_RAS_EXTN capability rather than the
+  dynamic toggle, since SP_EL0 restoration in the el1h_64_error handler
+  is a firmware-first correctness requirement independent of whether ESB
+  is active at exception entry.
+
+Signed-off-by: Zheng Chuan <zhengchuan@huawei.com>
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+Conflicts:
+	arch/arm64/kernel/Makefile
+[ Context conflict. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ Documentation/admin-guide/sysctl/kernel.rst |  27 +++++
+ arch/arm64/include/asm/setup.h              |  11 ++
+ arch/arm64/kernel/Makefile                  |   1 +
+ arch/arm64/kernel/arm64_sync_sei.c          | 124 ++++++++++++++++++++
+ arch/arm64/kernel/entry.S                   |  18 ++-
+ arch/arm64/kernel/vmlinux.lds.S             |   9 ++
+ 6 files changed, 187 insertions(+), 3 deletions(-)
+ create mode 100644 arch/arm64/kernel/arm64_sync_sei.c
+
+diff --git a/Documentation/admin-guide/sysctl/kernel.rst b/Documentation/admin-guide/sysctl/kernel.rst
+index ddd649f02151..b5ab5d0d6df7 100644
+--- a/Documentation/admin-guide/sysctl/kernel.rst
++++ b/Documentation/admin-guide/sysctl/kernel.rst
+@@ -238,6 +238,33 @@ Note:
+   to decide what to do with it.
+ 
+ 
++arm64_sync_sei (ARM64 only)
++===========================
++
++Enable or disable ESB (Error Synchronization Barrier) instruction at
++exception entry from EL0 and exception return to EL0 (before ERET), as
++well as the vendor-specific SEI handler (apei_claim_sei) for
++Uncorrected Recoverable (UER) errors.
++
++When enabled:
++
++- ESB synchronizes SEI (SError Interrupt) at exception boundaries in the
++  firmware-first RAS model, ensuring that any pending SError is handled
++  at a known point.
++- The vendor SEI handler is invoked for UER-type SError, allowing
++  platform-specific error recovery instead of panicking.
++
++This has a performance impact on system call throughput and is disabled
++by default.
++
++Requires the CPU to support the RAS extension (ARM64_HAS_RAS_EXTN).
++Writing 1 on a CPU without RAS extension has no effect.
++
++This sysctl does not affect the SP_EL0 restoration in the SError
++handler (``sei_restore_sp_el0``), which is always active on RAS-capable
++platforms for firmware-first correctness.
++
++
+ dmesg_restrict
+ ==============
+ 
+diff --git a/arch/arm64/include/asm/setup.h b/arch/arm64/include/asm/setup.h
+index 2e4d7da74fb8..ac3bd8fc6b3e 100644
+--- a/arch/arm64/include/asm/setup.h
++++ b/arch/arm64/include/asm/setup.h
+@@ -44,4 +44,15 @@ static inline bool arch_parse_debug_rodata(char *arg)
+ }
+ #define arch_parse_debug_rodata arch_parse_debug_rodata
+ 
++#ifdef CONFIG_ARM64_SYNC_SEI
++bool arm64_sync_sei_enabled(void);
++extern unsigned long __start_esb_patch_table[];
++extern unsigned long __stop_esb_patch_table[];
++#else
++static inline bool arm64_sync_sei_enabled(void)
++{
++	return false;
++}
++#endif
++
+ #endif
+diff --git a/arch/arm64/kernel/Makefile b/arch/arm64/kernel/Makefile
+index 685e0a58a4c6..ab2f60f3c879 100644
+--- a/arch/arm64/kernel/Makefile
++++ b/arch/arm64/kernel/Makefile
+@@ -74,6 +74,7 @@ obj-$(CONFIG_ARM64_MTE)			+= mte.o
+ obj-y					+= vdso-wrap.o
+ obj-$(CONFIG_COMPAT_VDSO)		+= vdso32-wrap.o
+ obj-$(CONFIG_UNWIND_PATCH_PAC_INTO_SCS)	+= patch-scs.o
++obj-$(CONFIG_ARM64_SYNC_SEI)		+= arm64_sync_sei.o
+ CFLAGS_patch-scs.o			+= -mbranch-protection=none
+ 
+ # Force dependency (vdso*-wrap.S includes vdso.so through incbin)
+diff --git a/arch/arm64/kernel/arm64_sync_sei.c b/arch/arm64/kernel/arm64_sync_sei.c
+new file mode 100644
+index 000000000000..fc556768a26f
+--- /dev/null
++++ b/arch/arm64/kernel/arm64_sync_sei.c
+@@ -0,0 +1,124 @@
++// SPDX-License-Identifier: GPL-2.0-only
++
++#include <linux/cpu.h>
++#include <linux/init.h>
++#include <linux/kernel.h>
++#include <linux/slab.h>
++#include <linux/sysctl.h>
++#include <asm/alternative.h>
++#include <asm/cpufeature.h>
++#include <asm/insn.h>
++#include <asm/patching.h>
++#include <asm/setup.h>
++
++static bool arm64_sync_sei __read_mostly;
++
++/*
++ * alternative_cb callback for sei_restore_sp_el0 in entry.S.
++ *
++ * The SP_EL0 restoration is needed on firmware-first RAS platforms where
++ * the trusted firmware clobbers SP_EL0 before delegating SEI back to the
++ * kernel. This is a correctness requirement in the el1h_64_error handler
++ * path, not a performance decision, so it depends solely on the CPU having
++ * the RAS extension (ARM64_HAS_RAS_EXTN). It is independent of the
++ * dynamic arm64_sync_sei sysctl which only controls ESB at exception
++ * boundaries for performance reasons.
++ */
++void noinstr arm64_sync_sei_cb(struct alt_instr *alt, __le32 *origptr,
++			__le32 *updptr, int nr_inst)
++{
++	int i;
++
++	if (cpus_have_cap(ARM64_HAS_RAS_EXTN))
++		return;
++
++	/* Keep as NOP */
++	for (i = 0; i < nr_inst; i++)
++		updptr[i] = cpu_to_le32(aarch64_insn_gen_nop());
++}
++
++bool arm64_sync_sei_enabled(void)
++{
++	return arm64_sync_sei;
++}
++
++static int arm64_sync_sei_toggle(bool enable)
++{
++	unsigned long *table = __start_esb_patch_table;
++	int count = __stop_esb_patch_table - __start_esb_patch_table;
++	void **addrs;
++	u32 *insns;
++	u32 target_insn;
++	int i, ret;
++
++	if (!count)
++		return -ENODEV;
++
++	if (!cpus_have_cap(ARM64_HAS_RAS_EXTN))
++		return -ENODEV;
++
++	target_insn = enable
++		? aarch64_insn_gen_hint(AARCH64_INSN_HINT_ESB)
++		: aarch64_insn_gen_nop();
++
++	addrs = kmalloc_array(count, sizeof(void *), GFP_KERNEL);
++	insns = kmalloc_array(count, sizeof(u32), GFP_KERNEL);
++	if (!addrs || !insns) {
++		kfree(addrs);
++		kfree(insns);
++		return -ENOMEM;
++	}
++
++	for (i = 0; i < count; i++) {
++		addrs[i] = (void *)table[i];
++		insns[i] = target_insn;
++	}
++
++	cpus_read_lock();
++	ret = aarch64_insn_patch_text(addrs, insns, count);
++	cpus_read_unlock();
++
++	kfree(addrs);
++	kfree(insns);
++
++	return ret;
++}
++
++static int arm64_sync_sei_sysctl(struct ctl_table *table, int write,
++			       void *buffer, size_t *lenp, loff_t *ppos)
++{
++	int ret;
++	bool old_val = arm64_sync_sei;
++
++	ret = proc_dobool(table, write, buffer, lenp, ppos);
++	if (ret)
++		return ret;
++
++	if (write && arm64_sync_sei != old_val) {
++		ret = arm64_sync_sei_toggle(arm64_sync_sei);
++		if (ret)
++			arm64_sync_sei = old_val;
++	}
++
++	return ret;
++}
++
++static struct ctl_table arm64_sync_sei_sysctl_table[] = {
++	{
++		.procname	= "arm64_sync_sei",
++		.data		= &arm64_sync_sei,
++		.maxlen		= sizeof(bool),
++		.mode		= 0644,
++		.proc_handler	= arm64_sync_sei_sysctl,
++	},
++};
++
++static int __init arm64_sync_sei_late_init(void)
++{
++	if (read_cpuid_id() != MIDR_HISI_HIP12)
++		return 0;
++
++	register_sysctl("kernel", arm64_sync_sei_sysctl_table);
++	return 0;
++}
++late_initcall(arm64_sync_sei_late_init);
+diff --git a/arch/arm64/kernel/entry.S b/arch/arm64/kernel/entry.S
+index 00f6fe52400f..60529a27c33a 100644
+--- a/arch/arm64/kernel/entry.S
++++ b/arch/arm64/kernel/entry.S
+@@ -29,15 +29,26 @@
+ #include <asm/asm-uaccess.h>
+ #include <asm/unistd.h>
+ 
++#ifdef CONFIG_ARM64_SYNC_SEI
++/* External symbols from arm64_sync_sei.c */
++ .extern arm64_sync_sei_cb
++#endif
++
+ 	.macro sync_sei, label = esb
+ #ifdef CONFIG_ARM64_SYNC_SEI
+ 	.if     \label != xcall
+-	/* Use ESB to synchronize SEI at the entry and exit of exception */
+-	esb
++	.pushsection    ".esb_patch_table", "a"
++	.quad           .Lesb_insn\@
++	.popsection
++.Lesb_insn\@:
++	nop
+ 	.endif
++#endif
+ 	.endm
+ 
+ 	.macro sei_restore_sp_el0, tmp1:req, tmp2:req
++#ifdef CONFIG_ARM64_SYNC_SEI
++alternative_cb	ARM64_ALWAYS_SYSTEM, arm64_sync_sei_cb
+ 	/*
+ 	 * It must restore SP_EL0 from per-cpu variable __entry_task, since TF
+ 	 * firmware clobbers the SP_EL0 before SEI is delegated back.
+@@ -49,6 +60,7 @@
+ 	ldr_this_cpu  \tmp2, __entry_task, \tmp1
+ 	msr	sp_el0, \tmp2
+ .Lskip_sp_el0_restore:
++alternative_cb_end
+ #endif /* CONFIG_ARM64_SYNC_SEI */
+ 	.endm
+ 
+@@ -786,7 +798,7 @@ alternative_else_nop_endif
+ 
+ 	add	x30, x30, #(1b - \vector_start + 4)
+ #ifdef CONFIG_ARM64_SYNC_SEI
+-	/* Skip the 'ESB' and 'B' at default vector entry */
++	/* Skip the sync_sei NOP/ESB and the 'B' at default vector entry */
+ 	add	x30, x30, #4
+ #endif
+ 	ret
+diff --git a/arch/arm64/kernel/vmlinux.lds.S b/arch/arm64/kernel/vmlinux.lds.S
+index 816f234f741d..747e622f70ce 100644
+--- a/arch/arm64/kernel/vmlinux.lds.S
++++ b/arch/arm64/kernel/vmlinux.lds.S
+@@ -206,6 +206,15 @@ SECTIONS
+ 	/* everything from this point to __init_begin will be marked RO NX */
+ 	RO_DATA(PAGE_SIZE)
+ 
++#ifdef CONFIG_ARM64_SYNC_SEI
++	. = ALIGN(8);
++	.esb_patch_table : {
++		PROVIDE(__start_esb_patch_table = .);
++		*(.esb_patch_table)
++		PROVIDE(__stop_esb_patch_table = .);
++	}
++#endif
++
+ 	HYPERVISOR_DATA_SECTIONS
+ 
+ 	.got : { *(.got) }
+-- 
+2.43.0
+

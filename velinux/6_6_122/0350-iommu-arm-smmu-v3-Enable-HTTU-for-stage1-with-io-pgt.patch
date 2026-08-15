@@ -1,0 +1,78 @@
+From 8d9f5442d171ad60406d8df4d714be3eccff6612 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Wed, 3 Jul 2024 11:16:04 +0100
+Subject: [PATCH 350/960] iommu/arm-smmu-v3: Enable HTTU for stage1 with
+ io-pgtable mapping
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit 25c776dd03b3e3ee16ad3402feabe20d811c7cb2 upstream.
+
+If io-pgtable quirk flag indicates support for hardware update of
+dirty state, enable HA/HD bits in the SMMU CD and also set the DBM
+bit in the page descriptor.
+
+Now report the dirty page tracking capability of SMMUv3 and
+select IOMMUFD_DRIVER for ARM_SMMU_V3 if IOMMUFD is enabled.
+
+Co-developed-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Joao Martins <joao.m.martins@oracle.com>
+Reviewed-by: Ryan Roberts <ryan.roberts@arm.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Reviewed-by: Nicolin Chen <nicolinc@nvidia.com>
+Signed-off-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Link: https://lore.kernel.org/r/20240703101604.2576-6-shameerali.kolothum.thodi@huawei.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/Kconfig                       | 1 +
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 9 +++++++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/drivers/iommu/Kconfig b/drivers/iommu/Kconfig
+index 6fd7b5470dda..bd42db0e3caf 100644
+--- a/drivers/iommu/Kconfig
++++ b/drivers/iommu/Kconfig
+@@ -389,6 +389,7 @@ config ARM_SMMU_V3
+ 	select IOMMU_API
+ 	select IOMMU_IO_PGTABLE_LPAE
+ 	select GENERIC_MSI_IRQ
++	select IOMMUFD_DRIVER if IOMMUFD
+ 	help
+ 	  Support for implementations of the ARM System MMU architecture
+ 	  version 3 providing translation support to a PCIe root complex.
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 5fa9ed6e1cd8..e65128c18d52 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -2240,6 +2240,13 @@ static const struct iommu_flush_ops arm_smmu_flush_ops = {
+ 	.tlb_add_page	= arm_smmu_tlb_inv_page_nosync,
+ };
+ 
++static bool arm_smmu_dbm_capable(struct arm_smmu_device *smmu)
++{
++	u32 features = (ARM_SMMU_FEAT_HD | ARM_SMMU_FEAT_COHERENCY);
++
++	return (smmu->features & features) == features;
++}
++
+ /* IOMMU API */
+ static bool arm_smmu_capable(struct device *dev, enum iommu_cap cap)
+ {
+@@ -2252,6 +2259,8 @@ static bool arm_smmu_capable(struct device *dev, enum iommu_cap cap)
+ 	case IOMMU_CAP_NOEXEC:
+ 	case IOMMU_CAP_DEFERRED_FLUSH:
+ 		return true;
++	case IOMMU_CAP_DIRTY_TRACKING:
++		return arm_smmu_dbm_capable(master->smmu);
+ 	default:
+ 		return false;
+ 	}
+-- 
+2.43.0
+

@@ -1,0 +1,43 @@
+From d0b6fe2275a8c802da68ef767378f3cc79ca0e6e Mon Sep 17 00:00:00 2001
+From: Sidhartha Kumar <sidhartha.kumar@oracle.com>
+Date: Mon, 4 Dec 2023 10:32:34 -0800
+Subject: [PATCH 091/960] mm/hugetlb: have CONFIG_HUGETLB_PAGE select
+ CONFIG_XARRAY_MULTI
+
+commit 4a3ef6be03e6700037fc20e63aa5ffd972e435ca upstream.
+
+After commit a08c7193e4f1 "mm/filemap: remove hugetlb special casing in
+filemap.c", hugetlb pages are stored in the page cache in base page sized
+indexes.  This leads to multi index stores in the xarray which is only
+supporting through CONFIG_XARRAY_MULTI.  The other page cache user of
+multi index stores ,THP, selects XARRAY_MULTI.  Have CONFIG_HUGETLB_PAGE
+follow this behavior as well to avoid the BUG() with a CONFIG_HUGETLB_PAGE
+&& !CONFIG_XARRAY_MULTI config.
+
+Link: https://lkml.kernel.org/r/20231204183234.348697-1-sidhartha.kumar@oracle.com
+Fixes: a08c7193e4f1 ("mm/filemap: remove hugetlb special casing in filemap.c")
+Signed-off-by: Sidhartha Kumar <sidhartha.kumar@oracle.com>
+Reported-by: Al Viro <viro@zeniv.linux.org.uk>
+Cc: Mike Kravetz <mike.kravetz@oracle.com>
+Cc: Muchun Song <muchun.song@linux.dev>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/Kconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/Kconfig b/fs/Kconfig
+index 4bb2b0c3d63a..30328bb66a57 100644
+--- a/fs/Kconfig
++++ b/fs/Kconfig
+@@ -278,6 +278,7 @@ endif # HUGETLBFS
+ 
+ config HUGETLB_PAGE
+ 	def_bool HUGETLBFS
++	select XARRAY_MULTI
+ 
+ config HUGETLB_PAGE_OPTIMIZE_VMEMMAP
+ 	def_bool HUGETLB_PAGE
+-- 
+2.43.0
+

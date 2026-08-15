@@ -1,0 +1,274 @@
+From e88d84dc5fadb58f38d2cd67272773b86fe10a60 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 28 Apr 2025 19:56:58 +0800
+Subject: [PATCH 709/960] downstream: arm64/mpam: Add PRIO feature
+
+The Priority Partition feature controls the priority of requests attributed
+to the target PARTID.
+
+In addition to the MATA msc implementing priority features, the L3
+controller can also have the same features. Here the *MBPRI* and *L3PRI*
+interface are provided in the schemata file to allow users to configure
+and query QoS partition settings.
+
+Before transmitting the priority value to msc, it needs to check whether
+the setting from user is validate or not.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  | 35 ++++++++-----
+ drivers/platform/mpam/mpam_internal.h |  7 +++
+ drivers/platform/mpam/mpam_resctrl.c  | 73 ++++++++++++++++++++++++++-
+ include/linux/resctrl_types.h         |  3 ++
+ 4 files changed, 102 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index 050b9bbca2d4..23613c27335f 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -1191,12 +1191,11 @@ static void mpam_reprogram_ris_partid(struct mpam_msc_ris *ris, u16 partid,
+ 				      struct mpam_config *cfg)
+ {
+ 	u32 pri_val = 0;
++	u16 intpri, dspri;
+ 	u16 cmax = MPAMCFG_CMAX_CMAX;
+ 	struct mpam_msc *msc = ris->msc;
+ 	u16 bwa_fract = MPAMCFG_MBW_MAX_MAX;
+ 	struct mpam_props *rprops = &ris->props;
+-	u16 dspri = GENMASK(rprops->dspri_wd, 0);
+-	u16 intpri = GENMASK(rprops->intpri_wd, 0);
+ 
+ 	spin_lock(&msc->part_sel_lock);
+ 	__mpam_part_sel(ris->ris_idx, partid, msc);
+@@ -1253,21 +1252,29 @@ static void mpam_reprogram_ris_partid(struct mpam_msc_ris *ris, u16 partid,
+ 	if (mpam_has_feature(mpam_feat_mbw_prop, rprops))
+ 		mpam_write_partsel_reg(msc, MBW_PROP, bwa_fract);
+ 
+-	if (mpam_has_feature(mpam_feat_intpri_part, rprops) ||
+-	    mpam_has_feature(mpam_feat_dspri_part, rprops)) {
+-		/* aces high? */
+-		if (!mpam_has_feature(mpam_feat_intpri_part_0_low, rprops))
+-			intpri = 0;
+-		if (!mpam_has_feature(mpam_feat_dspri_part_0_low, rprops))
+-			dspri = 0;
+-
+-		if (mpam_has_feature(mpam_feat_intpri_part, rprops))
++	if (mpam_has_feature(mpam_feat_intpri_part_0_low, rprops))
++		intpri = GENMASK(rprops->intpri_wd - 1, 0);
++	else
++		intpri = 0;
++
++	if (mpam_has_feature(mpam_feat_intpri_part, rprops)) {
++		if (mpam_has_feature(mpam_feat_intpri_part, cfg))
++			pri_val |= FIELD_PREP(MPAMCFG_PRI_INTPRI, cfg->intpri);
++		else
+ 			pri_val |= FIELD_PREP(MPAMCFG_PRI_INTPRI, intpri);
+-		if (mpam_has_feature(mpam_feat_dspri_part, rprops))
+-			pri_val |= FIELD_PREP(MPAMCFG_PRI_DSPRI, dspri);
++	}
+ 
++	if (mpam_has_feature(mpam_feat_dspri_part_0_low, rprops))
++		dspri = GENMASK(rprops->dspri_wd - 1, 0);
++	else
++		dspri = 0;
++
++	if (mpam_has_feature(mpam_feat_dspri_part, rprops))
++		pri_val |= FIELD_PREP(MPAMCFG_PRI_DSPRI, dspri);
++
++	if (mpam_has_feature(mpam_feat_intpri_part, rprops) ||
++	    mpam_has_feature(mpam_feat_dspri_part, rprops))
+ 		mpam_write_partsel_reg(msc, PRI, pri_val);
+-	}
+ 
+ 	spin_unlock(&msc->part_sel_lock);
+ }
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index 632916be9053..d30f826159d5 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -163,6 +163,13 @@ struct mpam_config {
+ 	u16	mbw_min;
+ 	u16	cmax;
+ 	u16	cmin;
++
++	/*
++	 * dspri is downstream priority
++	 * intpri is internal priority
++	 */
++	u16	dspri;
++	u16	intpri;
+ };
+ 
+ struct mpam_component {
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index f744180a13e0..3bc525368675 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -514,6 +514,14 @@ static bool class_has_usable_mbw_min(struct mpam_props *cprops)
+ 	return false;
+ }
+ 
++static bool class_has_usable_intpri(struct mpam_props *cprops)
++{
++	if (mpam_has_feature(mpam_feat_intpri_part, cprops))
++		return true;
++
++	return false;
++}
++
+ /*
+  * Calculate the percentage change from each implemented bit in the control
+  * This can return 0 when BWA_WD is greater than 6. (100 / (1<<7) == 0)
+@@ -619,7 +627,7 @@ static void mpam_resctrl_pick_caches(void)
+ 	unsigned int cache_size;
+ 	struct mpam_class *class;
+ 	struct mpam_resctrl_res *res;
+-	bool has_cpor, has_cmax, has_cmin;
++	bool has_cpor, has_cmax, has_cmin, has_intpri;
+ 
+ 	lockdep_assert_cpus_held();
+ 
+@@ -630,6 +638,7 @@ static void mpam_resctrl_pick_caches(void)
+ 		has_cpor = cache_has_usable_cpor(class);
+ 		has_cmax = cache_has_usable_cmax(class);
+ 		has_cmin = cache_has_usable_cmin(class);
++		has_intpri = class_has_usable_intpri(cprops);
+ 
+ 		if (class->type != MPAM_CLASS_CACHE) {
+ 			pr_debug("pick_caches: Class is not a cache\n");
+@@ -696,6 +705,17 @@ static void mpam_resctrl_pick_caches(void)
+ 			}
+ 			res->class = class;
+ 		}
++
++		if (has_intpri) {
++			if (class->level == 2) {
++				res = &mpam_resctrl_exports[RDT_RESOURCE_L2_PRI];
++				res->resctrl_res.name = "L2PRI";
++			} else {
++				res = &mpam_resctrl_exports[RDT_RESOURCE_L3_PRI];
++				res->resctrl_res.name = "L3PRI";
++			}
++			res->class = class;
++		}
+ 	}
+ 	srcu_read_unlock(&mpam_srcu, idx);
+ }
+@@ -703,7 +723,7 @@ static void mpam_resctrl_pick_caches(void)
+ static void mpam_resctrl_pick_mba(void)
+ {
+ 	struct mpam_resctrl_res *res;
+-	bool has_mba, has_mbw_min;
++	bool has_mba, has_mbw_min, has_intpri;
+ 	struct mpam_class *class;
+ 	int idx;
+ 
+@@ -715,6 +735,7 @@ static void mpam_resctrl_pick_mba(void)
+ 
+ 		has_mba = class_has_usable_mba(cprops);
+ 		has_mbw_min = class_has_usable_mbw_min(cprops);
++		has_intpri = class_has_usable_intpri(cprops);
+ 
+ 		if (class->level < 3)
+ 			continue;
+@@ -733,6 +754,12 @@ static void mpam_resctrl_pick_mba(void)
+ 			res->class = class;
+ 			res->resctrl_res.name = "MBMIN";
+ 		}
++
++		if (has_intpri) {
++			res = &mpam_resctrl_exports[RDT_RESOURCE_MB_PRI];
++			res->class = class;
++			res->resctrl_res.name = "MBPRI";
++		}
+ 	}
+ 	srcu_read_unlock(&mpam_srcu, idx);
+ }
+@@ -924,6 +951,35 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 			r->alloc_capable = true;
+ 		break;
+ 
++	case RDT_RESOURCE_L3_PRI:
++	case RDT_RESOURCE_L2_PRI:
++		r->format_str = "%d=%0*u";
++		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
++		r->fflags = RFTYPE_RES_CACHE;
++		r->default_ctrl = GENMASK(cprops->intpri_wd - 1, 0);
++		r->data_width = 3;
++		r->cache_level = class->level;
++
++		if (class_has_usable_intpri(cprops))
++			r->alloc_capable = true;
++
++		r->membw.min_bw = 0;
++		r->membw.bw_gran = 1;
++		break;
++
++	case RDT_RESOURCE_MB_PRI:
++		r->format_str = "%d=%0*u";
++		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
++		r->fflags = RFTYPE_RES_MB;
++		r->default_ctrl = GENMASK(cprops->intpri_wd - 1, 0);
++		r->data_width = 3;
++
++		r->membw.bw_gran = 1;
++
++		if (class_has_usable_intpri(cprops))
++			r->alloc_capable = true;
++		break;
++
+ 	default:
+ 		break;
+ 	}
+@@ -1050,6 +1106,11 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 	case RDT_RESOURCE_L3_MIN:
+ 		configured_by = mpam_feat_cmin;
+ 		break;
++	case RDT_RESOURCE_L2_PRI:
++	case RDT_RESOURCE_L3_PRI:
++	case RDT_RESOURCE_MB_PRI:
++		configured_by = mpam_feat_intpri_part;
++		break;
+ 
+ 	case RDT_RESOURCE_MBA:
+ 		if (mba_class_use_mbw_part(cprops)) {
+@@ -1081,6 +1142,8 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 		return mbw_max_to_percent(cfg->cmax, cprops->cmax_wd);
+ 	case mpam_feat_cmin:
+ 		return mbw_max_to_percent(cfg->cmin, cprops->cmax_wd);
++	case mpam_feat_intpri_part:
++		return cfg->intpri;
+ 	case mpam_feat_mbw_part:
+ 		/* TODO: Scaling is not yet supported */
+ 		return mbw_pbm_to_percent(cfg->mbw_pbm, cprops);
+@@ -1135,6 +1198,12 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 		cfg.cmin = percent_to_mbw_max(cfg_val, cprops->cmax_wd);
+ 		mpam_set_feature(mpam_feat_cmin, &cfg);
+ 		break;
++	case RDT_RESOURCE_L2_PRI:
++	case RDT_RESOURCE_L3_PRI:
++	case RDT_RESOURCE_MB_PRI:
++		cfg.intpri = cfg_val;
++		mpam_set_feature(mpam_feat_intpri_part, &cfg);
++		break;
+ 	case RDT_RESOURCE_MBA:
+ 		if (mba_class_use_mbw_part(cprops)) {
+ 			cfg.mbw_pbm = percent_to_mbw_pbm(cfg_val, cprops);
+diff --git a/include/linux/resctrl_types.h b/include/linux/resctrl_types.h
+index ceaf8d31333e..ad8d1ac7ca29 100644
+--- a/include/linux/resctrl_types.h
++++ b/include/linux/resctrl_types.h
+@@ -84,6 +84,9 @@ enum resctrl_res_level {
+ 	RDT_RESOURCE_L3_MIN,
+ 	RDT_RESOURCE_L2_MIN,
+ 	RDT_RESOURCE_MB_MIN,
++	RDT_RESOURCE_L3_PRI,
++	RDT_RESOURCE_L2_PRI,
++	RDT_RESOURCE_MB_PRI,
+ #endif
+ 
+ 	/* Must be the last */
+-- 
+2.43.0
+

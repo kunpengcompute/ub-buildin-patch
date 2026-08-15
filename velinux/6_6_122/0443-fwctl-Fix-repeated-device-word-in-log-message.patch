@@ -1,0 +1,35 @@
+From 4bb081c17386cccae80ea13eb031b3c86fed1f50 Mon Sep 17 00:00:00 2001
+From: Shannon Nelson <shannon.nelson@amd.com>
+Date: Tue, 8 Apr 2025 15:33:00 -0700
+Subject: [PATCH 443/960] fwctl: Fix repeated device word in log message
+
+commit c92ae5d4f53ebf9c32ace69c1f89a47e8714d18b upstream.
+
+Remove the repeated word "device" from a dev_warn() message.
+
+Link: https://patch.msgid.link/r/20250408223300.24561-1-shannon.nelson@amd.com
+Signed-off-by: Shannon Nelson <shannon.nelson@amd.com>
+Reviewed-by: Dave Jiang <dave.jiang@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Jiaqi Cheng <chengjiaqi3@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ drivers/fwctl/main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/fwctl/main.c b/drivers/fwctl/main.c
+index c783e94c9c65..7854ab0369f2 100644
+--- a/drivers/fwctl/main.c
++++ b/drivers/fwctl/main.c
+@@ -105,7 +105,7 @@ static int fwctl_cmd_rpc(struct fwctl_ucmd *ucmd)
+ 		if (!test_and_set_bit(0, &fwctl_tainted)) {
+ 			dev_warn(
+ 				&fwctl->dev,
+-				"%s(%d): has requested full access to the physical device device",
++				"%s(%d): has requested full access to the physical device",
+ 				current->comm, task_pid_nr(current));
+ 			add_taint(TAINT_FWCTL, LOCKDEP_STILL_OK);
+ 		}
+-- 
+2.43.0
+

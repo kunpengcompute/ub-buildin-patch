@@ -1,0 +1,34 @@
+From 052f06f12eb2d0036d0345e806b2f315188cd7e6 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Fri, 13 Jun 2025 17:32:57 +0800
+Subject: [PATCH 727/960] downstream: fs/resctrl: Fix return value in
+ rdtgroup_pseudo_locked_in_hierarchy()
+
+The implementation of the rdtgroup_pseudo_locked_in_hierarchy() relies on
+the CONFIG_RESCTRL_FS_PSEUDO_LOCK. When this configuration is disabled,
+the function should return false according to its return type, instead of
+EOPNOTSUPP.
+
+Fixes: dd5cb90e6b16 ("x86/resctrl: Allow an architecture to disable pseudo lock")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/psuedo_lock.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/resctrl/psuedo_lock.c b/fs/resctrl/psuedo_lock.c
+index 2fa42d0a33ea..f2737fd562cf 100644
+--- a/fs/resctrl/psuedo_lock.c
++++ b/fs/resctrl/psuedo_lock.c
+@@ -656,7 +656,7 @@ bool rdtgroup_pseudo_locked_in_hierarchy(struct rdt_domain *d)
+ 	lockdep_assert_cpus_held();
+ 
+ 	if (!IS_ENABLED(CONFIG_RESCTRL_FS_PSEUDO_LOCK))
+-		return -EOPNOTSUPP;
++		return false;
+ 
+ 	if (!zalloc_cpumask_var(&cpu_with_psl, GFP_KERNEL))
+ 		return true;
+-- 
+2.43.0
+

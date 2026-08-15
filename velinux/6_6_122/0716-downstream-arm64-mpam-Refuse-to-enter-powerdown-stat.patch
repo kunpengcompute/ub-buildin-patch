@@ -1,0 +1,57 @@
+From 565070e77ef1f26a3ddaf0359af9aab14b31dc2f Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Tue, 29 Apr 2025 22:49:10 +0800
+Subject: [PATCH 716/960] downstream: arm64/mpam: Refuse to enter powerdown
+ state after L2 msc updated
+
+In case that L2 msc components lose configure context after entering
+cpuidle powerdown state, refuse to enter powerdown state since L2 msc
+specified by user.
+
+When resctrl fs is released from kernel, MPAM driver would restore all
+MSC partition with default values and enable cpuidle powerdown state again.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/mpam.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kernel/mpam.c b/arch/arm64/kernel/mpam.c
+index d3ac3bfb5564..3f070cbab420 100644
+--- a/arch/arm64/kernel/mpam.c
++++ b/arch/arm64/kernel/mpam.c
+@@ -8,6 +8,7 @@
+ #include <linux/jump_label.h>
+ #include <linux/percpu.h>
+ #include <linux/crash_dump.h>
++#include <linux/resctrl.h>
+ 
+ DEFINE_STATIC_KEY_FALSE(arm64_mpam_has_hcr);
+ DEFINE_STATIC_KEY_FALSE(mpam_enabled);
+@@ -18,9 +19,21 @@ static int mpam_pm_notifier(struct notifier_block *self,
+ 			    unsigned long cmd, void *v)
+ {
+ 	u64 regval;
+-	int cpu = smp_processor_id();
++	struct rdt_resource *r;
++	int i, cpu = smp_processor_id();
+ 
+ 	switch (cmd) {
++	case CPU_PM_ENTER:
++		if (!resctrl_mounted)
++			return NOTIFY_OK;
++
++		for (i = 0; i < RDT_NUM_RESOURCES; i++) {
++			r = resctrl_arch_get_resource(i);
++			if (!r->invisible && r->is_volatile)
++				return NOTIFY_BAD;
++		}
++
++		return NOTIFY_OK;
+ 	case CPU_PM_EXIT:
+ 		/*
+ 		 * Don't use mpam_thread_switch() as the system register
+-- 
+2.43.0
+

@@ -1,0 +1,95 @@
+From a4c38554cf648ea698ab02e4fc07dc0c1cb8b47a Mon Sep 17 00:00:00 2001
+From: Zhou Wang <wangzhou1@hisilicon.com>
+Date: Tue, 8 Oct 2024 19:21:36 +0800
+Subject: [PATCH 559/960] downstream: KVM: arm64: Add new HiSi CPU type for
+ supporting DVMBM
+
+Add new HiSi CPU type for supporting DVMBM, and expand ACPI
+hisi oem table id string to 8 bit.
+
+Signed-off-by: Zhou Wang <wangzhou1@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: gongzt <gongzhengtang@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hisilicon/hisi_virt.c | 16 ++++++++++------
+ arch/arm64/kvm/hisilicon/hisi_virt.h |  6 ++++--
+ 2 files changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index 68809f10e8d7..ea6ab834a46e 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -18,15 +18,19 @@ static const char * const hisi_cpu_type_str[] = {
+ 	"Hisi1616",
+ 	"Hisi1620",
+ 	"HIP09",
++	"HIP10",
++	"HIP10C",
+ 	"Unknown"
+ };
+ 
+ /* ACPI Hisi oem table id str */
+ static const char * const oem_str[] = {
+-	"HIP06",	/* Hisi 1612 */
+-	"HIP07",	/* Hisi 1616 */
+-	"HIP08",	/* Hisi 1620 */
+-	"HIP09"		/* HIP09 */
++	"HIP06   ",	/* Hisi 1612 */
++	"HIP07   ",	/* Hisi 1616 */
++	"HIP08   ",	/* Hisi 1620 */
++	"HIP09   ",	/* HIP09 */
++	"HIP10   ",	/* HIP10 */
++	"HIP10C  "	/* HIP10C */
+ };
+ 
+ /*
+@@ -47,7 +51,7 @@ static enum hisi_cpu_type acpi_get_hisi_cpu_type(void)
+ 	}
+ 
+ 	for (i = 0; i < str_size; ++i) {
+-		if (!strncmp(oem_str[i], table->oem_table_id, 5))
++		if (!strncmp(oem_str[i], table->oem_table_id, 8))
+ 			return i;
+ 	}
+ 
+@@ -153,7 +157,7 @@ static void hardware_disable_dvmbm(void *data)
+ 
+ bool hisi_dvmbm_supported(void)
+ {
+-	if (cpu_type != HI_IP09)
++	if (cpu_type != HI_IP10 && cpu_type != HI_IP10C)
+ 		return false;
+ 
+ 	/* Determine whether DVMBM is supported by the hardware */
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index 31bcb62235a4..e3b006343ead 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -12,10 +12,12 @@ enum hisi_cpu_type {
+ 	HI_1616,
+ 	HI_1620,
+ 	HI_IP09,
++	HI_IP10,
++	HI_IP10C,
+ 	UNKNOWN_HI_TYPE
+ };
+ 
+-/* HIP09 */
++/* HIP10 */
+ #define AIDR_EL1_DVMBM_MASK	GENMASK_ULL(13, 12)
+ #define SYS_LSUDVM_CTRL_EL2	sys_reg(3, 4, 15, 7, 4)
+ #define LSUDVM_CTLR_EL2_MASK	BIT_ULL(0)
+@@ -36,7 +38,7 @@ enum hisi_cpu_type {
+ #define TOTEM_B_ID 3
+ 
+ /*
+- * MPIDR_EL1 layout on HIP09
++ * MPIDR_EL1 layout on HIP10
+  *
+  * Aff3[7:3]	- socket ID	[0-15]
+  * Aff3[2:0]	- die ID	[1,3]
+-- 
+2.43.0
+

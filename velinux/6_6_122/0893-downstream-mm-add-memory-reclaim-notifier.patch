@@ -1,0 +1,286 @@
+From a1a65ec01e0dd9e0ea3625c663ea787afd180b23 Mon Sep 17 00:00:00 2001
+From: Tong Tiangen <tongtiangen@huawei.com>
+Date: Thu, 29 Aug 2024 10:25:51 +0800
+Subject: [PATCH 893/960] downstream: mm: add memory reclaim notifier
+
+In memory reclaim scenario, such as direct reclaim/kswapd, if the expected
+pages cannot be reclaimed, some modules may need to be notified, as an
+option, they can get additional memory from the managed memory region.
+
+This add a notifier call for memory reclaim which is enabled by
+CONFIG_RECLAIM_NOTIFY.
+
+Note that this notifier could used in all memory reclaim scenarios,
+current only direct reclaim and kswapd scenarios been supported, and
+callbacks registered to the notification chain cannot be blocked.
+
+Signed-off-by: Tong Tiangen <tongtiangen@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/base/numa_remote.c  |  2 +-
+ include/linux/mm.h          | 53 ++++++++++++++++++++++
+ include/linux/numa_remote.h |  2 +
+ mm/Kconfig                  | 10 +++++
+ mm/Makefile                 |  1 +
+ mm/page_alloc.c             |  5 +++
+ mm/reclaim_notify.c         | 88 +++++++++++++++++++++++++++++++++++++
+ mm/vmscan.c                 |  7 +++
+ 8 files changed, 167 insertions(+), 1 deletion(-)
+ create mode 100644 mm/reclaim_notify.c
+
+diff --git a/drivers/base/numa_remote.c b/drivers/base/numa_remote.c
+index b4bbd6164a9d..73cede63ad53 100644
+--- a/drivers/base/numa_remote.c
++++ b/drivers/base/numa_remote.c
+@@ -20,7 +20,7 @@
+ /* The default distance between two remtoe node */
+ #define REMOTE_TO_REMOTE_DISTANCE	254
+ 
+-static bool numa_remote_enabled __ro_after_init;
++bool numa_remote_enabled __ro_after_init;
+ static bool numa_remote_nofallback_mode __ro_after_init;
+ static bool numa_remote_preonline_mode __ro_after_init;
+ static bool numa_remote_hugetlb_nowatermark_mode __ro_after_init;
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index cae2be2b5256..d9a12a77892a 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -4300,4 +4300,57 @@ int set_linear_mapping_invalid(unsigned long start_pfn, unsigned long end_pfn,
+ 	return -EINVAL;
+ }
+ #endif
++
++enum reclaim_reason {
++	RR_KSWAPD,
++	RR_DIRECT_RECLAIM,
++	RR_TYPES
++};
++
++#ifdef CONFIG_RECLAIM_NOTIFY
++
++struct reclaim_notify_data {
++	int nr_nid;		/* Number of nodes in nid[] */
++	int nid[MAX_NUMNODES];	/* Nodes who getting trouble in reclaiming */
++
++	/*
++	 * Indicates whether notification caller is required to return
++	 * synchronously.
++	 * @true:  the caller do related works first, then return.
++	 * @false: the caller return first and then do related works.
++	 */
++	bool sync;
++
++	/*
++	 * Indicates at which situation the notifier is called, notified
++	 * module could take different action according to the reason.
++	 */
++	enum reclaim_reason reason;
++
++	/*
++	 * Number of pages released by the notified module, which is
++	 * returned after the notification is executed.
++	 */
++	unsigned long nr_freed;
++};
++
++int register_reclaim_notifier(struct notifier_block *nb);
++int unregister_reclaim_notifier(struct notifier_block *nb);
++unsigned long do_reclaim_notify(enum reclaim_reason reason,
++				const void *reclaim_context);
++#else
++static inline int register_reclaim_notifier(struct notifier_block *nb)
++{
++	return 0;
++}
++static inline int unregister_reclaim_notifier(struct notifier_block *nb)
++{
++	return 0;
++}
++static inline unsigned long do_reclaim_notify(enum reclaim_reason reason,
++				const void *reclaim_context)
++{
++	return 0;
++}
++#endif
+ #endif /* _LINUX_MM_H */
+diff --git a/include/linux/numa_remote.h b/include/linux/numa_remote.h
+index 6f8a294a46a3..4dcdda0f073e 100644
+--- a/include/linux/numa_remote.h
++++ b/include/linux/numa_remote.h
+@@ -13,6 +13,7 @@
+ #define MEMORY_DIRECT_ONLINE 2
+ 
+ #ifdef CONFIG_NUMA_REMOTE
++extern bool numa_remote_enabled;
+ bool numa_is_remote_node(int nid);
+ bool numa_remote_nofallback(int nid);
+ bool numa_remote_preonline(int nid);
+@@ -28,6 +29,7 @@ void numa_remote_unregister_node(struct node *node);
+ void numa_remote_report_meminfo(struct seq_file *m);
+ int numa_remote_report_node_meminfo(char *buf, int len, int nid);
+ #else
++#define numa_remote_enabled	false
+ static inline bool numa_is_remote_node(int nid)
+ {
+ 	return false;
+diff --git a/mm/Kconfig b/mm/Kconfig
+index 64966eec5348..41666fef854c 100644
+--- a/mm/Kconfig
++++ b/mm/Kconfig
+@@ -1275,6 +1275,16 @@ config PTE_MARKER_UFFD_WP
+ 	  purposes.  It is required to enable userfaultfd write protection on
+ 	  file-backed memory types like shmem and hugetlbfs.
+ 
++
++config RECLAIM_NOTIFY
++	bool "notify call for memory recliam"
++	depends on NUMA_REMOTE
++	default n
++	help
++	  Add a notifer chain to the memory reclaim.  If one of the registered
++	  callbacks could release some memory, do not reclaim anymore and avoid
++	  possible oom.
++
+ # multi-gen LRU {
+ config LRU_GEN
+ 	bool "Multi-Gen LRU"
+diff --git a/mm/Makefile b/mm/Makefile
+index ec65984e2ade..d3b6ab3f5037 100644
+--- a/mm/Makefile
++++ b/mm/Makefile
+@@ -138,3 +138,4 @@ obj-$(CONFIG_IO_MAPPING) += io-mapping.o
+ obj-$(CONFIG_HAVE_BOOTMEM_INFO_NODE) += bootmem_info.o
+ obj-$(CONFIG_GENERIC_IOREMAP) += ioremap.o
+ obj-$(CONFIG_SHRINKER_DEBUG) += shrinker_debug.o
++obj-$(CONFIG_RECLAIM_NOTIFY)	+= reclaim_notify.o
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index f4b101d18526..0ba35157d4dc 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -4138,6 +4138,11 @@ __alloc_pages_direct_reclaim(gfp_t gfp_mask, unsigned int order,
+ 	}
+ 
+ 	*did_some_progress = __perform_reclaim(gfp_mask, order, ac);
++
++	if (unlikely(*did_some_progress < min(1UL << order, SWAP_CLUSTER_MAX)))
++		*did_some_progress += do_reclaim_notify(RR_DIRECT_RECLAIM,
++							(const void *)ac);
++
+ 	if (unlikely(!(*did_some_progress)))
+ 		goto out;
+ 
+diff --git a/mm/reclaim_notify.c b/mm/reclaim_notify.c
+new file mode 100644
+index 000000000000..d910e2956102
+--- /dev/null
++++ b/mm/reclaim_notify.c
+@@ -0,0 +1,88 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Copyright (C) 2025  Huawei Technologies Co., Ltd.
++ * Author: Tong Tiangen <tongtiangen@huawei.com>
++ */
++
++#include <linux/mm.h>
++#include <linux/numa_remote.h>
++#include "internal.h"
++
++static BLOCKING_NOTIFIER_HEAD(reclaim_notify_list);
++
++int register_reclaim_notifier(struct notifier_block *nb)
++{
++	return blocking_notifier_chain_register(&reclaim_notify_list, nb);
++}
++EXPORT_SYMBOL_GPL(register_reclaim_notifier);
++
++int unregister_reclaim_notifier(struct notifier_block *nb)
++{
++	return blocking_notifier_chain_unregister(&reclaim_notify_list, nb);
++}
++EXPORT_SYMBOL_GPL(unregister_reclaim_notifier);
++
++ /*
++  * do_reclaim_notify - notify memory reclaim event
++  * @ac: alloc context, for direct reclaim
++  * @pgdat: reclaim node, for kswapd
++  * @reason: reclaim reason
++  */
++unsigned long do_reclaim_notify(enum reclaim_reason reason,
++				const void *reclaim_context)
++{
++	struct reclaim_notify_data data;
++	int nid, idx = 0;
++
++	if (!numa_remote_enabled)
++		return 0;
++
++	if (reason >= RR_TYPES)
++		return 0;
++
++	if (WARN_ON(reclaim_context == NULL))
++		return 0;
++
++	memset(&data, 0, sizeof(struct reclaim_notify_data));
++
++	if (reason == RR_DIRECT_RECLAIM) {
++		struct alloc_context *ac =
++			(struct alloc_context *)reclaim_context;
++		struct zone *zone;
++		struct zoneref *z;
++		int last_nid = NUMA_NO_NODE;
++
++		z = ac->preferred_zoneref;
++		for_next_zone_zonelist_nodemask(zone, z, ac->highest_zoneidx,
++						ac->nodemask) {
++			nid = zone_to_nid(zone);
++			if (numa_is_remote_node(nid) || nid == last_nid)
++				continue;
++
++			last_nid = nid;
++			data.nid[idx++] = nid;
++			if (idx == MAX_NUMNODES)
++				break;
++		}
++
++		if (idx == 0)
++			return 0;
++
++		data.nr_nid = idx;
++		data.sync = true;
++	} else {
++		pg_data_t *pgdat =  (pg_data_t *)reclaim_context;
++
++		if (numa_is_remote_node(pgdat->node_id))
++			return 0;
++
++		data.nid[idx] = pgdat->node_id;
++		data.nr_nid = 1;
++		data.sync = false;
++	}
++	data.reason = reason;
++
++	blocking_notifier_call_chain(&reclaim_notify_list, 0, &data);
++
++	return data.nr_freed;
++}
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index c8ffbab89ad8..e48d78e3790b 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -7645,6 +7645,13 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int highest_zoneidx)
+ 		if (sc.priority < DEF_PRIORITY - 2)
+ 			sc.may_writepage = 1;
+ 
++		/*
++		 * If we're still in reclaiming trouble state, try to notify
++		 * some modules concerned about this.
++		 */
++		if (sc.priority == DEF_PRIORITY - 3 || sc.priority == 1)
++			do_reclaim_notify(RR_KSWAPD, (const void *)pgdat);
++
+ 		/* Call soft limit reclaim before calling shrink_node. */
+ 		sc.nr_scanned = 0;
+ 		nr_soft_scanned = 0;
+-- 
+2.43.0
+

@@ -1,0 +1,39 @@
+From 00b4ccbabfcd9ca371c078ff1796c37523000278 Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Tue, 26 Aug 2025 13:57:56 +0800
+Subject: [PATCH 771/960] downstream: KVM: arm64: do not support hdbss in nvhe
+
+In nVHE mode, after hdbss size is configured, the host still reports
+call trace messages duringlive migration.
+
+The modification in this commit ensures that after configuring the
+hdbss size in nvhe, the host will report nvhe does not support hdbss
+during live migration.
+
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Eillon <yezhenyu2@huawei.com>
+Signed-off-by: Xie Xiaodong <xiexiaodong16@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/arm.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 4d74bbbcf0b1..61f08c44361f 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -139,6 +139,11 @@ static int kvm_cap_arm_enable_hdbss(struct kvm *kvm,
+ 		return -EINVAL;
+ 	}
+ 
++	if (!is_kernel_in_hyp_mode()) {
++		kvm_err("Do not support HDBSS in non-VHE mode!\n");
++		return -EINVAL;
++	}
++
+ 	if (size < 0 || size > HDBSS_MAX_SIZE) {
+ 		kvm_err("Invalid HDBSS buffer size: %d!\n", size);
+ 		return -EINVAL;
+-- 
+2.43.0
+

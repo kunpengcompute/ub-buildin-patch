@@ -1,0 +1,68 @@
+From b5ac7efd055d526bd90512265827783245f1545b Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Thu, 15 May 2025 16:58:46 +0000
+Subject: [PATCH 617/960] x86/resctrl: Move the filesystem bits to headers
+ visible to fs/resctrl
+
+commit 3d95a49b365e06d1b4c4e5a426fdc70449a334f3 upstream.
+
+Once the filsystem parts of resctrl move to fs/resctrl, it cannot rely
+on definitions in x86's internal.h.
+
+Move definitions in internal.h that need to be shared between the filesystem
+and architecture code to header files that fs/resctrl can include.
+
+Doing this separately means the filesystem code only moves between files
+of the same name, instead of having these changes mixed in too.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/resctrl_types.h | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/include/linux/resctrl_types.h b/include/linux/resctrl_types.h
+index 06e0f5567558..44f7a47f986b 100644
+--- a/include/linux/resctrl_types.h
++++ b/include/linux/resctrl_types.h
+@@ -7,6 +7,36 @@
+ #ifndef __LINUX_RESCTRL_TYPES_H
+ #define __LINUX_RESCTRL_TYPES_H
+ 
++#define CQM_LIMBOCHECK_INTERVAL	1000
++
++#define MBM_CNTR_WIDTH_BASE		24
++#define MBM_OVERFLOW_INTERVAL		1000
++#define MAX_MBA_BW			100u
++#define MBA_IS_LINEAR			0x4
++
++/* rdtgroup.flags */
++#define	RDT_DELETED		1
++
++/* rftype.flags */
++#define RFTYPE_FLAGS_CPUS_LIST	1
++
++/*
++ * Define the file type flags for base and info directories.
++ */
++#define RFTYPE_INFO			BIT(0)
++#define RFTYPE_BASE			BIT(1)
++#define RFTYPE_CTRL			BIT(4)
++#define RFTYPE_MON			BIT(5)
++#define RFTYPE_TOP			BIT(6)
++#define RFTYPE_RES_CACHE		BIT(8)
++#define RFTYPE_RES_MB			BIT(9)
++#define RFTYPE_DEBUG			BIT(10)
++#define RFTYPE_CTRL_INFO		(RFTYPE_INFO | RFTYPE_CTRL)
++#define RFTYPE_MON_INFO			(RFTYPE_INFO | RFTYPE_MON)
++#define RFTYPE_TOP_INFO			(RFTYPE_INFO | RFTYPE_TOP)
++#define RFTYPE_CTRL_BASE		(RFTYPE_BASE | RFTYPE_CTRL)
++#define RFTYPE_MON_BASE			(RFTYPE_BASE | RFTYPE_MON)
++
+ /* Reads to Local DRAM Memory */
+ #define READS_TO_LOCAL_MEM		BIT(0)
+ 
+-- 
+2.43.0
+

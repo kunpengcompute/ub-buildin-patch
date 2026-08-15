@@ -1,0 +1,58 @@
+From 9c229589691fd51bd792ea5fec42ab3ff2fffef6 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Tue, 3 Mar 2026 15:31:58 +0800
+Subject: [PATCH 905/960] downstream: arm64: fs: support poison recovery from
+ __kernel_read()
+
+During our test. kernel panic with the following trace:
+
+  Internal error: synchronous external abort: 0000000096000410 [#1] SMP
+  pc : __memcpy+0x110/0x240
+  lr : _copy_to_iter+0x3c4/0x4d0
+  Call trace:
+   __memcpy+0x110/0x240
+   copy_page_to_iter+0xbc/0x160
+   filemap_read+0x1b0/0x390
+   generic_file_read_iter+0xdc/0x158
+   ext4_file_read_iter+0x5c/0x230 [ext4]
+   __kernel_read+0xc0/0x250
+   kernel_read+0x70/0xc0
+   search_binary_handler+0x5c/0x318
+   exec_binprm+0x58/0x1b8
+   bprm_execve+0xc0/0x140
+   do_execveat_common.isra.0+0x19c/0x240
+   __arm64_sys_execve+0x48/0x68
+   invoke_syscall+0x50/0x128
+   el0_svc_common.constprop.0+0xc8/0xf0
+   do_el0_svc+0x24/0x38
+
+Kernel panic due to UCE happens during page copy.
+
+Similar to other poison recovery, use iov_iter_set_copy_mc() to avoid
+potentially kernel panic during copy page in filemap_read(). As copy
+page/folio will return short if copy failed, this kind of error can be
+properly handled after and EFAULT will be return to the caller.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/filemap.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/mm/filemap.c b/mm/filemap.c
+index bef4da33ef6a..348d155584ed 100644
+--- a/mm/filemap.c
++++ b/mm/filemap.c
+@@ -2714,6 +2714,9 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
+ 			if (writably_mapped)
+ 				flush_dcache_folio(folio);
+ 
++			if (IS_ENABLED(CONFIG_ARM64) && iov_iter_is_kvec(iter))
++				iov_iter_set_copy_mc(iter);
++
+ 			copied = copy_folio_to_iter(folio, offset, bytes, iter);
+ 
+ 			already_read += copied;
+-- 
+2.43.0
+

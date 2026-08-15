@@ -1,0 +1,42 @@
+From efe10093f774eff17699ea43ede1c6198b3a80d5 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Mon, 23 Mar 2026 20:09:04 +0800
+Subject: [PATCH 912/960] downstream: mm: memory_failure: fix UAF in
+ memory_failure_cb
+
+The twcb pointer is accessed after gen_pool_free() in memory_failure_cb,
+which leads to a use-after-free vulnerability. Fix this by moving
+gen_pool_free() to the end of the function after all twcb accesses.
+
+Fixes: a81f1aa5c8ea ("mm: memory-failure: use kill_accessing_process() in ghes")
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/apei/ghes.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/acpi/apei/ghes.c b/drivers/acpi/apei/ghes.c
+index bca041457487..14f76d20c8ff 100644
+--- a/drivers/acpi/apei/ghes.c
++++ b/drivers/acpi/apei/ghes.c
+@@ -484,12 +484,14 @@ static void memory_failure_cb(struct callback_head *twork)
+ 	int ret;
+ 
+ 	ret = memory_failure(twcb->pfn, twcb->flags);
+-	gen_pool_free(ghes_estatus_pool, (unsigned long)twcb, sizeof(*twcb));
+ 
+-	if (!ret || ret == -EHWPOISON || ret == -EOPNOTSUPP)
++	if (!ret || ret == -EHWPOISON || ret == -EOPNOTSUPP) {
++		gen_pool_free(ghes_estatus_pool, (unsigned long)twcb, sizeof(*twcb));
+ 		return;
++	}
+ 
+ 	kill_accessing_process(twcb->pfn, twcb->flags, true);
++	gen_pool_free(ghes_estatus_pool, (unsigned long)twcb, sizeof(*twcb));
+ }
+ 
+ static bool ghes_do_memory_failure(u64 physical_addr, int flags)
+-- 
+2.43.0
+

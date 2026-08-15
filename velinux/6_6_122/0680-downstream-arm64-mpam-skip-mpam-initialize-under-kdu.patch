@@ -1,0 +1,42 @@
+From 5af003e0d67de18ee1662f8cea30a04327ae45ec Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 1 Jun 2024 14:38:29 +0800
+Subject: [PATCH 680/960] downstream: arm64/mpam: skip mpam initialize under
+ kdump kernel
+
+Skip MPAM initialize when running under kdump kernel. We put the judgement
+at the front of MPAM initialization to avoid meaningless initialization as
+much as possible.
+
+Fixes: 9cb26074545b ("arm_mpam: Probe MSCs to find the supported partid/pmg values")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/mpam.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/arm64/kernel/mpam.c b/arch/arm64/kernel/mpam.c
+index 02f43334f078..8fd9dbdc2b01 100644
+--- a/arch/arm64/kernel/mpam.c
++++ b/arch/arm64/kernel/mpam.c
+@@ -6,6 +6,7 @@
+ #include <linux/arm_mpam.h>
+ #include <linux/jump_label.h>
+ #include <linux/percpu.h>
++#include <linux/crash_dump.h>
+ 
+ DEFINE_STATIC_KEY_FALSE(arm64_mpam_has_hcr);
+ DEFINE_STATIC_KEY_FALSE(mpam_enabled);
+@@ -14,6 +15,9 @@ DEFINE_PER_CPU(u64, arm64_mpam_current);
+ 
+ static int __init arm64_mpam_register_cpus(void)
+ {
++	if (is_kdump_kernel())
++		return 0;
++
+ 	u64 mpamidr = read_sanitised_ftr_reg(SYS_MPAMIDR_EL1);
+ 	u16 partid_max = FIELD_GET(MPAMIDR_PARTID_MAX, mpamidr);
+ 	u8 pmg_max = FIELD_GET(MPAMIDR_PMG_MAX, mpamidr);
+-- 
+2.43.0
+

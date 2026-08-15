@@ -1,0 +1,121 @@
+From c36bfa55d32d90e39e8a694c934e3cb87f0dd6c9 Mon Sep 17 00:00:00 2001
+From: "Matthew Wilcox (Oracle)" <willy@infradead.org>
+Date: Tue, 27 Feb 2024 17:42:36 +0000
+Subject: [PATCH 021/960] mm: convert free_unref_page_list() to use folios
+
+commit 7c76d92253dbb7c53ba03a4cd6639113cd1f7d3a upstream.
+
+Most of its callees are not yet ready to accept a folio, but we know all
+of the pages passed in are actually folios because they're linked through
+->lru.
+
+Link: https://lkml.kernel.org/r/20240227174254.710559-3-willy@infradead.org
+Signed-off-by: Matthew Wilcox (Oracle) <willy@infradead.org>
+Reviewed-by: Ryan Roberts <ryan.roberts@arm.com>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Mel Gorman <mgorman@suse.de>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Conflicts:
+	mm/page_alloc.c
+[ Context conflict. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/page_alloc.c | 38 ++++++++++++++++++++------------------
+ 1 file changed, 20 insertions(+), 18 deletions(-)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 4406bc8c114e..76c65456203f 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -2628,17 +2628,17 @@ void free_unref_page(struct page *page, unsigned int order)
+ void free_unref_page_list(struct list_head *list)
+ {
+ 	unsigned long __maybe_unused UP_flags;
+-	struct page *page, *next;
++	struct folio *folio, *next;
+ 	struct per_cpu_pages *pcp = NULL;
+ 	struct zone *locked_zone = NULL;
+ 	int batch_count = 0;
+ 	int migratetype;
+ 
+ 	/* Prepare pages for freeing */
+-	list_for_each_entry_safe(page, next, list, lru) {
+-		unsigned long pfn = page_to_pfn(page);
+-		if (!free_unref_page_prepare(page, pfn, 0)) {
+-			list_del(&page->lru);
++	list_for_each_entry_safe(folio, next, list, lru) {
++		unsigned long pfn = folio_pfn(folio);
++		if (!free_unref_page_prepare(&folio->page, pfn, 0)) {
++			list_del(&folio->lru);
+ 			continue;
+ 		}
+ 
+@@ -2646,24 +2646,25 @@ void free_unref_page_list(struct list_head *list)
+ 		 * Free isolated pages directly to the allocator, see
+ 		 * comment in free_unref_page.
+ 		 */
+-		migratetype = get_pcppage_migratetype(page);
++		migratetype = get_pcppage_migratetype(&folio->page);
+ 		if (unlikely(is_migrate_isolate(migratetype))) {
+-			list_del(&page->lru);
+-			free_one_page(page_zone(page), page, pfn, 0, migratetype, FPI_NONE);
++			list_del(&folio->lru);
++			free_one_page(folio_zone(folio), &folio->page, pfn,
++					0, migratetype, FPI_NONE);
+ 			continue;
+ 		}
+ 	}
+ 
+-	list_for_each_entry_safe(page, next, list, lru) {
+-		struct zone *zone = page_zone(page);
++	list_for_each_entry_safe(folio, next, list, lru) {
++		struct zone *zone = folio_zone(folio);
+ 
+-		list_del(&page->lru);
+-		migratetype = get_pcppage_migratetype(page);
++		list_del(&folio->lru);
++		migratetype = get_pcppage_migratetype(&folio->page);
+ 
+ 		/*
+ 		 * Either different zone requiring a different pcp lock or
+ 		 * excessive lock hold times when freeing a large list of
+-		 * pages.
++		 * folios.
+ 		 */
+ 		if (zone != locked_zone || batch_count == SWAP_CLUSTER_MAX) {
+ 			if (pcp) {
+@@ -2674,15 +2675,16 @@ void free_unref_page_list(struct list_head *list)
+ 			batch_count = 0;
+ 
+ 			/*
+-			 * trylock is necessary as pages may be getting freed
++			 * trylock is necessary as folios may be getting freed
+ 			 * from IRQ or SoftIRQ context after an IO completion.
+ 			 */
+ 			pcp_trylock_prepare(UP_flags);
+ 			pcp = pcp_spin_trylock(zone->per_cpu_pageset);
+ 			if (unlikely(!pcp)) {
+ 				pcp_trylock_finish(UP_flags);
+-				free_one_page(zone, page, page_to_pfn(page),
+-					      0, migratetype, FPI_NONE);
++				free_one_page(zone, &folio->page,
++						folio_pfn(folio), 0,
++						migratetype, FPI_NONE);
+ 				locked_zone = NULL;
+ 				continue;
+ 			}
+@@ -2696,8 +2698,8 @@ void free_unref_page_list(struct list_head *list)
+ 		if (unlikely(migratetype >= MIGRATE_PCPTYPES))
+ 			migratetype = MIGRATE_MOVABLE;
+ 
+-		trace_mm_page_free_batched(page);
+-		if (!free_unref_page_commit(zone, pcp, page, migratetype,
++		trace_mm_page_free_batched(&folio->page);
++		if (!free_unref_page_commit(zone, pcp, &folio->page, migratetype,
+ 						0, &UP_flags)) {
+ 			pcp = NULL;
+ 			locked_zone = NULL;
+-- 
+2.43.0
+

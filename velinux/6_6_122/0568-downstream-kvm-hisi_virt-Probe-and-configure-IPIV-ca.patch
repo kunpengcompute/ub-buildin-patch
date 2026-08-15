@@ -1,0 +1,252 @@
+From 55bf9053cf10c811a7f4d84f14b99b2d72059d2e Mon Sep 17 00:00:00 2001
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Wed, 23 Apr 2025 17:16:28 +0800
+Subject: [PATCH 568/960] downstream: kvm: hisi_virt: Probe and configure IPIV
+ capacity on HIP12
+
+IPIV is an virtualization extension on HIP12, which allows IPIs on guest
+directly sending by hardware to other vcpu stead of trapping to EL2. It
+will bring IPI interrupt optimization on guest.
+
+Introduce the method to detect and enable the feature, and also add a
+kernel command parameter "kvm-arm.ipiv_enabled" (default is 0) so that
+users can disable or enable the feature. The feature is based on GICv4p1.
+
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ .../admin-guide/kernel-parameters.txt         |  3 ++
+ arch/arm64/include/asm/kvm_host.h             |  1 +
+ arch/arm64/kvm/arm.c                          |  7 ++++
+ arch/arm64/kvm/hisilicon/hisi_virt.c          | 38 +++++++++++++++++++
+ arch/arm64/kvm/hisilicon/hisi_virt.h          | 12 ++++++
+ drivers/irqchip/irq-gic-v3.c                  | 30 +++++++++++++++
+ include/linux/irqchip/arm-gic-v3.h            | 12 ++++++
+ 7 files changed, 103 insertions(+)
+
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index 52130fdf90c0..adbe00f46e2a 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -2656,6 +2656,9 @@
+ 			[KVM,ARM] Allow use of GICv4 for direct injection of
+ 			LPIs.
+ 
++	kvm-arm.ipiv_enabled=
++			[KVM,ARM] Allow use of HiSilicon ipiv on GICv4.1
++
+ 	kvm-arm.dvmbm_enabled=
+ 			[KVM,ARM] Allow use of HiSilicon DVMBM capability.
+ 			Default: 0
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 67fad82111eb..8f8e31ba701d 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -1223,5 +1223,6 @@ bool kvm_arm_vcpu_stopped(struct kvm_vcpu *vcpu);
+ extern bool force_wfi_trap;
+ extern bool kvm_ncsnp_support;
+ extern bool kvm_dvmbm_support;
++extern bool kvm_ipiv_support;
+ 
+ #endif /* __ARM64_KVM_HOST_H__ */
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index dfd5df9bfe9e..1c1c0c210b21 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -64,6 +64,8 @@ bool kvm_ncsnp_support;
+ /* Capability of DVMBM */
+ bool kvm_dvmbm_support;
+ 
++/* Capability of IPIV */
++bool kvm_ipiv_support;
+ 
+ static DEFINE_PER_CPU(unsigned char, kvm_hyp_initialized);
+ 
+@@ -2641,8 +2643,13 @@ static __init int kvm_arm_init(void)
+ 	probe_hisi_cpu_type();
+ 	kvm_ncsnp_support = hisi_ncsnp_supported();
+ 	kvm_dvmbm_support = hisi_dvmbm_supported();
++	kvm_ipiv_support = hisi_ipiv_supported();
+ 	kvm_info("KVM ncsnp %s\n", kvm_ncsnp_support ? "enabled" : "disabled");
+ 	kvm_info("KVM dvmbm %s\n", kvm_dvmbm_support ? "enabled" : "disabled");
++	kvm_info("KVM ipiv %s\n", kvm_ipiv_support ? "enabled" : "disabled");
++
++	if (kvm_ipiv_support)
++		ipiv_gicd_init();
+ 
+ 	if (kvm_dvmbm_support)
+ 		kvm_get_pg_cfg();
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index d95b96ee7237..3c06be7cd8a5 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -12,6 +12,7 @@
+ static enum hisi_cpu_type cpu_type = UNKNOWN_HI_TYPE;
+ 
+ static bool dvmbm_enabled;
++static bool ipiv_enabled;
+ 
+ static const char * const hisi_cpu_type_str[] = {
+ 	"Hisi1612",
+@@ -157,6 +158,43 @@ static void hardware_disable_dvmbm(void *data)
+ 	write_sysreg_s(val, SYS_LSUDVM_CTRL_EL2);
+ }
+ 
++static int __init early_ipiv_enable(char *buf)
++{
++	return strtobool(buf, &ipiv_enabled);
++}
++early_param("kvm-arm.ipiv_enabled", early_ipiv_enable);
++
++bool hisi_ipiv_supported(void)
++{
++	if (cpu_type != HI_IP12)
++		return false;
++
++	/* Determine whether IPIV is supported by the hardware */
++	if (!(read_sysreg(aidr_el1) & AIDR_EL1_IPIV_MASK)) {
++		kvm_info("Hisi ipiv not supported by the hardware\n");
++		return false;
++	}
++
++	/* User provided kernel command-line parameter */
++	if (!ipiv_enabled || !is_kernel_in_hyp_mode())
++		return false;
++
++	/* Enable IPIV feature if necessary */
++	if (!is_gicv4p1()) {
++		kvm_info("Hisi ipiv needs to enable GICv4p1!\n");
++		return false;
++	}
++
++	kvm_info("Enable Hisi ipiv, do not support vSGI broadcast\n");
++	return true;
++}
++
++void ipiv_gicd_init(void)
++{
++	gic_dist_enable_ipiv();
++}
++
++
+ bool hisi_dvmbm_supported(void)
+ {
+ 	if (cpu_type != HI_IP10 && cpu_type != HI_IP10C &&
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index c45d319e7b41..41906640c8a2 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -18,6 +18,8 @@ enum hisi_cpu_type {
+ 	UNKNOWN_HI_TYPE
+ };
+ 
++/* HIP12 */
++#define AIDR_EL1_IPIV_MASK     GENMASK_ULL(17, 16)
+ /* HIP10 */
+ #define AIDR_EL1_DVMBM_MASK	GENMASK_ULL(13, 12)
+ #define SYS_LSUDVM_CTRL_EL2	sys_reg(3, 4, 15, 7, 4)
+@@ -75,7 +77,9 @@ enum hisi_cpu_type {
+ void probe_hisi_cpu_type(void);
+ bool hisi_ncsnp_supported(void);
+ bool hisi_dvmbm_supported(void);
++bool hisi_ipiv_supported(void);
+ void kvm_get_pg_cfg(void);
++void ipiv_gicd_init(void);
+ 
+ int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu);
+ void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu);
+@@ -96,11 +100,17 @@ static inline bool hisi_dvmbm_supported(void)
+ }
+ static inline void kvm_get_pg_cfg(void) {}
+ 
++static inline bool hisi_ipiv_supported(void)
++{
++	return false;
++}
++
+ static inline int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu)
+ {
+ 	return 0;
+ }
+ static inline void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu) {}
++static inline void ipiv_gicd_init(void) {}
+ static inline int kvm_sched_affinity_vm_init(struct kvm *kvm)
+ {
+ 	return 0;
+@@ -111,4 +121,6 @@ static inline void kvm_tlbi_dvmbm_vcpu_put(struct kvm_vcpu *vcpu) {}
+ static inline void kvm_hisi_reload_lsudvmbm(struct kvm *kvm) {}
+ #endif /* CONFIG_KVM_HISI_VIRT */
+ 
++extern bool gic_dist_enable_ipiv(void);
++extern bool is_gicv4p1(void);
+ #endif /* __HISI_VIRT_H__ */
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 9d70477f04ba..f4a9ed0e0778 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -1354,6 +1354,36 @@ static int gic_dist_supports_lpis(void)
+ 		!gicv3_nolpi);
+ }
+ 
++bool is_gicv4p1(void)
++{
++	if (!gic_data.rdists.has_rvpeid)
++		return false;
++
++	return true;
++}
++EXPORT_SYMBOL(is_gicv4p1);
++
++void gic_dist_enable_ipiv(void)
++{
++	u32 val;
++
++	val = readl_relaxed(gic_data.dist_base + GICD_MISC_CTRL);
++	val |= GICD_MISC_CTRL_CFG_IPIV_EN;
++	writel_relaxed(val, gic_data.dist_base + GICD_MISC_CTRL);
++	static_branch_enable(&ipiv_enable);
++
++	val = (0 << GICD_IPIV_CTRL_AFF_DIRECT_VPEID_SHIFT) |
++		(0 << GICD_IPIV_CTRL_AFF1_LEFT_SHIFT_SHIFT) |
++		(4 << GICD_IPIV_CTRL_AFF2_LEFT_SHIFT_SHIFT) |
++		(7 << GICD_IPIV_CTRL_VM_TABLE_INNERCACHE_SHIFT) |
++		(2 << GICD_IPIV_CTRL_VM_TABLE_SHAREABILITY_SHIFT);
++	writel_relaxed(val, gic_data.dist_base + GICD_IPIV_CTRL);
++
++	/* Set target ITS address of IPIV feature */
++	writel_relaxed(0x4880, gic_data.dist_base + GICD_IPIV_ITS_TA_BASE);
++}
++EXPORT_SYMBOL(gic_dist_enable_ipiv);
++
+ static void gic_cpu_init(void)
+ {
+ 	void __iomem *rbase;
+diff --git a/include/linux/irqchip/arm-gic-v3.h b/include/linux/irqchip/arm-gic-v3.h
+index 656023f5e19b..b817678aebb3 100644
+--- a/include/linux/irqchip/arm-gic-v3.h
++++ b/include/linux/irqchip/arm-gic-v3.h
+@@ -111,6 +111,18 @@
+ #define GIC_PAGE_SIZE_64K		2ULL
+ #define GIC_PAGE_SIZE_MASK		3ULL
+ 
++#define GICD_MISC_CTRL			0x2084
++#define GICD_MISC_CTRL_CFG_IPIV_EN	(1U << 19)
++
++/* IPIV private register */
++#define GICD_IPIV_CTRL			0xc05c
++#define GICD_IPIV_CTRL_AFF_DIRECT_VPEID_SHIFT 4
++#define GICD_IPIV_CTRL_AFF1_LEFT_SHIFT_SHIFT 8
++#define GICD_IPIV_CTRL_AFF2_LEFT_SHIFT_SHIFT 12
++#define GICD_IPIV_CTRL_VM_TABLE_INNERCACHE_SHIFT 16
++#define GICD_IPIV_CTRL_VM_TABLE_SHAREABILITY_SHIFT 19
++#define GICD_IPIV_ITS_TA_BASE	0xc010
++
+ /*
+  * Re-Distributor registers, offsets from RD_base
+  */
+-- 
+2.43.0
+

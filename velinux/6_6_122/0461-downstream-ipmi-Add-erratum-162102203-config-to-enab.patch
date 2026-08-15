@@ -1,0 +1,47 @@
+From ee0629d14115f43f91d86be8e6df4208116eec93 Mon Sep 17 00:00:00 2001
+From: Devyn Liu <liudingyuan@huawei.com>
+Date: Tue, 31 Oct 2023 10:59:06 +0800
+Subject: [PATCH 461/960] downstream: ipmi: Add erratum 162102203 config to
+ enable workaround for SMS message processing timeout
+
+Add CONFIG_HISILICON_ERRATUM_162102203.
+If this config option is enabled, it will compile a workaround modification
+in the ipmi driver for the SMS message processing timeout issue tracking by
+erratum 162102203.
+
+Signed-off-by: Devyn Liu <liudingyuan@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 1 +
+ config.aarch64-64k | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index e88dbb9266fc..9a95372097dc 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -391,6 +391,7 @@ CONFIG_CAVIUM_ERRATUM_30115=y
+ CONFIG_CAVIUM_TX2_ERRATUM_219=y
+ CONFIG_FUJITSU_ERRATUM_010001=y
+ CONFIG_HISILICON_ERRATUM_161600802=y
++CONFIG_HISILICON_ERRATUM_162102203=y
+ CONFIG_QCOM_FALKOR_ERRATUM_1003=y
+ CONFIG_QCOM_FALKOR_ERRATUM_1009=y
+ CONFIG_QCOM_QDF2400_ERRATUM_0065=y
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 246851f2a2ac..8667a6f8f59c 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -391,6 +391,7 @@ CONFIG_CAVIUM_ERRATUM_30115=y
+ CONFIG_CAVIUM_TX2_ERRATUM_219=y
+ CONFIG_FUJITSU_ERRATUM_010001=y
+ CONFIG_HISILICON_ERRATUM_161600802=y
++CONFIG_HISILICON_ERRATUM_162102203=y
+ CONFIG_QCOM_FALKOR_ERRATUM_1003=y
+ CONFIG_QCOM_FALKOR_ERRATUM_1009=y
+ CONFIG_QCOM_QDF2400_ERRATUM_0065=y
+-- 
+2.43.0
+

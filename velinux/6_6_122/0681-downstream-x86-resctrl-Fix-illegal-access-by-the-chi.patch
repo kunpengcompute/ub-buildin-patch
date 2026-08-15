@@ -1,0 +1,45 @@
+From dfe7168cb772b18280b690a5a68d17080e030b8d Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 18 Jul 2024 19:48:50 +0800
+Subject: [PATCH 681/960] downstream: x86: resctrl: Fix illegal access by the
+ chips not having RDT
+
+Before dom_data_init() initializing the monitor resource, we should check
+if the msc has the ability of monitor.
+
+If the chip not having RDT monitor function, variable idx_limit in
+dom_data_init() would be set 0. rmid_ptrs points to an illegal buffer
+after kcalloc() allocation, which would cause illegal access fault when
+accessing.
+
+Fixes: 13e249bf4944 ("x86/resctrl: Move the filesystem portions of resctrl to live in '/fs/'")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/monitor.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/resctrl/monitor.c b/fs/resctrl/monitor.c
+index 710ba5bf9962..97170a4d3edf 100644
+--- a/fs/resctrl/monitor.c
++++ b/fs/resctrl/monitor.c
+@@ -813,13 +813,13 @@ int resctrl_mon_resource_init(void)
+ 	struct rdt_resource *r = resctrl_arch_get_resource(RDT_RESOURCE_L3);
+ 	int ret;
+ 
++	if (!r->mon_capable)
++		return 0;
++
+ 	ret = dom_data_init(r);
+ 	if (ret)
+ 		return ret;
+ 
+-	if (!r->mon_capable)
+-		return 0;
+-
+ 	l3_mon_evt_init(r);
+ 
+ 	if (resctrl_arch_is_evt_configurable(QOS_L3_MBM_TOTAL_EVENT_ID)) {
+-- 
+2.43.0
+

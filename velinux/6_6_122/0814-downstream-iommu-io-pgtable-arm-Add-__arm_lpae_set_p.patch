@@ -1,0 +1,47 @@
+From 2a58b10db8364c2a81b94113a61558bdbb973e8b Mon Sep 17 00:00:00 2001
+From: jiaqingtong <jiaqingtong@huawei.com>
+Date: Wed, 10 Jan 2024 19:36:31 +0800
+Subject: [PATCH 814/960] downstream: iommu/io-pgtable-arm: Add
+ __arm_lpae_set_pte
+
+Add __arm_lpae_set_pte perpare for realize dirty log
+
+Signed-off-by: jiaqingtong <jiaqingtong@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/io-pgtable-arm.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/iommu/io-pgtable-arm.c b/drivers/iommu/io-pgtable-arm.c
+index 5766a9634a29..472679a9a381 100644
+--- a/drivers/iommu/io-pgtable-arm.c
++++ b/drivers/iommu/io-pgtable-arm.c
+@@ -289,15 +289,21 @@ static void __arm_lpae_sync_pte(arm_lpae_iopte *ptep, int num_entries,
+ 				   sizeof(*ptep) * num_entries, DMA_TO_DEVICE);
+ }
+ 
+-static void __arm_lpae_clear_pte(arm_lpae_iopte *ptep, struct io_pgtable_cfg *cfg)
++static void __arm_lpae_set_pte(arm_lpae_iopte *ptep, arm_lpae_iopte pte,
++			       struct io_pgtable_cfg *cfg)
+ {
+-
+-	*ptep = 0;
++	*ptep = pte;
+ 
+ 	if (!cfg->coherent_walk)
+ 		__arm_lpae_sync_pte(ptep, 1, cfg);
+ }
+ 
++static void __arm_lpae_clear_pte(arm_lpae_iopte *ptep, struct io_pgtable_cfg *cfg)
++{
++
++	__arm_lpae_set_pte(ptep, 0, cfg);
++}
++
+ static size_t __arm_lpae_unmap(struct arm_lpae_io_pgtable *data,
+ 			       struct iommu_iotlb_gather *gather,
+ 			       unsigned long iova, size_t size, size_t pgcount,
+-- 
+2.43.0
+

@@ -1,0 +1,31 @@
+From e6fc0af28eae3ac603e89d6084935b0d9842ea23 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 22 Feb 2025 11:55:13 +0800
+Subject: [PATCH 690/960] downstream: arm64/mpam: fix bug in
+ percent_to_mbw_max()
+
+Correct percentage to fixed floating point conversion formula.
+
+Fixes: 58db5c68e84a ("untested: arm_mpam: resctrl: Add support for MB resource")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 71392238950e..0793127f12e7 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -581,7 +581,7 @@ static u16 percent_to_mbw_max(u8 pc, struct mpam_props *cprops)
+ 			break;
+ 	}
+ 
+-	value &= GENMASK(15, 15 - cprops->bwa_wd);
++	value &= GENMASK(15, 15 - cprops->bwa_wd + 1);
+ 
+ 	return value;
+ }
+-- 
+2.43.0
+

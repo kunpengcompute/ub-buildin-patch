@@ -1,0 +1,28 @@
+From eeb77e332040874cf130fd7eff109d6f9f6afb40 Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:54 +0800
+Subject: [PATCH 798/960] downstream: arm64: idle: export arch_cpu_idle
+
+Needed for cpuidle-haltpoll.
+
+Acked-by: Will Deacon <will@kernel.org>
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/idle.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm64/kernel/idle.c b/arch/arm64/kernel/idle.c
+index c1125753fe9b..3a0b59aa12e2 100644
+--- a/arch/arm64/kernel/idle.c
++++ b/arch/arm64/kernel/idle.c
+@@ -43,3 +43,4 @@ void noinstr arch_cpu_idle(void)
+ 	 */
+ 	cpu_do_idle();
+ }
++EXPORT_SYMBOL_GPL(arch_cpu_idle);
+-- 
+2.43.0
+

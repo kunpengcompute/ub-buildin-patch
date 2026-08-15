@@ -1,0 +1,105 @@
+From 9be344d18eb48317bcd4fd293506e5be82233654 Mon Sep 17 00:00:00 2001
+From: Joao Martins <joao.m.martins@oracle.com>
+Date: Thu, 27 Jun 2024 12:00:58 +0100
+Subject: [PATCH 416/960] iommufd/selftest: Fix tests to use MOCK_PAGE_SIZE
+ based buffer sizes
+
+commit ffa3c799ce157493615f9f3c2b3c9ba602d320b9 upstream.
+
+commit a9af47e382a4 ("iommufd/selftest: Test IOMMU_HWPT_GET_DIRTY_BITMAP")
+added tests covering edge cases in the boundaries of iova bitmap. Although
+it used buffer sizes thinking in PAGE_SIZE (4K) as opposed to the
+MOCK_PAGE_SIZE (2K) that is used in iommufd mock selftests. This meant that
+isn't correctly exercising everything specifically the u32 and 4K bitmap
+test cases. Fix selftests buffer sizes to be based on mock page size.
+
+Link: https://lore.kernel.org/r/20240627110105.62325-5-joao.m.martins@oracle.com
+Reported-by: Kevin Tian <kevin.tian@intel.com>
+Closes: https://lore.kernel.org/linux-iommu/96efb6cf-a41c-420f-9673-2f0b682cac8c@oracle.com/
+Fixes: a9af47e382a4 ("iommufd/selftest: Test IOMMU_HWPT_GET_DIRTY_BITMAP")
+Signed-off-by: Joao Martins <joao.m.martins@oracle.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Tested-by: Matt Ochs <mochs@nvidia.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+
+Conflicts:
+    tools/testing/selftests/iommu/iommufd.c
+[Context conflict]
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ tools/testing/selftests/iommu/iommufd.c | 36 ++++++++++++-------------
+ 1 file changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/tools/testing/selftests/iommu/iommufd.c b/tools/testing/selftests/iommu/iommufd.c
+index e0607d16af95..44be3166d52e 100644
+--- a/tools/testing/selftests/iommu/iommufd.c
++++ b/tools/testing/selftests/iommu/iommufd.c
+@@ -1801,47 +1801,47 @@ FIXTURE_TEARDOWN(iommufd_dirty_tracking)
+ 	teardown_iommufd(self->fd, _metadata);
+ }
+ 
+-FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty128k)
++FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty64k)
+ {
+ 	/* one u32 index bitmap */
+-	.buffer_size = 128UL * 1024UL,
++	.buffer_size = 64UL * 1024UL,
+ };
+ 
+-FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty256k)
++FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty128k)
+ {
+ 	/* one u64 index bitmap */
+-	.buffer_size = 256UL * 1024UL,
++	.buffer_size = 128UL * 1024UL,
+ };
+ 
+-FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty640k)
++FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty320k)
+ {
+ 	/* two u64 index and trailing end bitmap */
+-	.buffer_size = 640UL * 1024UL,
++	.buffer_size = 320UL * 1024UL,
+ };
+ 
+-FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty128M)
++FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty64M)
+ {
+-	/* 4K bitmap (128M IOVA range) */
+-	.buffer_size = 128UL * 1024UL * 1024UL,
++	/* 4K bitmap (64M IOVA range) */
++	.buffer_size = 64UL * 1024UL * 1024UL,
+ };
+ 
+-FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty128M_huge)
++FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty64M_huge)
+ {
+-	/* 4K bitmap (128M IOVA range) */
+-	.buffer_size = 128UL * 1024UL * 1024UL,
++	/* 4K bitmap (64M IOVA range) */
++	.buffer_size = 64UL * 1024UL * 1024UL,
+ 	.hugepages = true,
+ };
+ 
+-FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty256M)
++FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty128M)
+ {
+-	/* 8K bitmap (256M IOVA range) */
+-	.buffer_size = 256UL * 1024UL * 1024UL,
++	/* 8K bitmap (128M IOVA range) */
++	.buffer_size = 128UL * 1024UL * 1024UL,
+ };
+ 
+-FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty256M_huge)
++FIXTURE_VARIANT_ADD(iommufd_dirty_tracking, domain_dirty128M_huge)
+ {
+-	/* 8K bitmap (256M IOVA range) */
+-	.buffer_size = 256UL * 1024UL * 1024UL,
++	/* 8K bitmap (128M IOVA range) */
++	.buffer_size = 128UL * 1024UL * 1024UL,
+ 	.hugepages = true,
+ };
+ 
+-- 
+2.43.0
+

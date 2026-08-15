@@ -1,0 +1,33 @@
+From c3a0675f20cdb15774dee348b2dc37ba5dd6f694 Mon Sep 17 00:00:00 2001
+From: lishusen <lishusen2@huawei.com>
+Date: Thu, 21 Mar 2024 12:18:40 +0800
+Subject: [PATCH 593/960] downstream: arm64i Delete macro in the scsnp feature
+
+The macro in the scsnp feature is deleted to rectify the compilation
+problem.
+
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/image-vars.h | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/arch/arm64/kernel/image-vars.h b/arch/arm64/kernel/image-vars.h
+index 68380ea092ae..21c9057135f2 100644
+--- a/arch/arm64/kernel/image-vars.h
++++ b/arch/arm64/kernel/image-vars.h
+@@ -106,10 +106,8 @@ KVM_NVHE_ALIAS(__hyp_rodata_end);
+ /* pKVM static key */
+ KVM_NVHE_ALIAS(kvm_protected_mode_initialized);
+ 
+-#ifdef CONFIG_KVM_HISI_VIRT
+ /* Capability of non-cacheable snooping */
+ KVM_NVHE_ALIAS(kvm_ncsnp_support);
+-#endif
+ 
+ #endif /* CONFIG_KVM */
+ 
+-- 
+2.43.0
+

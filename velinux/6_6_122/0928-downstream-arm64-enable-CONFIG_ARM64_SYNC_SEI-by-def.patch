@@ -1,0 +1,42 @@
+From 8a75c921fadb9ac08278eb65157a9b10f6bd6e9e Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Wed, 13 May 2026 16:11:29 +0800
+Subject: [PATCH 928/960] downstream: arm64: enable CONFIG_ARM64_SYNC_SEI by
+ default
+
+Enable CONFIG_ARM64_SYNC_SEI by default.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 1 +
+ config.aarch64-64k | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 79df676ac02d..95ad6baf0fd8 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -525,6 +525,7 @@ CONFIG_ARM64_HISI_IPIV=y
+ CONFIG_ARM64_SVE=y
+ CONFIG_ARM64_SME=y
+ CONFIG_ARM64_PSEUDO_NMI=y
++CONFIG_ARM64_SYNC_SEI=y
+ # CONFIG_ARM64_DEBUG_PRIORITY_MASKING is not set
+ CONFIG_RELOCATABLE=y
+ CONFIG_RANDOMIZE_BASE=y
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index a7c0c6e2789c..2ceb1972cbba 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -527,6 +527,7 @@ CONFIG_ARM64_HISI_IPIV=y
+ CONFIG_ARM64_SVE=y
+ CONFIG_ARM64_SME=y
+ CONFIG_ARM64_PSEUDO_NMI=y
++CONFIG_ARM64_SYNC_SEI=y
+ # CONFIG_ARM64_DEBUG_PRIORITY_MASKING is not set
+ CONFIG_RELOCATABLE=y
+ CONFIG_RANDOMIZE_BASE=y
+-- 
+2.43.0
+

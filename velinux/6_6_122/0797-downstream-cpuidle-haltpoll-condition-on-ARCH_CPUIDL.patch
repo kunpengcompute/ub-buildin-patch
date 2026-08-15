@@ -1,0 +1,64 @@
+From 27910b64820cd9655b69107549bb305ecc19d758 Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:53 +0800
+Subject: [PATCH 797/960] downstream: cpuidle-haltpoll: condition on
+ ARCH_CPUIDLE_HALTPOLL
+
+The cpuidle-haltpoll driver and its namesake governor are selected
+under KVM_GUEST on X86. KVM_GUEST in-turn selects ARCH_CPUIDLE_HALTPOLL
+and defines the requisite arch_haltpoll_{enable,disable}() functions.
+
+So remove the explicit dependence of HALTPOLL_CPUIDLE on KVM_GUEST,
+and instead use ARCH_CPUIDLE_HALTPOLL as proxy for architectural
+support for haltpoll.
+
+Also change "halt poll" to "haltpoll" in one of the summary clauses,
+since the second form is used everywhere else.
+
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/x86/Kconfig        | 1 +
+ drivers/cpuidle/Kconfig | 5 ++---
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index 73b2eadf260d..21327cfefb0e 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -836,6 +836,7 @@ config KVM_GUEST
+ 
+ config ARCH_CPUIDLE_HALTPOLL
+ 	def_bool n
++	depends on KVM_GUEST
+ 	prompt "Disable host haltpoll when loading haltpoll driver"
+ 	help
+ 	  If virtualized under KVM, disable host haltpoll.
+diff --git a/drivers/cpuidle/Kconfig b/drivers/cpuidle/Kconfig
+index 75f6e176bbc8..c1bebadf22bc 100644
+--- a/drivers/cpuidle/Kconfig
++++ b/drivers/cpuidle/Kconfig
+@@ -35,7 +35,6 @@ config CPU_IDLE_GOV_TEO
+ 
+ config CPU_IDLE_GOV_HALTPOLL
+ 	bool "Haltpoll governor (for virtualized systems)"
+-	depends on KVM_GUEST
+ 	help
+ 	  This governor implements haltpoll idle state selection, to be
+ 	  used in conjunction with the haltpoll cpuidle driver, allowing
+@@ -72,8 +71,8 @@ source "drivers/cpuidle/Kconfig.riscv"
+ endmenu
+ 
+ config HALTPOLL_CPUIDLE
+-	tristate "Halt poll cpuidle driver"
+-	depends on X86 && KVM_GUEST && ARCH_HAS_OPTIMIZED_POLL
++	tristate "Haltpoll cpuidle driver"
++	depends on ARCH_CPUIDLE_HALTPOLL && ARCH_HAS_OPTIMIZED_POLL
+ 	select CPU_IDLE_GOV_HALTPOLL
+ 	default y
+ 	help
+-- 
+2.43.0
+

@@ -1,0 +1,70 @@
+From e38450cba149b546911a955bd22d0e6790b07884 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Mon, 26 Aug 2024 16:43:40 -0400
+Subject: [PATCH 081/960] mm/pagewalk: check pfnmap for folio_walk_start()
+
+commit 10d83d7781a8a6ff02bafd172c1ab183b27f8d5a upstream.
+
+Teach folio_walk_start() to recognize special pmd/pud mappings, and fail
+them properly as it means there's no folio backing them.
+
+[peterx@redhat.com: remove some stale comments, per David]
+  Link: https://lkml.kernel.org/r/20240829202237.2640288-1-peterx@redhat.com
+Link: https://lkml.kernel.org/r/20240826204353.2228736-7-peterx@redhat.com
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Alexander Gordeev <agordeev@linux.ibm.com>
+Cc: Alex Williamson <alex.williamson@redhat.com>
+Cc: Aneesh Kumar K.V <aneesh.kumar@linux.ibm.com>
+Cc: Borislav Petkov <bp@alien8.de>
+Cc: Catalin Marinas <catalin.marinas@arm.com>
+Cc: Christian Borntraeger <borntraeger@linux.ibm.com>
+Cc: Dave Hansen <dave.hansen@linux.intel.com>
+Cc: Gavin Shan <gshan@redhat.com>
+Cc: Gerald Schaefer <gerald.schaefer@linux.ibm.com>
+Cc: Heiko Carstens <hca@linux.ibm.com>
+Cc: Ingo Molnar <mingo@redhat.com>
+Cc: Jason Gunthorpe <jgg@nvidia.com>
+Cc: Matthew Wilcox <willy@infradead.org>
+Cc: Niklas Schnelle <schnelle@linux.ibm.com>
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Cc: Ryan Roberts <ryan.roberts@arm.com>
+Cc: Sean Christopherson <seanjc@google.com>
+Cc: Sven Schnelle <svens@linux.ibm.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Vasily Gorbik <gor@linux.ibm.com>
+Cc: Will Deacon <will@kernel.org>
+Cc: Zi Yan <ziy@nvidia.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Conflicts:
+	mm/pagewalk.c
+[Fanhua Li: no folio_walk_start()]
+Signed-off-by: Fanhua Li <lifanhua5@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/memory.c | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/mm/memory.c b/mm/memory.c
+index ee2aef6abc41..ee3ada6961f2 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -662,11 +662,10 @@ struct page *vm_normal_page_pmd(struct vm_area_struct *vma, unsigned long addr,
+ {
+ 	unsigned long pfn = pmd_pfn(pmd);
+ 
+-	/*
+-	 * There is no pmd_special() but there may be special pmds, e.g.
+-	 * in a direct-access (dax) mapping, so let's just replicate the
+-	 * !CONFIG_ARCH_HAS_PTE_SPECIAL case from vm_normal_page() here.
+-	 */
++	/* Currently it's only used for huge pfnmaps */
++	if (unlikely(pmd_special(pmd)))
++		return NULL;
++
+ 	if (unlikely(vma->vm_flags & (VM_PFNMAP|VM_MIXEDMAP))) {
+ 		if (vma->vm_flags & VM_MIXEDMAP) {
+ 			if (!pfn_valid(pfn))
+-- 
+2.43.0
+

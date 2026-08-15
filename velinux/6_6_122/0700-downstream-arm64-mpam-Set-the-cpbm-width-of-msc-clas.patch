@@ -1,0 +1,37 @@
+From 39f9f1a2374c5842e69fe990e703a138dec64deb Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 23 Apr 2025 18:51:43 +0800
+Subject: [PATCH 700/960] downstream: arm64/mpam: Set the cpbm width of msc
+ class with the minimum
+
+Be compatible with the hardware platform which has different CPBM bandwidth
+of cache MSCs within the same class, and prevent the CPBM feature from
+being cleared.
+
+Fixes: 931c09722546 ("arm_mpam: Merge supported features during mpam_enable() into mpam_class")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index 5ef8f4e9c3f0..e5aa397eccb7 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -1858,9 +1858,10 @@ __resource_props_mismatch(struct mpam_msc_ris *ris, struct mpam_class *class)
+ 	/* Clear missing features */
+ 	cprops->features &= rprops->features;
+ 
+-	/* Clear incompatible features */
++	/* Set cpbm_wd with the min cpbm_wd among all cache msc */
+ 	if (cprops->cpbm_wd != rprops->cpbm_wd)
+-		mpam_clear_feature(mpam_feat_cpor_part, &cprops->features);
++		cprops->cpbm_wd = min(cprops->cpbm_wd, rprops->cpbm_wd);
++
+ 	if (cprops->mbw_pbm_bits != rprops->mbw_pbm_bits)
+ 		mpam_clear_feature(mpam_feat_mbw_part, &cprops->features);
+ 
+-- 
+2.43.0
+

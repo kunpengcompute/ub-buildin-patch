@@ -1,0 +1,44 @@
+From aa95f4aa5127c9871fdd461a0878459ce81c806f Mon Sep 17 00:00:00 2001
+From: Xie Xiaodong <xiexiaodong16@huawei.com>
+Date: Sun, 28 Sep 2025 19:00:37 +0800
+Subject: [PATCH 806/960] downstream: config: enable kernel config for
+ cluster-aware
+
+cluster-aware need kernel CONFIG_SCHED_CLUSTER=y
+
+Signed-off-by: Xie Xiaodong <xiexiaodong16@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 2 +-
+ config.aarch64-64k | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 6e3637a865ba..c720e266faf7 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -429,7 +429,7 @@ CONFIG_ARM64_PA_BITS=48
+ # CONFIG_CPU_BIG_ENDIAN is not set
+ CONFIG_CPU_LITTLE_ENDIAN=y
+ CONFIG_SCHED_MC=y
+-# CONFIG_SCHED_CLUSTER is not set
++CONFIG_SCHED_CLUSTER=y
+ CONFIG_SCHED_SMT=y
+ CONFIG_NR_CPUS=512
+ CONFIG_HOTPLUG_CPU=y
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 55c702a876c0..7d8d1e329d39 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -431,7 +431,7 @@ CONFIG_ARM64_PA_BITS=48
+ # CONFIG_CPU_BIG_ENDIAN is not set
+ CONFIG_CPU_LITTLE_ENDIAN=y
+ CONFIG_SCHED_MC=y
+-# CONFIG_SCHED_CLUSTER is not set
++CONFIG_SCHED_CLUSTER=y
+ CONFIG_SCHED_SMT=y
+ CONFIG_NR_CPUS=512
+ CONFIG_HOTPLUG_CPU=y
+-- 
+2.43.0
+

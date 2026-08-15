@@ -1,0 +1,82 @@
+From 9c6a4e3770d06293c465bc588eef734ec2ed9012 Mon Sep 17 00:00:00 2001
+From: Michael Shavit <mshavit@google.com>
+Date: Fri, 15 Sep 2023 21:17:38 +0800
+Subject: [PATCH 135/960] iommu/arm-smmu-v3: Cleanup arm_smmu_domain_finalise
+
+commit 5e14313df2c8f81e22e62b4cd068ef3ee30914c8 upstream.
+
+Remove unused master parameter now that the CD table is allocated
+elsewhere.
+
+Reviewed-by: Nicolin Chen <nicolinc@nvidia.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Michael Shavit <mshavit@google.com>
+Tested-by: Nicolin Chen <nicolinc@nvidia.com>
+Link: https://lore.kernel.org/r/20230915211705.v8.7.Iff18df41564b9df82bf40b3ec7af26b87f08ef6e@changeid
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 10 +++-------
+ 1 file changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 08deb7d448a6..1cde051ee09d 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -2088,7 +2088,6 @@ static void arm_smmu_domain_free(struct iommu_domain *domain)
+ }
+ 
+ static int arm_smmu_domain_finalise_s1(struct arm_smmu_domain *smmu_domain,
+-				       struct arm_smmu_master *master,
+ 				       struct io_pgtable_cfg *pgtbl_cfg)
+ {
+ 	int ret;
+@@ -2126,7 +2125,6 @@ static int arm_smmu_domain_finalise_s1(struct arm_smmu_domain *smmu_domain,
+ }
+ 
+ static int arm_smmu_domain_finalise_s2(struct arm_smmu_domain *smmu_domain,
+-				       struct arm_smmu_master *master,
+ 				       struct io_pgtable_cfg *pgtbl_cfg)
+ {
+ 	int vmid;
+@@ -2153,8 +2151,7 @@ static int arm_smmu_domain_finalise_s2(struct arm_smmu_domain *smmu_domain,
+ 	return 0;
+ }
+ 
+-static int arm_smmu_domain_finalise(struct iommu_domain *domain,
+-				    struct arm_smmu_master *master)
++static int arm_smmu_domain_finalise(struct iommu_domain *domain)
+ {
+ 	int ret;
+ 	unsigned long ias, oas;
+@@ -2162,7 +2159,6 @@ static int arm_smmu_domain_finalise(struct iommu_domain *domain,
+ 	struct io_pgtable_cfg pgtbl_cfg;
+ 	struct io_pgtable_ops *pgtbl_ops;
+ 	int (*finalise_stage_fn)(struct arm_smmu_domain *,
+-				 struct arm_smmu_master *,
+ 				 struct io_pgtable_cfg *);
+ 	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+ 	struct arm_smmu_device *smmu = smmu_domain->smmu;
+@@ -2214,7 +2210,7 @@ static int arm_smmu_domain_finalise(struct iommu_domain *domain,
+ 	domain->geometry.aperture_end = (1UL << pgtbl_cfg.ias) - 1;
+ 	domain->geometry.force_aperture = true;
+ 
+-	ret = finalise_stage_fn(smmu_domain, master, &pgtbl_cfg);
++	ret = finalise_stage_fn(smmu_domain, &pgtbl_cfg);
+ 	if (ret < 0) {
+ 		free_io_pgtable_ops(pgtbl_ops);
+ 		return ret;
+@@ -2424,7 +2420,7 @@ static int arm_smmu_attach_dev(struct iommu_domain *domain, struct device *dev)
+ 
+ 	if (!smmu_domain->smmu) {
+ 		smmu_domain->smmu = smmu;
+-		ret = arm_smmu_domain_finalise(domain, master);
++		ret = arm_smmu_domain_finalise(domain);
+ 		if (ret)
+ 			smmu_domain->smmu = NULL;
+ 	} else if (smmu_domain->smmu != smmu)
+-- 
+2.43.0
+

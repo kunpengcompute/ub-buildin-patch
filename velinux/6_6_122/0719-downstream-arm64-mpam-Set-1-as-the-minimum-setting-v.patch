@@ -1,0 +1,31 @@
+From bc7aa8761428121744c6a75d96669f457a52ec6d Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Fri, 23 May 2025 12:21:33 +0800
+Subject: [PATCH 719/960] downstream: arm64/mpam: Set 1 as the minimum setting
+ value for MBA
+
+The MPAM hardware does not allow setting 0 as the bandwidth limit value.
+Otherwise, it would exhibit undefined behavior.
+
+Fixes: 58db5c68e84a ("untested: arm_mpam: resctrl: Add support for MB resource")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index d9c75150be95..db46cd9a3d13 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -925,6 +925,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 
+ 		r->membw.delay_linear = true;
+ 		r->membw.throttle_mode = THREAD_THROTTLE_UNDEFINED;
++		r->membw.min_bw = 1;
+ 		r->membw.bw_gran = get_mba_granularity(cprops);
+ 
+ 		/* Round up to at least 1% */
+-- 
+2.43.0
+

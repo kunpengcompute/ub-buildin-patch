@@ -1,0 +1,84 @@
+From e7488a3405114a4fc3d44ba4928dd25c6a38da85 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Thu, 29 Feb 2024 14:54:17 +0000
+Subject: [PATCH 445/960] KVM: arm64: Fix TRFCR_EL1/PMSCR_EL1 access in hVHE
+ mode
+
+commit 9a3bfb27ef65ad41d994765c031ca18217afb058 upstream.
+
+When running in hVHE mode, EL1 accesses are performed with the EL12
+accessor, as we run with HCR_EL2.E2H=1.
+
+Unfortunately, both PMSCR_EL1 and TRFCR_EL1 are used with the
+EL1 accessor, meaning that we actually affect the EL2 state. Duh.
+
+Switch to using the {read,write}_sysreg_el1() helpers that will do
+the right thing in all circumstances.
+
+Note that the 'Fixes:' tag doesn't represent the point where the bug
+was introduced (there is no such point), but the first practical point
+where the hVHE feature is usable.
+
+Cc: James Clark <james.clark@arm.com>
+Cc: Anshuman Khandual <anshuman.khandual@arm.com>
+Fixes: 38cba55008e5 ("KVM: arm64: Force HCR_E2H in guest context when ARM64_KVM_HVHE is set")
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Reviewed-by: Oliver Upton <oliver.upton@linux.dev>
+Link: https://lore.kernel.org/r/20240229145417.3606279-1-maz@kernel.org
+Signed-off-by: Oliver Upton <oliver.upton@linux.dev>
+Signed-off-by: Junhao He <hejunhao3@huawei.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hyp/nvhe/debug-sr.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm64/kvm/hyp/nvhe/debug-sr.c b/arch/arm64/kvm/hyp/nvhe/debug-sr.c
+index 4558c02eb352..7746ea507b6f 100644
+--- a/arch/arm64/kvm/hyp/nvhe/debug-sr.c
++++ b/arch/arm64/kvm/hyp/nvhe/debug-sr.c
+@@ -31,8 +31,8 @@ static void __debug_save_spe(u64 *pmscr_el1)
+ 		return;
+ 
+ 	/* Yes; save the control register and disable data generation */
+-	*pmscr_el1 = read_sysreg_s(SYS_PMSCR_EL1);
+-	write_sysreg_s(0, SYS_PMSCR_EL1);
++	*pmscr_el1 = read_sysreg_el1(SYS_PMSCR);
++	write_sysreg_el1(0, SYS_PMSCR);
+ 	isb();
+ 
+ 	/* Now drain all buffered data to memory */
+@@ -48,7 +48,7 @@ static void __debug_restore_spe(u64 pmscr_el1)
+ 	isb();
+ 
+ 	/* Re-enable data generation */
+-	write_sysreg_s(pmscr_el1, SYS_PMSCR_EL1);
++	write_sysreg_el1(pmscr_el1, SYS_PMSCR);
+ }
+ 
+ static void __debug_save_trace(u64 *trfcr_el1)
+@@ -63,8 +63,8 @@ static void __debug_save_trace(u64 *trfcr_el1)
+ 	 * Since access to TRFCR_EL1 is trapped, the guest can't
+ 	 * modify the filtering set by the host.
+ 	 */
+-	*trfcr_el1 = read_sysreg_s(SYS_TRFCR_EL1);
+-	write_sysreg_s(0, SYS_TRFCR_EL1);
++	*trfcr_el1 = read_sysreg_el1(SYS_TRFCR);
++	write_sysreg_el1(0, SYS_TRFCR);
+ 	isb();
+ 	/* Drain the trace buffer to memory */
+ 	tsb_csync();
+@@ -76,7 +76,7 @@ static void __debug_restore_trace(u64 trfcr_el1)
+ 		return;
+ 
+ 	/* Restore trace filter controls */
+-	write_sysreg_s(trfcr_el1, SYS_TRFCR_EL1);
++	write_sysreg_el1(trfcr_el1, SYS_TRFCR);
+ }
+ 
+ void __debug_save_host_buffers_nvhe(struct kvm_vcpu *vcpu)
+-- 
+2.43.0
+

@@ -1,0 +1,40 @@
+From ef0893df08926905980d5917ad7ea7df00874ad1 Mon Sep 17 00:00:00 2001
+From: gaoxiang17 <gaoxiang17@xiaomi.com>
+Date: Fri, 20 Sep 2024 20:20:30 +0800
+Subject: [PATCH 056/960] mm/page_alloc: add some detailed comments in
+ can_steal_fallback
+
+commit 6025ea5abbe5d813d6a41c78e6ea14259fb503f4 upstream.
+
+[akpm@linux-foundation.org: tweak grammar, fit to 80 cols]
+Link: https://lkml.kernel.org/r/20240920122030.159751-1-gxxa03070307@gmail.com
+Signed-off-by: gaoxiang17 <gaoxiang17@xiaomi.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/page_alloc.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index d3225ef1d49d..5f923712c6e8 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -1864,6 +1864,14 @@ static bool can_steal_fallback(unsigned int order, int start_mt)
+ 	if (order >= pageblock_order)
+ 		return true;
+ 
++	/*
++	 * Movable pages won't cause permanent fragmentation, so when you alloc
++	 * small pages, you just need to temporarily steal unmovable or
++	 * reclaimable pages that are closest to the request size.  After a
++	 * while, memory compaction may occur to form large contiguous pages,
++	 * and the next movable allocation may not need to steal.  Unmovable and
++	 * reclaimable allocations need to actually steal pages.
++	 */
+ 	if (order >= pageblock_order / 2 ||
+ 		start_mt == MIGRATE_RECLAIMABLE ||
+ 		start_mt == MIGRATE_UNMOVABLE ||
+-- 
+2.43.0
+

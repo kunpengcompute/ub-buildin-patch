@@ -1,0 +1,173 @@
+From c1d5f222c25dd75e7e443b873efaa77fdcd8e1c7 Mon Sep 17 00:00:00 2001
+From: leizongkun <leizongkun@huawei.com>
+Date: Thu, 13 Nov 2025 16:16:27 +0800
+Subject: [PATCH 942/960] downstream: kvm: supports hugepages reclaime notify
+
+euleros inclusion
+category: feature
+CVE: NA
+
+------------------------------------------------------------------
+
+supports hugepages reclaime notify,
+that is if there is no hugepage memory, it will notify the event.
+
+Signed-off-by: wangzhigang <wangzhigang17@huawei.com>
+Signed-off-by: zhangliang <zhangliang5@huawei.com>
+Signed-off-by: leizongkun <leizongkun@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/mm.h  |  1 +
+ mm/hugetlb.c        | 87 +++++++++++++++++++++++++++++++++++++++++++++
+ mm/reclaim_notify.c | 11 ++++++
+ 3 files changed, 99 insertions(+)
+
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index 7b78cd76c4b9..f948cd85fe88 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -4305,6 +4305,7 @@ int set_linear_mapping_invalid(unsigned long start_pfn, unsigned long end_pfn,
+ enum reclaim_reason {
+ 	RR_KSWAPD,
+ 	RR_DIRECT_RECLAIM,
++	RR_HUGEPAGE_RECLAIM,
+ 	RR_TYPES
+ };
+ 
+diff --git a/mm/hugetlb.c b/mm/hugetlb.c
+index 1510fbab7f7b..0361a16225c2 100644
+--- a/mm/hugetlb.c
++++ b/mm/hugetlb.c
+@@ -3199,6 +3199,78 @@ int isolate_or_dissolve_huge_page(struct page *page, struct list_head *list)
+ 	return ret;
+ }
+ 
++static struct mutex *reclaim_notify_mutex_table;
++
++static void hugetlb_reclaim_notify_init(void)
++{
++	int i;
++
++	if (!IS_ENABLED(CONFIG_RECLAIM_NOTIFY))
++		return;
++
++	if (!IS_ENABLED(CONFIG_KVM))
++		return;
++
++	if (!numa_remote_enabled)
++		return;
++
++	reclaim_notify_mutex_table = kmalloc_array(MAX_NUMNODES, sizeof(struct mutex), GFP_KERNEL);
++	if (!reclaim_notify_mutex_table)
++		return;
++
++	for (i = 0; i < MAX_NUMNODES; i++)
++		mutex_init(&reclaim_notify_mutex_table[i]);
++}
++
++static bool try_hugetlb_reclaim_notify(struct hstate *h, struct mm_struct *mm,
++						struct vm_area_struct *vma, unsigned long address)
++{
++	struct mempolicy *mpol;
++	gfp_t gfp_mask;
++	int nid;
++	nodemask_t *nodemask;
++
++	if (!IS_ENABLED(CONFIG_RECLAIM_NOTIFY))
++		return false;
++
++	if (!IS_ENABLED(CONFIG_KVM))
++		return false;
++
++	if (!numa_remote_enabled)
++		return false;
++
++	if (!reclaim_notify_mutex_table)
++		return false;
++
++	if (hstate_is_gigantic(h))
++		return false;
++
++	if (h->surplus_huge_pages >= h->nr_overcommit_huge_pages) {
++		gfp_mask = htlb_alloc_mask(h);
++		nid = huge_node(vma, address, gfp_mask, &mpol, &nodemask);
++		mpol_cond_put(mpol);
++
++		if (!mutex_trylock(&reclaim_notify_mutex_table[nid])) {
++			/* release mm lock for VM_FAULT_RETRY */
++			mmap_read_unlock(mm);
++
++			/* wait for others reclaim notify complete */
++			mutex_lock(&reclaim_notify_mutex_table[nid]);
++			mutex_unlock(&reclaim_notify_mutex_table[nid]);
++			return true;
++		}
++
++		/* release mm lock for VM_FAULT_RETRY */
++		mmap_read_unlock(mm);
++
++		do_reclaim_notify(RR_HUGEPAGE_RECLAIM, &nid);
++
++		mutex_unlock(&reclaim_notify_mutex_table[nid]);
++		return true;
++	}
++	return false;
++}
++
+ struct folio *alloc_hugetlb_folio(struct vm_area_struct *vma,
+ 				    unsigned long addr, int avoid_reserve)
+ {
+@@ -4760,6 +4832,8 @@ static int __init hugetlb_init(void)
+ 	hugetlb_cgroup_file_init();
+ 	hugetlb_sysctl_init();
+ 
++	hugetlb_reclaim_notify_init();
++
+ #ifdef CONFIG_SMP
+ 	num_fault_mutexes = roundup_pow_of_two(8 * num_possible_cpus());
+ #else
+@@ -6474,6 +6548,19 @@ static vm_fault_t hugetlb_no_page(struct mm_struct *mm,
+ 				ret = vmf_error(PTR_ERR(folio));
+ 			else
+ 				ret = 0;
++
++			if (ret && PTR_ERR(folio) == -ENOSPC &&
++				(flags & FAULT_FLAG_ALLOW_RETRY) &&
++				!(flags & FAULT_FLAG_TRIED) &&
++				!(flags & FAULT_FLAG_RETRY_NOWAIT)) {
++				hugetlb_vma_unlock_read(vma);
++				mutex_unlock(&hugetlb_fault_mutex_table[hash]);
++
++				if (try_hugetlb_reclaim_notify(h, mm, vma, address))
++					return VM_FAULT_RETRY;
++				return ret;
++			}
++
+ 			goto out;
+ 		}
+ 		folio_zero_user(folio, address);
+diff --git a/mm/reclaim_notify.c b/mm/reclaim_notify.c
+index d910e2956102..386cecc1e672 100644
+--- a/mm/reclaim_notify.c
++++ b/mm/reclaim_notify.c
+@@ -70,6 +70,17 @@ unsigned long do_reclaim_notify(enum reclaim_reason reason,
+ 
+ 		data.nr_nid = idx;
+ 		data.sync = true;
++	} else if (reason == RR_HUGEPAGE_RECLAIM) {
++		if (WARN_ON((int *)reclaim_context == NULL))
++			return 0;
++
++		nid = *(int *)reclaim_context;
++		if (numa_is_remote_node(nid))
++			return 0;
++
++		data.nid[0] = nid;
++		data.nr_nid = 1;
++		data.sync = true;
+ 	} else {
+ 		pg_data_t *pgdat =  (pg_data_t *)reclaim_context;
+ 
+-- 
+2.43.0
+

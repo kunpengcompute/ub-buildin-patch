@@ -1,0 +1,185 @@
+From 53289ab47430da2428924ef6826f4797ff8bac22 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Tue, 19 Nov 2024 16:49:08 +0800
+Subject: [PATCH 885/960] downstream: iommu: Fix kabi breakage
+
+Fix kabi breakage due to "iommufd: Add iommufd fault object".
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+Signed-off-by: Zhang Guangzhi <zhangguangzhi3@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/io-pgfault.c              | 11 ++++++++---
+ drivers/iommu/iommufd/fault.c           | 11 ++++++-----
+ drivers/iommu/iommufd/iommufd_private.h |  7 +++++--
+ include/linux/iommu.h                   | 17 ++++++++++++-----
+ 4 files changed, 31 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/iommu/io-pgfault.c b/drivers/iommu/io-pgfault.c
+index 1a3d06ed704a..9365d334e3f5 100644
+--- a/drivers/iommu/io-pgfault.c
++++ b/drivers/iommu/io-pgfault.c
+@@ -54,8 +54,11 @@ static void __iopf_free_group(struct iopf_group *group)
+ 
+ void iopf_free_group(struct iopf_group *group)
+ {
++	struct iopf_group_extend *group_extend;
++
+ 	__iopf_free_group(group);
+-	kfree(group);
++	group_extend = container_of(group, struct iopf_group_extend, iopf_group);
++	kfree(group_extend);
+ }
+ EXPORT_SYMBOL_GPL(iopf_free_group);
+ 
+@@ -84,15 +87,17 @@ static struct iopf_group *iopf_group_alloc(struct iommu_fault_param *iopf_param,
+ {
+ 	struct iopf_fault *iopf, *next;
+ 	struct iopf_group *group;
++	struct iopf_group_extend *group_extend;
+ 
+-	group = kzalloc(sizeof(*group), GFP_KERNEL);
+-	if (!group) {
++	group_extend = kzalloc(sizeof(*group_extend), GFP_KERNEL);
++	if (!group_extend) {
+ 		/*
+ 		 * We always need to construct the group as we need it to abort
+ 		 * the request at the driver if it can't be handled.
+ 		 */
+ 		group = abort_group;
+ 	}
++	group = &group_extend->iopf_group;
+ 
+ 	group->fault_param = iopf_param;
+ 	group->last_fault.fault = evt->fault;
+diff --git a/drivers/iommu/iommufd/fault.c b/drivers/iommu/iommufd/fault.c
+index 61b77ddc48bb..5559c96c7552 100644
+--- a/drivers/iommu/iommufd/fault.c
++++ b/drivers/iommu/iommufd/fault.c
+@@ -227,7 +227,7 @@ int iommufd_fault_domain_replace_dev(struct iommufd_device *idev,
+ void iommufd_fault_destroy(struct iommufd_object *obj)
+ {
+ 	struct iommufd_fault *fault = container_of(obj, struct iommufd_fault, obj);
+-	struct iopf_group *group, *next;
++	struct iopf_group_extend *group_extend, *next;
+ 	unsigned long index;
+ 
+ 	/*
+@@ -236,10 +236,10 @@ void iommufd_fault_destroy(struct iommufd_object *obj)
+ 	 * accessing this pointer. Therefore, acquiring the mutex here
+ 	 * is unnecessary.
+ 	 */
+-	list_for_each_entry_safe(group, next, &fault->deliver, node) {
+-		list_del(&group->node);
+-		iopf_group_response(group, IOMMU_PAGE_RESP_INVALID);
+-		iopf_free_group(group);
++	list_for_each_entry_safe(group_extend, next, &fault->deliver, node) {
++		list_del(&group_extend->node);
++		iopf_group_response(&group_extend->iopf_group, IOMMU_PAGE_RESP_INVALID);
++		iopf_free_group(&group_extend->iopf_group);
+ 	}
+ 	xa_for_each(&fault->response, index, group) {
+ 		xa_erase(&fault->response, index);
+@@ -273,6 +273,7 @@ static ssize_t iommufd_fault_fops_read(struct file *filep, char __user *buf,
+ 	struct iommu_hwpt_pgfault data = {};
+ 	struct iommufd_device *idev;
+ 	struct iopf_group *group;
++	struct iopf_group_extend *group_extend;
+ 	struct iopf_fault *iopf;
+ 	size_t done = 0;
+ 	int rc = 0;
+diff --git a/drivers/iommu/iommufd/iommufd_private.h b/drivers/iommu/iommufd/iommufd_private.h
+index a7fb1ed7a41e..b16559f06fa7 100644
+--- a/drivers/iommu/iommufd/iommufd_private.h
++++ b/drivers/iommu/iommufd/iommufd_private.h
+@@ -450,11 +450,14 @@ iommufd_fault_deliver_fetch(struct iommufd_fault *fault)
+ {
+ 	struct list_head *list = &fault->deliver;
+ 	struct iopf_group *group = NULL;
++	struct iopf_group_extend *group_extend = NULL;
+ 
+ 	spin_lock(&fault->lock);
+ 	if (!list_empty(list)) {
+-		group = list_first_entry(list, struct iopf_group, node);
+-		list_del(&group->node);
++		group_extend = list_first_entry(list,
++						struct iopf_group_extend, node);
++		group = &group_extend->iopf_group;
++		list_del(&group_extend->node);
+ 	}
+ 	spin_unlock(&fault->lock);
+ 	return group;
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index ee10dd82e517..9adde719b7a9 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -127,16 +127,21 @@ struct iopf_fault {
+ struct iopf_group {
+ 	struct iopf_fault last_fault;
+ 	struct list_head faults;
+-	size_t fault_count;
+ 	/* list node for iommu_fault_param::faults */
+ 	struct list_head pending_node;
+ 	struct work_struct work;
+ 	struct iommu_attach_handle *attach_handle;
+ 	/* The device's fault data parameter. */
+ 	struct iommu_fault_param *fault_param;
++
++	size_t fault_count;
++	u32 cookie;
++};
++
++struct iopf_group_extend {
++	struct iopf_group iopf_group;
+ 	/* Used by handler provider to hook the group on its own lists. */
+ 	struct list_head node;
+-	u32 cookie;
+ };
+ 
+ /**
+@@ -627,8 +632,6 @@ struct iommu_ops {
+ 		struct device *dev, u32 flags, struct iommu_domain *parent,
+ 		const struct iommu_user_data *user_data);
+ 	struct iommu_domain *(*domain_alloc_paging)(struct device *dev);
+-	struct iommu_domain *(*domain_alloc_sva)(struct device *dev,
+-						 struct mm_struct *mm);
+ 
+ 	struct iommu_device *(*probe_device)(struct device *dev);
+ 	void (*release_device)(struct device *dev);
+@@ -652,7 +655,7 @@ struct iommu_ops {
+ 
+ 	int (*def_domain_type)(struct device *dev);
+ 	void (*remove_dev_pasid)(struct device *dev, ioasid_t pasid,
+-				 struct iommu_domain *domain);
++				struct iommu_domain *domain);
+ 
+ 	struct iommufd_viommu *(*viommu_alloc)(
+ 		struct device *dev, struct iommu_domain *parent_domain,
+@@ -665,6 +668,8 @@ struct iommu_ops {
+ 	struct iommu_domain *blocked_domain;
+ 	struct iommu_domain *default_domain;
+ 	u8 user_pasid_table:1;
++	struct iommu_domain *(*domain_alloc_sva)(struct device *dev,
++				struct mm_struct *mm);
+ };
+ 
+ /**
+@@ -1129,12 +1134,14 @@ struct iommu_attach_handle {
+ struct iommu_sva {
+ 	struct iommu_attach_handle	handle;
+ 	struct device			*dev;
++	struct list_head		handle_item;
+ 	refcount_t			users;
+ };
+ 
+ struct iommu_mm_data {
+ 	u32			pasid;
+ 	struct list_head	sva_domains;
++	struct list_head	sva_handles;
+ };
+ 
+ int iommu_fwspec_init(struct device *dev, struct fwnode_handle *iommu_fwnode,
+-- 
+2.43.0
+

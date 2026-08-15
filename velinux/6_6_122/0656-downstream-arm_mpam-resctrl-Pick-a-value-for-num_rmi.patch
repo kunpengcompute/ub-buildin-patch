@@ -1,0 +1,61 @@
+From 1f778f147b38eda95e3e733cf75443d6b96416bd Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:08 +0800
+Subject: [PATCH 656/960] downstream: arm_mpam: resctrl: Pick a value for
+ num_rmid
+
+After the changes to resctrl to support MPAM, num_rmid is only used as a
+value that is unfortunately exposed to user-space. For MPAM, this value
+doesn't mean anything, and whatever value we do expose will be wrong
+for some use cases.
+
+User-space may expect it can use this value to know how many 'extra'
+monitor groups it can create. e.g. on x86 if num_closid=4, num_rmid=8,
+then a total of 4 monitor groups can be created. If num_rmid were 2,
+then only 2 control groups could be created.
+For MPAM the number of pmg is very likely to be smaller than the number
+of partid, but this doesn't restrict the creation of control groups,
+as each control group has its own pmg space.
+
+Pick 1 if monitoring is supported.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 18 +++++++++++++++---
+ 1 file changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index d294db50a651..f71f8c466817 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -180,10 +180,22 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 			exposed_alloc_capable = true;
+ 		}
+ 
+-		if (class->level == 3 && cache_has_usable_csu(class)) {
++		if (class->level == 3 && cache_has_usable_csu(class))
+ 			r->mon_capable = true;
+-			exposed_mon_capable = true;
+-		}
++	}
++
++	if (r->mon_capable) {
++		exposed_mon_capable = true;
++
++		/*
++		 * Unfortunately, num_rmid doesn't mean anything for
++		 * mpam, and its exposed to user-space!
++		 * num-rmid is supposed to mean the number of groups
++		 * that can be created, both control or monitor groups.
++		 * For mpam, each control group has its own pmg/rmid
++		 * space.
++		 */
++		r->num_rmid = 1;
+ 	}
+ 
+ 	return 0;
+-- 
+2.43.0
+

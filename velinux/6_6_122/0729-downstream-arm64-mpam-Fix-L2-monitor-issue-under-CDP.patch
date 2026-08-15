@@ -1,0 +1,116 @@
+From 2684b5f601c253755d4e613ad3b40c26a250c261 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 7 Jul 2025 09:52:25 +0800
+Subject: [PATCH 729/960] downstream: arm64/mpam: Fix L2 monitor issue under
+ CDP mode
+
+The L2 monitor counters always reset to 0 under CDP working mode. This
+occurs because the L2 monitor employs cumulative statistics, and
+monitors a single partid within each statistical cycle. After completing
+the configuration for the new partid monitoring, the monitor instance
+starts a new monitoring cycle and resets the counter to zero.
+
+Since MPAM implements the CDP feature by allocating two partids, switching
+the monitor's target partid during a monitoring cycle falsely triggers a
+"new control group" assumption, leading to erroneous counter resets.
+
+To resolve this, use the real partid % num_mon to ensure distinct
+monitor instances track different partids under the CDP control group,
+preventing unintended resets.
+
+Fixes: 556688623b2b ("fs/resctrl: Create l2 cache monitors")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 42 ++++++++++------------------
+ 1 file changed, 14 insertions(+), 28 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index a0c88291a4c7..0606abffa939 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -265,19 +265,8 @@ static void *resctrl_arch_mon_ctx_alloc_no_wait(struct rdt_resource *r,
+ 	if (!ret)
+ 		return ERR_PTR(-ENOMEM);
+ 
+-	switch (evtid) {
+-	case QOS_L3_OCCUP_EVENT_ID:
+-	case QOS_L3_MBM_LOCAL_EVENT_ID:
+-	case QOS_L3_MBM_TOTAL_EVENT_ID:
+-	case QOS_L2_OCCUP_EVENT_ID:
+-	case QOS_L2_MBM_CORE_EVENT_ID:
+-		*ret = __mon_is_rmid_idx;
+-		return ret;
+-
+-	default:
+-		kfree(ret);
+-		return ERR_PTR(-EOPNOTSUPP);
+-	}
++	*ret = __mon_is_rmid_idx;
++	return ret;
+ }
+ 
+ void *resctrl_arch_mon_ctx_alloc(struct rdt_resource *r, int evtid)
+@@ -327,7 +316,6 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
+ 	struct mon_cfg cfg;
+ 	struct mpam_resctrl_dom *dom;
+ 	struct mpam_resctrl_res *res;
+-	u32 mon = *(u32 *)arch_mon_ctx;
+ 	enum mpam_device_features type;
+ 
+ 	resctrl_arch_rmid_read_context_check();
+@@ -348,20 +336,15 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
+ 		return -EINVAL;
+ 	}
+ 
+-	cfg.mon = mon;
+-	if (cfg.mon == USE_RMID_IDX) {
+-		/*
+-		 * The number of mbwu monitors can't support free run mode,
+-		 * adapt the remainder of rmid to the num_mon as compromise.
+-		 */
+-		res = container_of(r, struct mpam_resctrl_res, resctrl_res);
+-		if (type == mpam_feat_msmon_mbwu)
+-			num_mon = res->class->props.num_mbwu_mon;
+-		else
+-			num_mon = res->class->props.num_csu_mon;
+-
+-		cfg.mon = closid % num_mon;
+-	}
++	/*
++	 * The number of mbwu monitors can't support free run mode,
++	 * adapt the remainder of rmid to the num_mon as compromise.
++	 */
++	res = container_of(r, struct mpam_resctrl_res, resctrl_res);
++	if (type == mpam_feat_msmon_mbwu)
++		num_mon = res->class->props.num_mbwu_mon;
++	else
++		num_mon = res->class->props.num_csu_mon;
+ 
+ 	cfg.match_pmg = true;
+ 	cfg.pmg = rmid;
+@@ -369,11 +352,13 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
+ 
+ 	if (cdp_enabled) {
+ 		cfg.partid = resctrl_get_config_index(closid, CDP_DATA);
++		cfg.mon = cfg.partid % num_mon;
+ 		err = mpam_msmon_read(dom->comp, &cfg, type, val);
+ 		if (err)
+ 			return err;
+ 
+ 		cfg.partid = resctrl_get_config_index(closid, CDP_CODE);
++		cfg.mon = cfg.partid % num_mon;
+ 		err = mpam_msmon_read(dom->comp, &cfg, type, &cdp_val);
+ 		if (!err) {
+ 			pr_debug("read monitor rmid %u %s:%u CODE/DATA: %lld/%lld\n",
+@@ -383,6 +368,7 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
+ 		}
+ 	} else {
+ 		cfg.partid = closid;
++		cfg.mon = cfg.partid % num_mon;
+ 		err = mpam_msmon_read(dom->comp, &cfg, type, val);
+ 	}
+ 
+-- 
+2.43.0
+

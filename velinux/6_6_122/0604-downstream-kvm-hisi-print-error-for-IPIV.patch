@@ -1,0 +1,99 @@
+From d534fbd122a9ff15b21d2f9ca85d47766e7b5306 Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Fri, 23 May 2025 20:45:34 +0800
+Subject: [PATCH 604/960] downstream: kvm: hisi: print error for IPIV
+
+Displays detailed IPIV error causes based on hardware information.
+1. Guest sends SGI with IRM=1.
+2. Guest sends multicast.
+3. The index of VM table exceeds the supported range.
+
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-init.c    | 21 ++++++++++++++++++++-
+ drivers/irqchip/irq-gic-v3-its.c   |  8 ++++++++
+ include/linux/irqchip/arm-gic-v3.h |  6 ++++++
+ 3 files changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-init.c b/arch/arm64/kvm/vgic/vgic-init.c
+index 7d7dfa90b5d6..63c7829c8338 100644
+--- a/arch/arm64/kvm/vgic/vgic-init.c
++++ b/arch/arm64/kvm/vgic/vgic-init.c
+@@ -14,6 +14,7 @@
+ #include "vgic.h"
+ 
+ #ifdef CONFIG_ARM64_HISI_IPIV
++#include <linux/irqchip/arm-gic-v3.h>
+ #include "hisilicon/hisi_virt.h"
+ #endif
+ 
+@@ -551,9 +552,27 @@ void kvm_vgic_cpu_down(void)
+ }
+ 
+ #ifdef CONFIG_ARM64_HISI_IPIV
++extern void __iomem *gic_data_rdist_get_vlpi_base(void);
+ static irqreturn_t vgic_ipiv_irq_handler(int irq, void *data)
+ {
+-	kvm_info("IPIV irq handler!\n");
++	void __iomem *vlpi_base = gic_data_rdist_get_vlpi_base();
++	u32 gicr_ipiv_st;
++	bool broadcast_err, grpbrd_err, vcpuidx_err;
++
++	gicr_ipiv_st = readl_relaxed(vlpi_base + GICR_IPIV_ST);
++
++	broadcast_err = !!(gicr_ipiv_st & GICR_IPIV_ST_IRM_ERR);
++	if (broadcast_err)
++		kvm_err("IPIV error: IRM=1 Guest broadcast error\n");
++
++	grpbrd_err = !!(gicr_ipiv_st & GICR_IPIV_ST_BRPBRD_ERR);
++	if (grpbrd_err)
++		kvm_err("IPIV error: Guest group broadcast error\n");
++
++	vcpuidx_err = !!(gicr_ipiv_st & GICR_IPIV_ST_VCPUIDX_ERR);
++	if (vcpuidx_err)
++		kvm_err("IPIV error: The VCPU index is out of range\n");
++
+ 	return IRQ_HANDLED;
+ }
+ #endif
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 24b8f4e7e77a..3f26ad942a60 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -381,6 +381,14 @@ static int alloc_devid_from_rsv_pools(struct rsv_devid_pool **devid_pool,
+ #define gic_data_rdist_rd_base()	(gic_data_rdist()->rd_base)
+ #define gic_data_rdist_vlpi_base()	(gic_data_rdist_rd_base() + SZ_128K)
+ 
++#ifdef CONFIG_ARM64_HISI_IPIV
++void __iomem *gic_data_rdist_get_vlpi_base(void)
++{
++	return gic_data_rdist_vlpi_base();
++}
++EXPORT_SYMBOL(gic_data_rdist_get_vlpi_base);
++#endif
++
+ #ifdef CONFIG_VIRT_PLAT_DEV
+ /*
+  * Currently we only build *one* devid pool.
+diff --git a/include/linux/irqchip/arm-gic-v3.h b/include/linux/irqchip/arm-gic-v3.h
+index 0e604de95dcc..ae139ff41f0a 100644
+--- a/include/linux/irqchip/arm-gic-v3.h
++++ b/include/linux/irqchip/arm-gic-v3.h
+@@ -389,6 +389,12 @@
+ #define GICR_IPIV_ST		0x14c
+ #define GICR_IPIV_ST_IPIV_BUSY_SHIFT 0
+ #define GICR_IPIV_ST_IPIV_BUSY (1 << GICR_IPIV_ST_IPIV_BUSY_SHIFT)
++#define GICR_IPIV_ST_IRM_ERR_ST_SHIFT 1
++#define GICR_IPIV_ST_IRM_ERR   (1 << GICR_IPIV_ST_IRM_ERR_ST_SHIFT)
++#define GICR_IPIV_ST_BRPBRD_ERR_ST_SHIFT 2
++#define GICR_IPIV_ST_BRPBRD_ERR   (1 << GICR_IPIV_ST_BRPBRD_ERR_ST_SHIFT)
++#define GICR_IPIV_ST_VCPUIDX_ERR_ST_SHIFT 3
++#define GICR_IPIV_ST_VCPUIDX_ERR   (1 << GICR_IPIV_ST_VCPUIDX_ERR_ST_SHIFT)
+ #endif /* CONFIG_ARM64_HISI_IPIV */
+ 
+ /*
+-- 
+2.43.0
+

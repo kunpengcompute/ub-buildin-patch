@@ -1,0 +1,141 @@
+From ca72f2fe72ffa2c2ed049f80d58acd842f50f75d Mon Sep 17 00:00:00 2001
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Wed, 10 Apr 2024 10:09:32 +0800
+Subject: [PATCH 454/960] downstream: irqchip/gicv3-its: Add workaround for
+ hip09 ITS erratum 162100801
+
+When enabled GICv4.1 in hip09, there are some invalid vPE configurations in
+configuration table for some situations, which will cause some vSGI
+interrupts lost.
+To fix the issue, need to send vinvall command after vmovp.
+
+Signed-off-by: Nianyao Tang <tangnianyao@huawei.com>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: CaiJian <caijian11@h-partners.com>
+Signed-off-by: Xiexiaodong <xiexiaodong16@huawei.com>
+Conflicts:
+	arch/arm64/Kconfig
+	drivers/irqchip/irq-gic-v3-its.c
+[ Context conflicts. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ Documentation/arch/arm64/silicon-errata.rst |  2 ++
+ arch/arm64/Kconfig                          | 10 ++++++
+ drivers/irqchip/irq-gic-v3-its.c            | 36 ++++++++++++++++-----
+ 3 files changed, 40 insertions(+), 8 deletions(-)
+
+diff --git a/Documentation/arch/arm64/silicon-errata.rst b/Documentation/arch/arm64/silicon-errata.rst
+index fbc833841bef..7626e56fb102 100644
+--- a/Documentation/arch/arm64/silicon-errata.rst
++++ b/Documentation/arch/arm64/silicon-errata.rst
+@@ -251,6 +251,8 @@ stable kernels.
+ |                | SMMU PMCG       |                 |                             |
+ +----------------+-----------------+-----------------+-----------------------------+
+ +----------------+-----------------+-----------------+-----------------------------+
++| Hisilicon      | Hip09           | #162100801      | HISILICON_ERRATUM_162100801 |
+++----------------+-----------------+-----------------+-----------------------------+
+ | Qualcomm Tech. | Kryo/Falkor v1  | E1003           | QCOM_FALKOR_ERRATUM_1003    |
+ +----------------+-----------------+-----------------+-----------------------------+
+ | Qualcomm Tech. | Kryo/Falkor v1  | E1009           | QCOM_FALKOR_ERRATUM_1009    |
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index b77f0b069907..5cd1f863fea7 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -1223,6 +1223,16 @@ config HISILICON_ERRATUM_161600802
+ 
+ 	  If unsure, say Y.
+ 
++config HISILICON_ERRATUM_162100801
++	bool "Hip09 162100801 erratum support"
++	default y
++	help
++	  When enabled GICv4.1 in hip09, there are some invalid vPE config
++	  in configuration tables for some situation, which will cause vSGI
++	  interrupts lost. So fix it by sending vinvall commands after vmovp.
++
++	  If unsure, say Y.
++
+ config QCOM_FALKOR_ERRATUM_1003
+ 	bool "Falkor E1003: Incorrect translation due to ASID change"
+ 	default y
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 22a27d48d3c2..77b9b7351f34 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -43,6 +43,7 @@
+ #define ITS_FLAGS_WORKAROUND_CAVIUM_22375	(1ULL << 1)
+ #define ITS_FLAGS_WORKAROUND_CAVIUM_23144	(1ULL << 2)
+ #define ITS_FLAGS_FORCE_NON_SHAREABLE		(1ULL << 3)
++#define ITS_FLAGS_WORKAROUND_HISILICON_162100801	(1ULL << 4)
+ 
+ #define RD_LOCAL_LPI_ENABLED                    BIT(0)
+ #define RD_LOCAL_PENDTABLE_PREALLOCATED         BIT(1)
+@@ -1315,6 +1316,14 @@ static void its_send_vmapp(struct its_node *its,
+ 	its_send_single_vcommand(its, its_build_vmapp_cmd, &desc);
+ }
+ 
++static void its_send_vinvall(struct its_node *its, struct its_vpe *vpe)
++{
++	struct its_cmd_desc desc;
++
++	desc.its_vinvall_cmd.vpe = vpe;
++	its_send_single_vcommand(its, its_build_vinvall_cmd, &desc);
++}
++
+ static void its_send_vmovp(struct its_vpe *vpe)
+ {
+ 	struct its_cmd_desc desc = {};
+@@ -1358,17 +1367,12 @@ static void its_send_vmovp(struct its_vpe *vpe)
+ 
+ 		desc.its_vmovp_cmd.col = &its->collections[col_id];
+ 		its_send_single_vcommand(its, its_build_vmovp_cmd, &desc);
++		if (is_v4_1(its) && (its->flags &
++				ITS_FLAGS_WORKAROUND_HISILICON_162100801))
++			its_send_vinvall(its, vpe);
+ 	}
+ }
+ 
+-static void its_send_vinvall(struct its_node *its, struct its_vpe *vpe)
+-{
+-	struct its_cmd_desc desc;
+-
+-	desc.its_vinvall_cmd.vpe = vpe;
+-	its_send_single_vcommand(its, its_build_vinvall_cmd, &desc);
+-}
+-
+ static void its_send_vinv(struct its_device *dev, u32 event_id)
+ {
+ 	struct its_cmd_desc desc;
+@@ -4774,6 +4778,14 @@ static bool its_set_non_coherent(void *data)
+ 	return true;
+ }
+ 
++static bool __maybe_unused its_enable_quirk_hip09_162100801(void *data)
++{
++	struct its_node *its = data;
++
++	its->flags |= ITS_FLAGS_WORKAROUND_HISILICON_162100801;
++	return true;
++}
++
+ static const struct gic_quirk its_quirks[] = {
+ #ifdef CONFIG_CAVIUM_ERRATUM_22375
+ 	{
+@@ -4812,6 +4824,14 @@ static const struct gic_quirk its_quirks[] = {
+ 		.init	= its_enable_quirk_socionext_synquacer,
+ 	},
+ #endif
++#ifdef CONFIG_HISILICON_ERRATUM_162100801
++	{
++		.desc = "ITS: Hip09 erratum 162100801",
++		.iidr = 0x00051736,
++		.mask = 0xffffffff,
++		.init = its_enable_quirk_hip09_162100801,
++	},
++#endif
+ #ifdef CONFIG_HISILICON_ERRATUM_161600802
+ 	{
+ 		.desc	= "ITS: Hip07 erratum 161600802",
+-- 
+2.43.0
+

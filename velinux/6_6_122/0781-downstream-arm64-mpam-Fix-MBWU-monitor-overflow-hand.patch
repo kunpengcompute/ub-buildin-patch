@@ -1,0 +1,83 @@
+From 685b6dd6fda455a81e6ced6bfd49264bef60b508 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 25 Oct 2025 14:52:56 +0800
+Subject: [PATCH 781/960] downstream: arm64/mpam: Fix MBWU monitor overflow
+ handling
+
+Bandwidth counters need to run continuously to correctly reflect the
+bandwidth. When reading the previously configured MSMON_CFG_MBWU_CTL,
+software must recognize that the MSMON_CFG_x_CTL_OFLOW_STATUS bit may
+have been set by hardware because of the counter overflow.
+
+The existing logic incorrectly treats this bit as an indication that the
+monitor configuration has been changed and consequently zeros the MBWU
+statistics by mistake.
+
+Also fix the handling of overflow amount calculation. There's no need to
+subtract mbwu_state->prev_val when calculating overflow_val.
+
+Fixes: 21ac9fc8f275 ("arm_mpam: Track bandwidth counter state for overflow and power management")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Quanmin Yan <yanquanmin1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c | 22 ++++++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index a9e5dd5f3c42..3656f3be6e91 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -975,6 +975,21 @@ static u64 mpam_csu_hisi_need_halved(struct mpam_msc_ris *ris, u64 now)
+ 	return now >> 1;
+ }
+ 
++static bool read_msmon_mbwu_is_overflow(struct mpam_msc *msc)
++{
++	u32 ctl;
++	bool overflow;
++
++	ctl = mpam_read_monsel_reg(msc, CFG_MBWU_CTL);
++	overflow = ctl & MSMON_CFG_x_CTL_OFLOW_STATUS ? true : false;
++
++	if (overflow)
++		mpam_write_monsel_reg(msc, CFG_MBWU_CTL, ctl &
++				     ~MSMON_CFG_x_CTL_OFLOW_STATUS);
++
++	return overflow;
++}
++
+ static void __ris_msmon_read(void *arg)
+ {
+ 	bool nrdy = false;
+@@ -982,6 +997,7 @@ static void __ris_msmon_read(void *arg)
+ 	bool config_mismatch;
+ 	struct mon_read *m = arg;
+ 	u64 now, overflow_val = 0;
++	bool mbwu_overflow = false;
+ 	struct mon_cfg *ctx = m->ctx;
+ 	bool reset_on_next_read = false;
+ 	struct mpam_msc_ris *ris = m->ris;
+@@ -1005,6 +1021,8 @@ static void __ris_msmon_read(void *arg)
+ 			reset_on_next_read = mbwu_state->reset_on_next_read;
+ 			mbwu_state->reset_on_next_read = false;
+ 		}
++
++		mbwu_overflow = read_msmon_mbwu_is_overflow(msc);
+ 	}
+ 
+ 	/*
+@@ -1072,8 +1090,8 @@ static void __ris_msmon_read(void *arg)
+ 		}
+ 
+ 		/* Add any pre-overflow value to the mbwu_state->val */
+-		if (mbwu_state->prev_val > now)
+-			overflow_val = mpam_msmon_overflow_val(ris) - mbwu_state->prev_val;
++		if (mbwu_overflow)
++			overflow_val = mpam_msmon_overflow_val(ris);
+ 
+ 		mbwu_state->prev_val = now;
+ 		mbwu_state->correction += overflow_val;
+-- 
+2.43.0
+

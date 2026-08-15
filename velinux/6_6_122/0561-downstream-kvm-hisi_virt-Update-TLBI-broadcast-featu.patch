@@ -1,0 +1,151 @@
+From f8c1aba1c712b60ece20a87b6a2c73c43d498ee3 Mon Sep 17 00:00:00 2001
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Thu, 27 Mar 2025 15:55:54 +0800
+Subject: [PATCH 561/960] downstream: kvm: hisi_virt: Update TLBI broadcast
+ feature for hip12
+
+Compared with hip09, there are some differences on TLBI broadcast
+feature for hip12 including:
+- No need to translate logical cluster id to physical cluster id;
+- The minimum granularity of TLBI broadcast is cluster;
+- Some fields of register LSUDVMBM changes;
+
+So update for corresponding changes.
+
+MPIDR_EL1 layout on HIP12:
+Aff3[3:2]	- socket ID	[0-3]
+Aff3[1:0]	- die ID	[0,1]
+Aff2		- cluster ID	[0-5]
+Aff1		- core ID	[0-15]
+Aff0		- thread ID	[0,1]
+
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: gongzt <gongzhengtang@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hisilicon/hisi_virt.c | 59 +++++++++++++++++++++++++++-
+ arch/arm64/kvm/hisilicon/hisi_virt.h |  8 ++++
+ 2 files changed, 65 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index 9cac8947af6d..728b3b61dc94 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -20,6 +20,7 @@ static const char * const hisi_cpu_type_str[] = {
+ 	"HIP09",
+ 	"HIP10",
+ 	"HIP10C",
++	"HIP12",
+ 	"Unknown"
+ };
+ 
+@@ -30,7 +31,8 @@ static const char * const oem_str[] = {
+ 	"HIP08   ",	/* Hisi 1620 */
+ 	"HIP09   ",	/* HIP09 */
+ 	"HIP10   ",	/* HIP10 */
+-	"HIP10C  "	/* HIP10C */
++	"HIP10C  ",	/* HIP10C */
++	"HIP12   "	/* HIP12 */
+ };
+ 
+ /*
+@@ -396,6 +398,56 @@ static void kvm_update_vm_lsudvmbm(struct kvm *kvm)
+ 	kvm->arch.tlbi_dvmbm = val;
+ }
+ 
++static void kvm_update_vm_lsudvmbm_hip12(struct kvm *kvm)
++{
++	u64 mpidr, aff3, aff2;
++	u64 vm_aff3s[DVMBM_MAX_DIES_HIP12];
++	u64 val;
++	int cpu, nr_dies;
++
++	nr_dies = kvm_dvmbm_get_dies_info(kvm, vm_aff3s, DVMBM_MAX_DIES_HIP12);
++	if (nr_dies > 2) {
++		val = DVMBM_RANGE_ALL_DIES << DVMBM_RANGE_SHIFT;
++		goto out_update;
++	}
++
++	if (nr_dies == 1) {
++		val = DVMBM_RANGE_ONE_DIE << DVMBM_RANGE_SHIFT	|
++		      vm_aff3s[0] << DVMBM_DIE1_VDIE_SHIFT_HIP12;
++
++		/* fulfill bits [11:6] */
++		for_each_cpu(cpu, kvm->arch.sched_cpus) {
++			mpidr = cpu_logical_map(cpu);
++			aff2 = MPIDR_AFFINITY_LEVEL(mpidr, 2);
++
++			val |= 1ULL << (aff2 + DVMBM_DIE1_CLUSTER_SHIFT_HIP12);
++		}
++
++		goto out_update;
++	}
++
++	/* nr_dies == 2 */
++	val = DVMBM_RANGE_TWO_DIES << DVMBM_RANGE_SHIFT	|
++	      DVMBM_GRAN_CLUSTER << DVMBM_GRAN_SHIFT	|
++	      vm_aff3s[0] << DVMBM_DIE1_VDIE_SHIFT_HIP12    |
++	      vm_aff3s[1] << DVMBM_DIE2_VDIE_SHIFT_HIP12;
++
++	/* and fulfill bits [11:0] */
++	for_each_cpu(cpu, kvm->arch.sched_cpus) {
++		mpidr = cpu_logical_map(cpu);
++		aff3 = MPIDR_AFFINITY_LEVEL(mpidr, 3);
++		aff2 = MPIDR_AFFINITY_LEVEL(mpidr, 2);
++
++		if (aff3 == vm_aff3s[0])
++			val |= 1ULL << (aff2 + DVMBM_DIE1_CLUSTER_SHIFT_HIP12);
++		else
++			val |= 1ULL << (aff2 + DVMBM_DIE2_CLUSTER_SHIFT_HIP12);
++	}
++
++out_update:
++	kvm->arch.tlbi_dvmbm = val;
++}
++
+ void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu)
+ {
+ 	struct kvm *kvm = vcpu->kvm;
+@@ -440,7 +492,10 @@ void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu)
+ 	 * Re-calculate LSUDVMBM_EL2 for this VM and kick all vcpus
+ 	 * out to reload the LSUDVMBM configuration.
+ 	 */
+-	kvm_update_vm_lsudvmbm(kvm);
++	if (cpu_type == HI_IP12)
++		kvm_update_vm_lsudvmbm_hip12(kvm);
++	else
++		kvm_update_vm_lsudvmbm(kvm);
+ 	kvm_make_all_cpus_request(kvm, KVM_REQ_RELOAD_TLBI_DVMBM);
+ 
+ out_unlock:
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index e3b006343ead..c45d319e7b41 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -14,6 +14,7 @@ enum hisi_cpu_type {
+ 	HI_IP09,
+ 	HI_IP10,
+ 	HI_IP10C,
++	HI_IP12,
+ 	UNKNOWN_HI_TYPE
+ };
+ 
+@@ -64,6 +65,13 @@ enum hisi_cpu_type {
+ 
+ #define DVMBM_MAX_DIES			32
+ 
++/* HIP12 */
++#define DVMBM_DIE1_VDIE_SHIFT_HIP12		57
++#define DVMBM_DIE2_VDIE_SHIFT_HIP12		53
++#define DVMBM_DIE1_CLUSTER_SHIFT_HIP12		6
++#define DVMBM_DIE2_CLUSTER_SHIFT_HIP12		0
++#define DVMBM_MAX_DIES_HIP12				8
++
+ void probe_hisi_cpu_type(void);
+ bool hisi_ncsnp_supported(void);
+ bool hisi_dvmbm_supported(void);
+-- 
+2.43.0
+

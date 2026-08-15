@@ -1,0 +1,36 @@
+From 4bdbe3bb73b57dfedcc92a45829cb65d98ef3a22 Mon Sep 17 00:00:00 2001
+From: Zhang Qiao <zhangqiao22@huawei.com>
+Date: Mon, 23 Mar 2026 20:09:07 +0800
+Subject: [PATCH 915/960] downstream: exit: terminate process on critical RAS
+ events to prevent further damage
+
+After a critical RAS event is triggered, user data for this task becomes
+inaccessible.
+
+To prevent further system instability, SIGBUS is sent to all threads in
+the process. This ensures immediate termination and prevents wider system
+impact.
+
+Signed-off-by: Zhang Qiao <zhangqiao22@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/apei/ghes.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/acpi/apei/ghes.c b/drivers/acpi/apei/ghes.c
+index 499311c433ee..baa233518675 100644
+--- a/drivers/acpi/apei/ghes.c
++++ b/drivers/acpi/apei/ghes.c
+@@ -501,6 +501,8 @@ static void ghes_handle_critical_ras(unsigned long pfn)
+ 	set_bit(MMF_CRITICAL_ERR, &mm->flags);
+ 	pr_warn_ratelimited(GHES_PFX "detected critical ras on pfn: %#lx, nid: %d, comm: %s, pid: %d, tgid: %d\n",
+ 		pfn, nid, current->comm, current->pid, current->tgid);
++
++	do_send_sig_info(SIGBUS, SEND_SIG_PRIV, current, PIDTYPE_TGID);
+ }
+ 
+ /*
+-- 
+2.43.0
+

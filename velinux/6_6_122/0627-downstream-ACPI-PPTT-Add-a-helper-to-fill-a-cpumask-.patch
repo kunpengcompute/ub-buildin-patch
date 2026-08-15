@@ -1,0 +1,152 @@
+From 0822a2c20b2f87359be8e1cff4bcb9bc1dc10a57 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:57:39 +0800
+Subject: [PATCH 627/960] downstream: ACPI / PPTT: Add a helper to fill a
+ cpumask from a cache_id
+
+MPAM identifies CPUs by the cache_id in the PPTT cache structure.
+
+The driver needs to know which CPUs are associated with the cache,
+the CPUs may not all be online, so cacheinfo does not have the
+information.
+
+Add a helper to pull this information out of the PPTT.
+
+CC: Rohit Mathew <Rohit.Mathew@arm.com>
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/pptt.c  | 79 ++++++++++++++++++++++++++++++++++++++++++--
+ include/linux/acpi.h |  6 ++++
+ 2 files changed, 83 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/acpi/pptt.c b/drivers/acpi/pptt.c
+index 7c56f40dd7eb..c28868dd6246 100644
+--- a/drivers/acpi/pptt.c
++++ b/drivers/acpi/pptt.c
+@@ -183,9 +183,10 @@ acpi_find_cache_level(struct acpi_table_header *table_hdr,
+  * levels and split cache levels (data/instruction).
+  * @table_hdr: Pointer to the head of the PPTT table
+  * @cpu_node: processor node we wish to count caches for
+- * @levels: Number of levels if success.
++ * @levels: Number of levels if success. (*levels) should be initialized by
++ *          the caller with the value to be used as the starting level.
+  * @split_levels:	Number of split cache levels (data/instruction) if
+- *			success. Can by NULL.
++ *			success. Can be NULL.
+  *
+  * Given a processor node containing a processing unit, walk into it and count
+  * how many levels exist solely for it, and then walk up each level until we hit
+@@ -983,6 +984,8 @@ int find_acpi_cache_level_from_id(u32 cache_id)
+ 	 * to find the level...
+ 	 */
+ 	for_each_possible_cpu(cpu) {
++
++		num_levels = 0;
+ 		acpi_cpu_id = get_acpi_id_for_cpu(cpu);
+ 		cpu_node = acpi_find_processor_node(table, acpi_cpu_id);
+ 		if (!cpu_node)
+@@ -1012,3 +1015,75 @@ int find_acpi_cache_level_from_id(u32 cache_id)
+ 	acpi_put_table(table);
+ 	return -ENOENT;
+ }
++
++/**
++ * acpi_pptt_get_cpumask_from_cache_id() - Get the cpus associated with the
++ *					   specified cache
++ * @cache_id: The id field of the unified cache
++ * @cpus: Where to buidl the cpumask
++ *
++ * Determine which CPUs are below this cache in the PPTT. This allows the property
++ * to be found even if the CPUs are offline.
++ *
++ * The PPTT table must be rev 3 or later,
++ *
++ * Return: -ENOENT if the PPTT doesn't exist, or the cache cannot be found.
++ * Otherwise returns 0 and sets the cpus in the provided cpumask.
++ */
++int acpi_pptt_get_cpumask_from_cache_id(u32 cache_id, cpumask_t *cpus)
++{
++	u32 acpi_cpu_id;
++	acpi_status status;
++	int level, cpu, num_levels;
++	struct acpi_pptt_cache *cache;
++	struct acpi_table_header *table;
++	struct acpi_pptt_cache_v1 *cache_v1;
++	struct acpi_pptt_processor *cpu_node;
++
++	cpumask_clear(cpus);
++
++	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table);
++	if (ACPI_FAILURE(status)) {
++		acpi_pptt_warn_missing();
++		return -ENOENT;
++	}
++
++	if (table->revision < 3) {
++		acpi_put_table(table);
++		return -ENOENT;
++	}
++
++	/*
++	 * If we found the cache first, we'd still need to walk from each cpu.
++	 */
++	for_each_possible_cpu(cpu) {
++
++		num_levels = 0;
++		acpi_cpu_id = get_acpi_id_for_cpu(cpu);
++		cpu_node = acpi_find_processor_node(table, acpi_cpu_id);
++		if (!cpu_node)
++			break;
++		acpi_count_levels(table, cpu_node, &num_levels, NULL);
++
++		/* Start at 1 for L1 */
++		for (level = 1; level <= num_levels; level++) {
++			cache = acpi_find_cache_node(table, acpi_cpu_id,
++						     ACPI_PPTT_CACHE_TYPE_UNIFIED,
++						     level, &cpu_node);
++			if (!cache)
++				continue;
++
++			cache_v1 = ACPI_ADD_PTR(struct acpi_pptt_cache_v1,
++						cache,
++						sizeof(struct acpi_pptt_cache));
++
++			if (cache->flags & ACPI_PPTT_CACHE_ID_VALID &&
++			    cache_v1->cache_id == cache_id) {
++				cpumask_set_cpu(cpu, cpus);
++			}
++		}
++	}
++
++	acpi_put_table(table);
++	return 0;
++}
+diff --git a/include/linux/acpi.h b/include/linux/acpi.h
+index 149beec31bad..97999c5803a5 100644
+--- a/include/linux/acpi.h
++++ b/include/linux/acpi.h
+@@ -1509,6 +1509,7 @@ int find_acpi_cpu_topology_package(unsigned int cpu);
+ int find_acpi_cpu_topology_hetero_id(unsigned int cpu);
+ int find_acpi_cache_level_from_id(u32 cache_id);
+ int acpi_pptt_get_cpus_from_container(u32 acpi_cpu_id, cpumask_t *cpus);
++int acpi_pptt_get_cpumask_from_cache_id(u32 cache_id, cpumask_t *cpus);
+ #else
+ static inline int acpi_pptt_cpu_is_thread(unsigned int cpu)
+ {
+@@ -1539,6 +1540,11 @@ static inline int acpi_pptt_get_cpus_from_container(u32 acpi_cpu_id,
+ {
+ 	return -EINVAL;
+ }
++static inline int acpi_pptt_get_cpumask_from_cache_id(u32 cache_id,
++						      cpumask_t *cpus)
++{
++	return -EINVAL;
++}
+ #endif
+ 
+ #ifdef CONFIG_ARM64
+-- 
+2.43.0
+

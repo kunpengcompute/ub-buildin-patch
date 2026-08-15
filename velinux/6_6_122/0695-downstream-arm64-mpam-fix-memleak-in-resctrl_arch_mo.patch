@@ -1,0 +1,78 @@
+From 6ea6488d4f9b4678684ce5643f12b5b013f7b83d Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 23 Apr 2025 18:51:38 +0800
+Subject: [PATCH 695/960] downstream: arm64/mpam: fix memleak in
+ resctrl_arch_mon_ctx_alloc_no_wait()
+
+The smatch tool complains about possible memory leak warning shown below:
+
+drivers/platform/mpam/mpam_resctrl.c:323 resctrl_arch_mon_ctx_alloc_no_wait()
+warn: possible memory leak of 'ret'
+
+drivers/platform/mpam/mpam_resctrl.c:326 resctrl_arch_mon_ctx_alloc_no_wait()
+warn: possible memory leak of 'ret'
+
+Only the QOS_L3_OCCUP_EVENT_ID path will return the allocated object, and
+other case paths will cause memory leaks. In the QOS_L3_MBM_LOCAL_EVENT_ID
+and QOS_L3_MBM_TOTAL_EVENT_ID cases, resctrl_arch_mon_ctx_alloc_no_wait()
+should return a pointer to the allocated object, not an invalid pointer.
+
+Fixes: 9119da143939 ("arm_mpam: resctrl: Allow resctrl to allocate monitors")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 17 ++++++++---------
+ 1 file changed, 8 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 12cb8c45d0d2..7cdba4516e16 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -57,7 +57,6 @@ static DECLARE_WAIT_QUEUE_HEAD(wait_cacheinfo_ready);
+ 
+ /* A dummy mon context to use when the monitors were allocated up front */
+ u32 __mon_is_rmid_idx = USE_RMID_IDX;
+-void *mon_is_rmid_idx = &__mon_is_rmid_idx;
+ 
+ bool resctrl_arch_alloc_capable(void)
+ {
+@@ -267,12 +266,16 @@ static void *resctrl_arch_mon_ctx_alloc_no_wait(struct rdt_resource *r,
+ 
+ 		*ret = mpam_alloc_csu_mon(res->class);
+ 		return ret;
++
+ 	case QOS_L3_MBM_LOCAL_EVENT_ID:
+ 	case QOS_L3_MBM_TOTAL_EVENT_ID:
+-		return mon_is_rmid_idx;
+-	}
++		*ret = __mon_is_rmid_idx;
++		return ret;
+ 
+-	return ERR_PTR(-EOPNOTSUPP);
++	default:
++		kfree(ret);
++		return ERR_PTR(-EOPNOTSUPP);
++	}
+ }
+ 
+ void *resctrl_arch_mon_ctx_alloc(struct rdt_resource *r, int evtid)
+@@ -300,15 +303,11 @@ void resctrl_arch_mon_ctx_free(struct rdt_resource *r, int evtid,
+ 	struct mpam_resctrl_res *res;
+ 	u32 mon = *(u32 *)arch_mon_ctx;
+ 
+-	if (mon == USE_RMID_IDX)
+-		return;
+ 	kfree(arch_mon_ctx);
+-	arch_mon_ctx = NULL;
+-
+-	res = container_of(r, struct mpam_resctrl_res, resctrl_res);
+ 
+ 	switch (evtid) {
+ 	case QOS_L3_OCCUP_EVENT_ID:
++		res = container_of(r, struct mpam_resctrl_res, resctrl_res);
+ 		mpam_free_csu_mon(res->class, mon);
+ 		wake_up(&resctrl_mon_ctx_waiters);
+ 		return;
+-- 
+2.43.0
+

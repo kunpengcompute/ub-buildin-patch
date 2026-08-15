@@ -1,0 +1,70 @@
+From 4a3493a94002df17a3d528252e363f70a624f81e Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Fri, 1 Mar 2024 12:06:44 +0000
+Subject: [PATCH 449/960] KVM: arm64: Exclude host_fpsimd_state pointer from
+ kvm_vcpu_arch
+
+commit 51e09b5572d665645ce394f94f24a7d6ec32bda9 upstream.
+
+As the name of the field indicates, host_fpsimd_state is strictly
+a host piece of data, and we reset this pointer on each PID change.
+
+So let's move it where it belongs, and set it at load-time. Although
+this is slightly more often, it is a well defined life-cycle which
+matches other pieces of data.
+
+Reviewed-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Junhao He <hejunhao3@huawei.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+
+Conflicts:
+arch/arm64/kvm/fpsimd.c
+
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h |  1 +
+ arch/arm64/kvm/fpsimd.c           | 13 ++++++++++++-
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 0c0c4ec31101..d6497d8e6f0c 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -442,6 +442,7 @@ struct kvm_cpu_context {
+  */
+ struct kvm_host_data {
+ 	struct kvm_cpu_context host_ctxt;
++	struct user_fpsimd_state *fpsimd_state;	/* hyp VA */
+ 
+ 	/*
+ 	 * host_debug_state contains the host registers which are
+diff --git a/arch/arm64/kvm/fpsimd.c b/arch/arm64/kvm/fpsimd.c
+index e57db49ea468..bc456d7601e9 100644
+--- a/arch/arm64/kvm/fpsimd.c
++++ b/arch/arm64/kvm/fpsimd.c
+@@ -86,7 +86,18 @@ void kvm_arch_vcpu_load_fp(struct kvm_vcpu *vcpu)
+ 	 * that PSTATE.{SM,ZA} == {0,0}.
+ 	 */
+ 	fpsimd_save_and_flush_cpu_state();
+-	vcpu->arch.fp_state = FP_STATE_FREE;
++	*host_data_ptr(fp_owner) = FP_STATE_FREE;
++	*host_data_ptr(fpsimd_state) = NULL;
++
++	vcpu_clear_flag(vcpu, HOST_SVE_ENABLED);
++	if (read_sysreg(cpacr_el1) & CPACR_EL1_ZEN_EL0EN)
++		vcpu_set_flag(vcpu, HOST_SVE_ENABLED);
++
++	if (system_supports_sme()) {
++		vcpu_clear_flag(vcpu, HOST_SME_ENABLED);
++		if (read_sysreg(cpacr_el1) & CPACR_EL1_SMEN_EL0EN)
++			vcpu_set_flag(vcpu, HOST_SME_ENABLED);
++	}
+ }
+ 
+ /*
+-- 
+2.43.0
+

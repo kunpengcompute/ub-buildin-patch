@@ -1,0 +1,328 @@
+From 4803b873fced1b8e9b51e3be65f0bada29e9c013 Mon Sep 17 00:00:00 2001
+From: Yahui Liu <liuyahui6@huawei.com>
+Date: Mon, 22 Sep 2025 21:44:28 +0800
+Subject: [PATCH 932/960] downstream: vfio: ubus: Support for vfio ubus driver
+ framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5GQ2
+CVE: NA
+
+-----------------------------------------------------------
+
+Support vfio ubus driver framework, when the vfio ub module driver is
+loaded, calls the ub bus driver framework's ub_register_driver() driver
+registration interface to attach it to the ub bus. During unbinding the
+driver, in the remove interface, call the unregistration interface to
+delete the vfio interface file and rlease resource.
+
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+
+vfio:ubus: Support ub vfio config read and write
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5GQ2
+CVE: NA
+
+-----------------------------------------------------------
+
+In user space, read and write operations to the configuration space
+of ub device can be performed through the vfio ub device files.
+
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+
+vfio:ubus: Init vfio ub configuration space
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5GQ2
+CVE: NA
+
+-----------------------------------------------------------
+
+Init vfio ub device's configuration space and init vfio ub's own buffer.
+
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+
+vfio:ubus: Init vfio ub config space 0 perm bits during module init
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5GQ2
+CVE: NA
+
+-----------------------------------------------------------
+
+Init vfio ub config space 0 perm bits during module init. For the
+configuration space registers supported by vfio ub, the read and
+write permissions for each register are controlled through the virt
+and write fields in the struct perm_bits structure.
+
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+
+vfio:ubus: Init vfio ub config space 1 perm and port perm bits during module init
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5GQ2
+CVE: NA
+
+-----------------------------------------------------------
+
+Init vfio ub config space 1 perm and port perm bits during module init.
+For the configuration space registers supported by vfio ub, the read
+and write permissions for each register are controlled through the virt
+and write fields in the struct perm_bits structure.
+
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+
+vfio:ubus: Support access to function entity resource space
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5GQ2
+CVE: NA
+
+-----------------------------------------------------------
+
+Support both direct and indirect access to function entity resource
+space. Vfio ub allows mapping device resource space in user space
+using mmap, obtaining a virtual address available in user space, and
+then using this virtual address to access the resource space in user
+space. Write protection will be applied to the interrput vector
+table section and the interrupt address table section of resource
+space.
+
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+
+vfio:ubus: Support configuration for function entity interrupt
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5GQ2
+CVE: NA
+
+-----------------------------------------------------------
+
+Support configuration for function entity interrupt. In user space,
+device interrupts can be enabled through vfio. Vfio ub invokes the
+interrupt callback interface of the ubus driver to request interrupts
+and registers a user-space interrupt handler for these interrupts.
+When an interrupt occurs, the corresponding kernel interrupt callback
+function of vfio-ub sends a message to user space, notifying it of
+the occurrence of the corresponding interrupt.
+
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+
+vfio:ubus: support obtaining and configuring function entity information in user mode
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5GQ2
+CVE: NA
+
+-----------------------------------------------------------
+
+Support obtaining and configuring function entity information in user
+mode. Vfio ub provides ioctl command to retrieve the corresponding
+information from the ubus driver's device structure to return to
+user-space.
+
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+
+ub:ubus: Add control software restart features
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/9098
+CVE: NA
+
+(cherry-pick from OLK-6.6 commit 5b429f1fd821)
+
+-----------------------------------------------------------
+
+The device is running properly. Only when the management
+and control process is restarted,the software table data
+retained in the process is lost. The corresponding backup
+and restoration functions are implemented.
+
+Signed-off-by: Jianquan Lin <linjianquan2@huawei.com>
+Signed-off-by: Wang Hai <wanghai38@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ include/linux/mod_devicetable.h |  4 ++++
+ include/uapi/linux/vfio.h       | 20 +++++++++++++++-
+ include/ub/ubus/ubus.h          | 42 +++++++++++++++++++++++++++++++++
+ scripts/mod/file2alias.c        |  5 +++-
+ 4 files changed, 69 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/mod_devicetable.h b/include/linux/mod_devicetable.h
+index de678c6b4348..44a9dd285997 100644
+--- a/include/linux/mod_devicetable.h
++++ b/include/linux/mod_devicetable.h
+@@ -950,6 +950,10 @@ struct cdx_device_id {
+ 
+ #define UB_ANY_ID (~0)
+ 
++enum {
++	UB_ID_F_VFIO_DRIVER_OVERRIDE = 1,
++};
++
+ /**
+  * struct ub_device_id - UB device identifier
+  * @vendor:		Vendor ID
+diff --git a/include/uapi/linux/vfio.h b/include/uapi/linux/vfio.h
+index 251b9835e07f..622dee231a4f 100644
+--- a/include/uapi/linux/vfio.h
++++ b/include/uapi/linux/vfio.h
+@@ -224,7 +224,8 @@ struct vfio_device_info {
+ #define VFIO_DEVICE_FLAGS_FSL_MC (1 << 6)	/* vfio-fsl-mc device */
+ #define VFIO_DEVICE_FLAGS_CAPS	(1 << 7)	/* Info supports caps */
+ #define VFIO_DEVICE_FLAGS_CDX	(1 << 8)	/* vfio-cdx device */
+-	__u32	num_regions;	/* Max region index + 1 */
++#define VFIO_DEVICE_FLAGS_UB	(1 << 9)	/* vfio-ub device */
++    __u32   num_regions;    /* Max region index + 1 */
+ 	__u32	num_irqs;	/* Max IRQ index + 1 */
+ 	__u32   cap_offset;	/* Offset within info struct of first cap */
+ 	__u32   pad;
+@@ -657,6 +658,23 @@ enum {
+ 	VFIO_PCI_NUM_IRQS
+ };
+ 
++/* UB irq types */
++enum {
++	VFIO_UB_INTR_IRQ_INDEX,
++	VFIO_UB_REQ_IRQ_INDEX,
++	VFIO_UB_REINIT_IRQ_INDEX,
++	VFIO_UB_NUM_IRQS
++};
++
++/* UB regions types */
++enum {
++	VFIO_UB_REGION0_INDEX = 0,
++	VFIO_UB_REGION1_INDEX,
++	VFIO_UB_REGION2_INDEX,
++	VFIO_UB_CONFIG_REGION_INDEX,
++	VFIO_UB_NUM_REGIONS
++};
++
+ /*
+  * The vfio-ccw bus driver makes use of the following fixed region and
+  * IRQ index mapping. Unimplemented regions return a size of zero.
+diff --git a/include/ub/ubus/ubus.h b/include/ub/ubus/ubus.h
+index bb713749ef28..2bcf265d0b0b 100644
+--- a/include/ub/ubus/ubus.h
++++ b/include/ub/ubus/ubus.h
+@@ -20,6 +20,14 @@
+ 	.vendor = (v), .device = (d), \
+ 	.mod_vendor = (u32)UB_ANY_ID, .module = (u32)UB_ANY_ID
+ 
++#define UB_ENTITY_DRIVER_OVERRIDE(v, d, driver_override) \
++	.vendor = (v), .device = (d), \
++	.mod_vendor = (u32)UB_ANY_ID, .module = (u32)UB_ANY_ID, \
++	.override_only = (driver_override)
++
++#define UB_DRIVER_OVERRIDE_ENTITY_VFIO(v, d) \
++	UB_ENTITY_DRIVER_OVERRIDE(v, d, UB_ID_F_VFIO_DRIVER_OVERRIDE)
++
+ #define UB_ENTITY_MODULE(v, d, m_v, m) \
+ 	.vendor = (v), .device = (d), \
+ 	.mod_vendor = (m_v), .module = (m)
+@@ -273,6 +281,22 @@ struct ub_entity {
+ 		};
+ 		u64 reserved1;
+ 	};
++
++	u64 kabi_reserved1;
++	u64 kabi_reserved2;
++	u64 kabi_reserved3;
++	u64 kabi_reserved4;
++	u64 kabi_reserved5;
++	u64 kabi_reserved6;
++	u64 kabi_reserved7;
++	u64 kabi_reserved8;
++	u64 kabi_reserved9;
++	u64 kabi_reserved10;
++	u64 kabi_reserved11;
++	u64 kabi_reserved12;
++	u64 kabi_reserved13;
++	u64 kabi_reserved14;
++	u64 kabi_reserved15;
+ };
+ 
+ /**
+@@ -301,6 +325,13 @@ struct ub_entity {
+  *			@ub_reset_done.
+  */
+ struct ub_error_handlers {
++	/* UB function reset prepare or completed */
++
++	/*
++	 * Deprecated: This function is going to be removed in future version.
++	 * Please use ub_reset_prepare_return() and ub_reset_done_with_pret()
++	 * instead, which provides more complete return value processing.
++	 */
+ 	void (*ub_reset_prepare)(struct ub_entity *uent);
+ 	void (*ub_reset_done)(struct ub_entity *uent);
+ 	ub_ers_result_t (*ub_error_detected)(struct ub_entity *uent, ub_channel_state_t state);
+@@ -308,6 +339,9 @@ struct ub_error_handlers {
+ 
+ 	int (*ub_reset_prepare_return)(struct ub_entity *uent);
+ 	int (*ub_reset_done_with_pret)(struct ub_entity *uent, int pret);
++
++	u64 kabi_reserved1;
++	u64 kabi_reserved2;
+ };
+ 
+ struct ub_dynids {
+@@ -388,6 +422,14 @@ struct ub_driver {
+ 	bool driver_managed_dma;
+ 
+ 	int (*reinit)(struct ub_entity *uent);
++
++	u64 kabi_reserved1;
++	u64 kabi_reserved2;
++	u64 kabi_reserved3;
++	u64 kabi_reserved4;
++	u64 kabi_reserved5;
++	u64 kabi_reserved6;
++	u64 kabi_reserved7;
+ };
+ 
+ struct ubc_common_attr {
+diff --git a/scripts/mod/file2alias.c b/scripts/mod/file2alias.c
+index 84b6cad4693c..54a761e8a52e 100644
+--- a/scripts/mod/file2alias.c
++++ b/scripts/mod/file2alias.c
+@@ -1475,7 +1475,7 @@ static int do_cdx_entry(const char *filename, void *symval,
+ 	return 1;
+ }
+ 
+-/* Looks like: ub:vNdNmvNmNcN. */
++/* Looks like: ub:vNdNmvNmNcN or <prefix>_ub:vNdNmvNmNcN. */
+ static int do_ub_entry(const char *filename, void *symval, char *alias)
+ {
+ 	/* Class code field can be divided into these two. */
+@@ -1493,6 +1493,9 @@ static int do_ub_entry(const char *filename, void *symval, char *alias)
+ 	case 0:
+ 		strcpy(alias, "ub:");
+ 		break;
++	case UB_ID_F_VFIO_DRIVER_OVERRIDE:
++		strcpy(alias, "vfio_ub:");
++		break;
+ 	default:
+ 		warn("Unknown UB driver_override alias %08X\n",
+ 		     override_only);
+-- 
+2.43.0
+

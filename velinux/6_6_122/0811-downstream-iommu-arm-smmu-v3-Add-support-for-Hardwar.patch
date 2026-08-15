@@ -1,0 +1,93 @@
+From 59724f8ee5ebb58bd5d1af4b4a01cee136de6884 Mon Sep 17 00:00:00 2001
+From: Jia Qingtong <jiaqingtong97@gmail.com>
+Date: Wed, 10 Jan 2024 22:14:48 +0800
+Subject: [PATCH 811/960] downstream: iommu/arm-smmu-v3: Add support for
+ Hardware Translation Table Update
+
+If the SMMU supports it and the kernel was built with HTTU support,
+enable hardware update of access and dirty flags. This is essential for
+shared page tables, to reduce the number of access faults on the fault
+queue. Normal DMA with io-pgtables doesn't currently use the access or
+dirty flags.
+
+We can enable HTTU even if CPUs don't support it, because the kernel
+always checks for HW dirty bit and updates the PTE flags atomically.
+
+Signed-off-by: Jean-Philippe Brucker <jean-philippe@linaro.org>
+Signed-off-by: Jia Qingtong<jiaqingtong97@gmail.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-sva.c | 5 +++++
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c     | 5 +++++
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h     | 8 ++++++++
+ 3 files changed, 18 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-sva.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-sva.c
+index a7c36654dee5..9342fac71801 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-sva.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-sva.c
+@@ -76,6 +76,11 @@ void arm_smmu_make_sva_cd(struct arm_smmu_cd *target,
+ 		CTXDESC_CD_0_ASET |
+ 		FIELD_PREP(CTXDESC_CD_0_ASID, asid));
+ 
++	if (master->smmu->features & ARM_SMMU_FEAT_HD)
++		target->data[0] |= cpu_to_le64(CTXDESC_CD_0_TCR_HD);
++	if (master->smmu->features & ARM_SMMU_FEAT_HA)
++		target->data[0] |= cpu_to_le64(CTXDESC_CD_0_TCR_HA);
++
+ 	/*
+ 	 * If no MM is passed then this creates a SVA entry that faults
+ 	 * everything. arm_smmu_write_cd_entry() can hitlessly go between these
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index a2de0626a9c8..dbb0ec641713 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -1349,6 +1349,11 @@ void arm_smmu_make_s1_cd(struct arm_smmu_cd *target,
+ 		FIELD_PREP(CTXDESC_CD_0_ASID, cd->asid)
+ 		);
+ 
++	/* To enable dirty flag update, set both Access flag and dirty state update */
++	if (pgtbl_cfg->quirks & IO_PGTABLE_QUIRK_ARM_HD)
++		target->data[0] |= cpu_to_le64(CTXDESC_CD_0_TCR_HA |
++					       CTXDESC_CD_0_TCR_HD);
++
+ 	target->data[1] = cpu_to_le64(pgtbl_cfg->arm_lpae_s1_cfg.ttbr &
+ 				      CTXDESC_CD_1_TTB0_MASK);
+ 	target->data[3] = cpu_to_le64(pgtbl_cfg->arm_lpae_s1_cfg.mair);
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+index 537f9feef2b3..23f6f74487fd 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+@@ -36,6 +36,7 @@
+ #define IDR0_HTTU			GENMASK(7, 6)
+ #define IDR0_HTTU_ACCESS		1
+ #define IDR0_HTTU_ACCESS_DIRTY		2
++#define IDR0_BTM			(1 << 5)
+ #define IDR0_COHACC			(1 << 4)
+ #define IDR0_TTF			GENMASK(3, 2)
+ #define IDR0_TTF_AARCH64		2
+@@ -55,6 +56,10 @@
+ #define IDR1_SIDSIZE			GENMASK(5, 0)
+ 
+ #define ARM_SMMU_IDR3			0xc
++#define IDR3_BBML			GENMASK(12, 11)
++#define IDR3_BBML0			0
++#define IDR3_BBML1			1
++#define IDR3_BBML2			2
+ #define IDR3_RIL			(1 << 10)
+ 
+ #define ARM_SMMU_IDR5			0x14
+@@ -341,6 +346,9 @@ static inline unsigned int arm_smmu_cdtab_l2_idx(unsigned int ssid)
+ #define CTXDESC_CD_0_TCR_IPS		GENMASK_ULL(34, 32)
+ #define CTXDESC_CD_0_TCR_TBI0		(1ULL << 38)
+ 
++#define CTXDESC_CD_0_TCR_HA		(1UL << 43)
++#define CTXDESC_CD_0_TCR_HD		(1UL << 42)
++
+ #define CTXDESC_CD_0_AA64		(1UL << 41)
+ #define CTXDESC_CD_0_S			(1UL << 44)
+ #define CTXDESC_CD_0_R			(1UL << 45)
+-- 
+2.43.0
+

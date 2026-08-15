@@ -1,0 +1,37 @@
+From 44bec1f54865b077846375b7b027d126ae1d5c86 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Wed, 27 Mar 2024 10:24:24 +0800
+Subject: [PATCH 746/960] downstream: ACPICA: Add new MADT GICC flags fields
+
+Add the new flag field to the MADT's GICC structure.
+
+'Online Capable' indicates a disabled CPU can be enabled later. See
+ACPI specification 6.5 Tabel 5.37: GICC CPU Interface Flags.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Tested-by: Miguel Luis <miguel.luis@oracle.com>
+Tested-by: Vishnu Pajjuri <vishnu@os.amperecomputing.com>
+Tested-by: Jianyong Wu <jianyong.wu@arm.com>
+Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Signed-off-by: liwei <liwei728@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/acpi/actbl2.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/acpi/actbl2.h b/include/acpi/actbl2.h
+index 8348bf46a648..0f1a2243a392 100644
+--- a/include/acpi/actbl2.h
++++ b/include/acpi/actbl2.h
+@@ -1046,6 +1046,7 @@ struct acpi_madt_generic_interrupt {
+ /* ACPI_MADT_ENABLED                    (1)      Processor is usable if set */
+ #define ACPI_MADT_PERFORMANCE_IRQ_MODE  (1<<1)	/* 01: Performance Interrupt Mode */
+ #define ACPI_MADT_VGIC_IRQ_MODE         (1<<2)	/* 02: VGIC Maintenance Interrupt mode */
++#define ACPI_MADT_GICC_CPU_CAPABLE      (1<<3)	/* 03: CPU is online capable */
+ 
+ /* 12: Generic Distributor (ACPI 5.0 + ACPI 6.0 changes) */
+ 
+-- 
+2.43.0
+

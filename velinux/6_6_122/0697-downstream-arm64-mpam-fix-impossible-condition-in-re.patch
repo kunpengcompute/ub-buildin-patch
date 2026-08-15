@@ -1,0 +1,37 @@
+From 1b1b89b3fb74371248c5839ea14d7627ec8cf14a Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 23 Apr 2025 18:51:40 +0800
+Subject: [PATCH 697/960] downstream: arm64/mpam: fix impossible condition in
+ resctrl_arch_rmid_read()
+
+The smatch tool complains about impossible condition warning shown below:
+
+drivers/platform/mpam/mpam_resctrl.c:414 resctrl_arch_rmid_read()
+warn: impossible condition '(cfg.mon == ((~0) + 1)) => (0-u16max == 65536)'
+
+The USE_RMID_IDX macro is a 32-bit data type, as the assignment object,
+cfg.mon should also be a 32-bit unsigned variable.
+
+Fixes: 21ac9fc8f275 ("arm_mpam: Track bandwidth counter state for overflow and power management")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_internal.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index d24392b7c712..d91f6fb49b99 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -190,7 +190,7 @@ enum mon_filter_options {
+ };
+ 
+ struct mon_cfg {
+-	u16                     mon;
++	u32                     mon;
+ 	u8                      pmg;
+ 	bool                    match_pmg;
+ 	u32                     partid;
+-- 
+2.43.0
+

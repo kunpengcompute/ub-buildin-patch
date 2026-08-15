@@ -1,0 +1,88 @@
+From 9b319ea41cce765d44e500284ef367e47edf63df Mon Sep 17 00:00:00 2001
+From: lishusen <lishusen2@huawei.com>
+Date: Mon, 2 Dec 2024 20:10:59 +0800
+Subject: [PATCH 803/960] downstream: arm64/delay: remove USECS_TO_CYCLES to
+ avoid conflict
+
+Remove USECS_TO_CYCLES and xloops_to_cycles() in delay-const.h and
+revert delay.c to avoid conflict (drivers/soc/qcom/rpmh-rsc.c).
+
+No functional change.
+
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/delay-const.h | 12 +-----------
+ arch/arm64/lib/delay.c               | 13 ++++++++++---
+ 2 files changed, 11 insertions(+), 14 deletions(-)
+
+diff --git a/arch/arm64/include/asm/delay-const.h b/arch/arm64/include/asm/delay-const.h
+index 63fb5fc24a90..610283ba8712 100644
+--- a/arch/arm64/include/asm/delay-const.h
++++ b/arch/arm64/include/asm/delay-const.h
+@@ -4,22 +4,12 @@
+ 
+ #include <asm/param.h>	/* For HZ */
+ 
+-/* 2**32 / 1000000 (rounded up) */
+-#define __usecs_to_xloops_mult	0x10C7UL
+-
+ /* 2**32 / 1000000000 (rounded up) */
+ #define __nsecs_to_xloops_mult	0x5UL
+ 
+ extern unsigned long loops_per_jiffy;
+-static inline unsigned long xloops_to_cycles(unsigned long xloops)
+-{
+-	return (xloops * loops_per_jiffy * HZ) >> 32;
+-}
+-
+-#define USECS_TO_CYCLES(time_usecs) \
+-	xloops_to_cycles((time_usecs) * __usecs_to_xloops_mult)
+ 
+ #define NSECS_TO_CYCLES(time_nsecs) \
+-	xloops_to_cycles((time_nsecs) * __nsecs_to_xloops_mult)
++	((((time_nsecs) * __nsecs_to_xloops_mult) * loops_per_jiffy * HZ) >> 32)
+ 
+ #endif	/* _ASM_DELAY_CONST_H */
+diff --git a/arch/arm64/lib/delay.c b/arch/arm64/lib/delay.c
+index 511b5597e2a5..cb2062e7e234 100644
+--- a/arch/arm64/lib/delay.c
++++ b/arch/arm64/lib/delay.c
+@@ -12,10 +12,17 @@
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+ #include <linux/timex.h>
+-#include <asm/delay-const.h>
+ 
+ #include <clocksource/arm_arch_timer.h>
+ 
++#define USECS_TO_CYCLES(time_usecs)			\
++	xloops_to_cycles((time_usecs) * 0x10C7UL)
++
++static inline unsigned long xloops_to_cycles(unsigned long xloops)
++{
++	return (xloops * loops_per_jiffy * HZ) >> 32;
++}
++
+ void __delay(unsigned long cycles)
+ {
+ 	cycles_t start = get_cycles();
+@@ -51,12 +58,12 @@ EXPORT_SYMBOL(__const_udelay);
+ 
+ void __udelay(unsigned long usecs)
+ {
+-	__const_udelay(usecs * __usecs_to_xloops_mult);
++	__const_udelay(usecs * 0x10C7UL); /* 2**32 / 1000000 (rounded up) */
+ }
+ EXPORT_SYMBOL(__udelay);
+ 
+ void __ndelay(unsigned long nsecs)
+ {
+-	__const_udelay(nsecs * __nsecs_to_xloops_mult);
++	__const_udelay(nsecs * 0x5UL); /* 2**32 / 1000000000 (rounded up) */
+ }
+ EXPORT_SYMBOL(__ndelay);
+-- 
+2.43.0
+

@@ -1,0 +1,49 @@
+From 854f572ec8df64900eded88cd7c7e49d6a7e4687 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 22 Feb 2025 11:55:16 +0800
+Subject: [PATCH 693/960] downstream: arm64/mpam: Add write memory barrier to
+ guarantee monitor results
+
+Before configure the PARTID of monitor instances, make sure CFG_MON_SEL
+register has already selected the target instance self.
+
+By the same reason, ensure the PARTID has been configured properly before
+reading counter result of the monitor instance.
+
+Fixes: bb66b4d115e5 ("arm_mpam: Add mpam_msmon_read() to read monitor value")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index 1e40a1b5597c..e10be1accd75 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -939,6 +939,9 @@ static void __ris_msmon_read(void *arg)
+ 		  FIELD_PREP(MSMON_CFG_MON_SEL_RIS, ris->ris_idx);
+ 	mpam_write_monsel_reg(msc, CFG_MON_SEL, mon_sel);
+ 
++	/* Selects a monitor instance to configure PARTID. */
++	wmb();
++
+ 	if (m->type == mpam_feat_msmon_mbwu) {
+ 		mbwu_state = &ris->mbwu_state[ctx->mon];
+ 		if (mbwu_state) {
+@@ -959,6 +962,12 @@ static void __ris_msmon_read(void *arg)
+ 	if (config_mismatch || reset_on_next_read)
+ 		write_msmon_ctl_flt_vals(m, ctl_val, flt_val);
+ 
++	/*
++	 * Selects the monitor instance associated to the specified PARTID
++	 * to read counter value.
++	 */
++	wmb();
++
+ 	switch (m->type) {
+ 	case mpam_feat_msmon_csu:
+ 		now = mpam_read_monsel_reg(msc, CSU);
+-- 
+2.43.0
+

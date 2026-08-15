@@ -1,0 +1,111 @@
+From ab10ada87e51d42543ead23e545e827ffb573366 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:57:36 +0800
+Subject: [PATCH 624/960] downstream: ACPI / PPTT: Provide a helper to walk
+ processor containers
+
+The PPTT describes CPUs and caches, as well as processor containers.
+
+To enable PPI partitions, the irqchip driver needs to know how many
+partitions the platform has, and which CPUs belong to which partition.
+When a percpu interrupt is registered, the partition is provided to allow
+a different driver to request the same percpu interrupt intid, one per
+partition.
+
+The acpi_id of the Processor Container is the natural way to do this
+with ACPI, but the DSDT AML interpreter is not available early enough
+for the irqchipi driver. Fortunately, the same information can be
+described in the PPTT.
+
+Add a helper to count the number or Processor Containers in the PPTT.
+This is structured as a walker/callback as the irqchip driver will
+also use this to configure each partition.
+
+Only Processor entries in the PPTT that have a valid acpi id are considered
+as containers. To identify a particular Processor Container, it must have
+an id.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/pptt.c | 56 +++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 56 insertions(+)
+
+diff --git a/drivers/acpi/pptt.c b/drivers/acpi/pptt.c
+index 54676e3d82dd..177623c5b00e 100644
+--- a/drivers/acpi/pptt.c
++++ b/drivers/acpi/pptt.c
+@@ -21,6 +21,8 @@
+ #include <linux/cacheinfo.h>
+ #include <acpi/processor.h>
+ 
++typedef int (*acpi_pptt_cpu_callback_t)(struct acpi_pptt_processor *, void *);
++
+ static struct acpi_subtable_header *fetch_pptt_subtable(struct acpi_table_header *table_hdr,
+ 							u32 pptt_ref)
+ {
+@@ -298,6 +300,60 @@ static struct acpi_pptt_processor *acpi_find_processor_node(struct acpi_table_he
+ 	return NULL;
+ }
+ 
++/**
++ * acpi_pptt_for_each_container() - Iterate over all processor containers
++ *
++ * Not all 'Processor' entries in the PPTT are either a CPU or a Processor
++ * Container, they may exist purely to describe a Private resource. CPUs
++ * have to be leaves, so a Processor Container is a non-leaf that has the
++ * 'ACPI Processor ID valid' flag set.
++ *
++ * Return: 0 for a complete walk, or the first non-zero value from the callback
++ *         that stopped the walk.
++ */
++int acpi_pptt_for_each_container(acpi_pptt_cpu_callback_t callback, void *arg)
++{
++	struct acpi_pptt_processor *cpu_node;
++	struct acpi_table_header *table_hdr;
++	struct acpi_subtable_header *entry;
++	bool leaf_flag, has_leaf_flag = false;
++	unsigned long table_end;
++	acpi_status status;
++	u32 proc_sz;
++	int ret = 0;
++
++	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table_hdr);
++	if (ACPI_FAILURE(status))
++		return 0;
++
++	if (table_hdr->revision > 1)
++		has_leaf_flag = true;
++
++	table_end = (unsigned long)table_hdr + table_hdr->length;
++	entry = ACPI_ADD_PTR(struct acpi_subtable_header, table_hdr,
++			     sizeof(struct acpi_table_pptt));
++	proc_sz = sizeof(struct acpi_pptt_processor);
++	while ((unsigned long)entry + proc_sz < table_end) {
++		cpu_node = (struct acpi_pptt_processor *)entry;
++		if (entry->type == ACPI_PPTT_TYPE_PROCESSOR &&
++		    cpu_node->flags & ACPI_PPTT_ACPI_PROCESSOR_ID_VALID) {
++			leaf_flag = cpu_node->flags & ACPI_PPTT_ACPI_LEAF_NODE;
++			if ((has_leaf_flag && !leaf_flag) ||
++			    (!has_leaf_flag && !acpi_pptt_leaf_node(table_hdr, cpu_node))) {
++				ret = callback(cpu_node, arg);
++				if (ret)
++					break;
++			}
++		}
++		entry = ACPI_ADD_PTR(struct acpi_subtable_header, entry,
++				     entry->length);
++	}
++
++	acpi_put_table(table_hdr);
++
++	return ret;
++}
++
+ static u8 acpi_cache_type(enum cache_type type)
+ {
+ 	switch (type) {
+-- 
+2.43.0
+

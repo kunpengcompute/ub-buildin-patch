@@ -1,0 +1,123 @@
+From d512c1c3e9a741a62545099756fb57e91fd1df9a Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Wed, 27 Sep 2023 20:47:36 -0300
+Subject: [PATCH 188/960] iommu/dart: Move the blocked domain support to a
+ global static
+
+commit 17ef8d6876e01165836790d83d908eb21da3f08e upstream.
+
+Move to the new static global for blocked domains. Move the blocked
+specific code to apple_dart_attach_dev_blocked().
+
+Reviewed-by: Janne Grunau <j@jannau.net>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Acked-by: Sven Peter <sven@svenpeter.dev>
+Link: https://lore.kernel.org/r/6-v2-bff223cf6409+282-dart_paging_jgg@nvidia.com
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+
+ Conflicts:
+	drivers/iommu/apple-dart.c
+
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/apple-dart.c | 53 +++++++++++++++++++++++---------------
+ 1 file changed, 32 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/iommu/apple-dart.c b/drivers/iommu/apple-dart.c
+index e276d90cc4f0..873aa903e9eb 100644
+--- a/drivers/iommu/apple-dart.c
++++ b/drivers/iommu/apple-dart.c
+@@ -668,22 +668,13 @@ static int apple_dart_attach_dev(struct iommu_domain *domain,
+ 	if (ret)
+ 		return ret;
+ 
+-	switch (domain->type) {
+-	default:
+-		ret = apple_dart_domain_add_streams(dart_domain, cfg);
+-		if (ret)
+-			return ret;
+-
+-		for_each_stream_map(i, cfg, stream_map)
+-			apple_dart_setup_translation(dart_domain, stream_map);
+-		break;
+-	case IOMMU_DOMAIN_BLOCKED:
+-		for_each_stream_map(i, cfg, stream_map)
+-			apple_dart_hw_disable_dma(stream_map);
+-		break;
+-	}
++	ret = apple_dart_domain_add_streams(dart_domain, cfg);
++	if (ret)
++		return ret;
+ 
+-	return ret;
++	for_each_stream_map(i, cfg, stream_map)
++		apple_dart_setup_translation(dart_domain, stream_map);
++	return 0;
+ }
+ 
+ static int apple_dart_attach_dev_identity(struct iommu_domain *domain,
+@@ -710,6 +701,30 @@ static struct iommu_domain apple_dart_identity_domain = {
+ 	.ops = &apple_dart_identity_ops,
+ };
+ 
++static int apple_dart_attach_dev_blocked(struct iommu_domain *domain,
++					 struct device *dev)
++{
++	struct apple_dart_master_cfg *cfg = dev_iommu_priv_get(dev);
++	struct apple_dart_stream_map *stream_map;
++	int i;
++
++	if (cfg->stream_maps[0].dart->force_bypass)
++		return -EINVAL;
++
++	for_each_stream_map(i, cfg, stream_map)
++		apple_dart_hw_disable_dma(stream_map);
++	return 0;
++}
++
++static const struct iommu_domain_ops apple_dart_blocked_ops = {
++	.attach_dev = apple_dart_attach_dev_blocked,
++};
++
++static struct iommu_domain apple_dart_blocked_domain = {
++	.type = IOMMU_DOMAIN_BLOCKED,
++	.ops = &apple_dart_blocked_ops,
++};
++
+ static struct iommu_device *apple_dart_probe_device(struct device *dev)
+ {
+ 	struct apple_dart_master_cfg *cfg = dev_iommu_priv_get(dev);
+@@ -739,8 +754,7 @@ static struct iommu_domain *apple_dart_domain_alloc(unsigned int type)
+ {
+ 	struct apple_dart_domain *dart_domain;
+ 
+-	if (type != IOMMU_DOMAIN_DMA && type != IOMMU_DOMAIN_UNMANAGED &&
+-	    type != IOMMU_DOMAIN_BLOCKED)
++	if (type != IOMMU_DOMAIN_DMA && type != IOMMU_DOMAIN_UNMANAGED)
+ 		return NULL;
+ 
+ 	dart_domain = kzalloc(sizeof(*dart_domain), GFP_KERNEL);
+@@ -749,10 +763,6 @@ static struct iommu_domain *apple_dart_domain_alloc(unsigned int type)
+ 
+ 	mutex_init(&dart_domain->init_lock);
+ 
+-	/* no need to allocate pgtbl_ops or do any other finalization steps */
+-	if (type == IOMMU_DOMAIN_BLOCKED)
+-		dart_domain->finalized = true;
+-
+ 	return &dart_domain->domain;
+ }
+ 
+@@ -968,6 +978,7 @@ static void apple_dart_get_resv_regions(struct device *dev,
+ 
+ static const struct iommu_ops apple_dart_iommu_ops = {
+ 	.identity_domain = &apple_dart_identity_domain,
++	.blocked_domain = &apple_dart_blocked_domain,
+ 	.domain_alloc = apple_dart_domain_alloc,
+ 	.probe_device = apple_dart_probe_device,
+ 	.release_device = apple_dart_release_device,
+-- 
+2.43.0
+

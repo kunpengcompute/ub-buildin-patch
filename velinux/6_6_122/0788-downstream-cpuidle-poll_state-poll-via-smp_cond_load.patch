@@ -1,0 +1,91 @@
+From bba049f83dac8cc702e7b3ad4ef8a4de61a33b13 Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:44 +0800
+Subject: [PATCH 788/960] downstream: cpuidle/poll_state: poll via
+ smp_cond_load_relaxed_timeout()
+
+The inner loop in poll_idle() polls to see if the thread's
+TIF_NEED_RESCHED bit is set. The loop exits once the condition is met,
+or if the poll time limit has been exceeded.
+
+To minimize the number of instructions executed in each iteration, the
+time check is rate-limited. In addition, each loop iteration executes
+cpu_relax() which on certain platforms provides a hint to the pipeline
+that the loop is busy-waiting, which allows the processor to reduce
+power consumption.
+
+However, cpu_relax() is defined optimally only on x86. On arm64, for
+instance, it is implemented as a YIELD which only serves as a hint
+to the CPU that it prioritize a different hardware thread if one is
+available. arm64, does expose a more optimal polling mechanism via
+smp_cond_load_relaxed_timeout() which uses LDXR, WFE to wait until a
+store to a specified region, or until a timeout.
+
+These semantics are essentially identical to what we want
+from poll_idle(). So, restructure the loop to use
+smp_cond_load_relaxed_timeout() instead.
+
+The generated code remains close to the original version.
+
+Suggested-by: Catalin Marinas <catalin.marinas@arm.com>
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/cpuidle/poll_state.c | 31 ++++++++++---------------------
+ 1 file changed, 10 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/cpuidle/poll_state.c b/drivers/cpuidle/poll_state.c
+index 9b6d90a72601..0b42971393c9 100644
+--- a/drivers/cpuidle/poll_state.c
++++ b/drivers/cpuidle/poll_state.c
+@@ -8,35 +8,24 @@
+ #include <linux/sched/clock.h>
+ #include <linux/sched/idle.h>
+ 
+-#define POLL_IDLE_RELAX_COUNT	200
+-
+ static int __cpuidle poll_idle(struct cpuidle_device *dev,
+ 			       struct cpuidle_driver *drv, int index)
+ {
+-	u64 time_start;
+-
+-	time_start = local_clock_noinstr();
+ 
+ 	dev->poll_time_limit = false;
+ 
+ 	raw_local_irq_enable();
+ 	if (!current_set_polling_and_test()) {
+-		unsigned int loop_count = 0;
+-		u64 limit;
+-
+-		limit = cpuidle_poll_time(drv, dev);
+-
+-		while (!need_resched()) {
+-			cpu_relax();
+-			if (loop_count++ < POLL_IDLE_RELAX_COUNT)
+-				continue;
+-
+-			loop_count = 0;
+-			if (local_clock_noinstr() - time_start > limit) {
+-				dev->poll_time_limit = true;
+-				break;
+-			}
+-		}
++		unsigned long flags;
++		u64 time_start = local_clock_noinstr();
++		u64 limit = cpuidle_poll_time(drv, dev);
++
++		flags = smp_cond_load_relaxed_timeout(&current_thread_info()->flags,
++						      VAL & _TIF_NEED_RESCHED,
++						      local_clock_noinstr(),
++						      time_start + limit);
++
++		dev->poll_time_limit = !(flags & _TIF_NEED_RESCHED);
+ 	}
+ 	raw_local_irq_disable();
+ 
+-- 
+2.43.0
+

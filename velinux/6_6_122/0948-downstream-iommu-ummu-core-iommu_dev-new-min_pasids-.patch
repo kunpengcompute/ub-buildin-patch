@@ -1,0 +1,119 @@
+From 76cfb7dc6f5cbb28c90d771132fcf32e9198107c Mon Sep 17 00:00:00 2001
+From: Lei Gong <gonglei25@huawei.com>
+Date: Fri, 22 Aug 2025 16:41:19 +0800
+Subject: [PATCH 948/960] downstream: iommu/ummu-core: iommu_dev new min_pasids
+ attribute
+
+The UB(Unified Bus) device does not possess the pasid-bits attribute,
+ which is incompatible with the current iommu framework.
+
+In the UB protocol, the pasid capability of the device is based on
+the iommu. Therefore, we only need to set the maximum pasid of the
+device to the maximum pasid of the iommu. Additionally, a new
+min_pasids attribute has been added to the iommu device to maintain
+consistency with the iommu device capabilities.
+
+Signed-off-by: Lei Gong <gonglei25@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c |  1 +
+ drivers/iommu/intel/dmar.c                  |  4 +++-
+ drivers/iommu/iommu.c                       | 12 +++++++++++-
+ include/linux/iommu.h                       |  2 ++
+ 4 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 7f6676bb6928..50690b62d3ca 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -5125,6 +5125,7 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
+ 	/* SID/SSID sizes */
+ 	smmu->ssid_bits = FIELD_GET(IDR1_SSIDSIZE, reg);
+ 	smmu->sid_bits = FIELD_GET(IDR1_SIDSIZE, reg);
++	smmu->iommu.min_pasids = 0;
+ 	smmu->iommu.max_pasids = 1UL << smmu->ssid_bits;
+ 
+ 	/*
+diff --git a/drivers/iommu/intel/dmar.c b/drivers/iommu/intel/dmar.c
+index e14d496a9cbd..d587bcec3198 100644
+--- a/drivers/iommu/intel/dmar.c
++++ b/drivers/iommu/intel/dmar.c
+@@ -1181,8 +1181,10 @@ static int alloc_iommu(struct dmar_drhd_unit *drhd)
+ 	 * A value of N in PSS field of eCap register indicates hardware
+ 	 * supports PASID field of N+1 bits.
+ 	 */
+-	if (pasid_supported(iommu))
++	if (pasid_supported(iommu)) {
++		iommu->iommu.min_pasids = 0;
+ 		iommu->iommu.max_pasids = 2UL << ecap_pss(iommu->ecap);
++	}
+ 
+ 	/*
+ 	 * This is only for hotplug; at boot time intel_iommu_enabled won't
+diff --git a/drivers/iommu/iommu.c b/drivers/iommu/iommu.c
+index 79bf39360e74..445a8608f92c 100644
+--- a/drivers/iommu/iommu.c
++++ b/drivers/iommu/iommu.c
+@@ -397,6 +397,12 @@ static bool dev_has_iommu(struct device *dev)
+ 	return dev->iommu && dev->iommu->iommu_dev;
+ }
+ 
++static u32 dev_iommu_get_min_pasids(struct device *dev)
++{
++	return max_t(u32, dev->iommu->iommu_dev->min_pasids,
++					IOMMU_FIRST_GLOBAL_PASID);
++}
++
+ static u32 dev_iommu_get_max_pasids(struct device *dev)
+ {
+ 	u32 max_pasids = 0, bits = 0;
+@@ -412,6 +418,9 @@ static u32 dev_iommu_get_max_pasids(struct device *dev)
+ 			max_pasids = 1UL << bits;
+ 	}
+ 
++	if (dev_is_ub(dev))
++		return dev->iommu->iommu_dev->max_pasids;
++
+ 	return min_t(u32, max_pasids, dev->iommu->iommu_dev->max_pasids);
+ }
+ 
+@@ -462,6 +471,7 @@ static int iommu_init_device(struct device *dev, const struct iommu_ops *ops)
+ 	}
+ 	dev->iommu_group = group;
+ 
++	dev->iommu->min_pasids = dev_iommu_get_min_pasids(dev);
+ 	dev->iommu->max_pasids = dev_iommu_get_max_pasids(dev);
+ 	if (ops->is_attach_deferred)
+ 		dev->iommu->attach_deferred = ops->is_attach_deferred(dev);
+@@ -3710,7 +3720,7 @@ ioasid_t iommu_alloc_global_pasid(struct device *dev)
+ 	 * max_pasids is set up by vendor driver based on number of PASID bits
+ 	 * supported but the IDA allocation is inclusive.
+ 	 */
+-	ret = ida_alloc_range(&iommu_global_pasid_ida, IOMMU_FIRST_GLOBAL_PASID,
++	ret = ida_alloc_range(&iommu_global_pasid_ida, dev->iommu->min_pasids,
+ 			      dev->iommu->max_pasids - 1, GFP_KERNEL);
+ 	return ret < 0 ? IOMMU_PASID_INVALID : ret;
+ }
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index 78fb514c33b3..f13ed3347083 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -781,6 +781,7 @@ struct iommu_device {
+ 	struct fwnode_handle *fwnode;
+ 	struct device *dev;
+ 	struct iommu_group *singleton_group;
++	u32 min_pasids;
+ 	u32 max_pasids;
+ };
+ 
+@@ -836,6 +837,7 @@ struct dev_iommu {
+ 	u32				pci_32bit_workaround:1;
+ 	u32				require_direct:1;
+ 	u32				shadow_on_flush:1;
++	u32				min_pasids;
+ };
+ 
+ int iommu_device_register(struct iommu_device *iommu,
+-- 
+2.43.0
+

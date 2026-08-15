@@ -1,0 +1,57 @@
+From 84c040093786c4376f881f68f90286b835d4bc5e Mon Sep 17 00:00:00 2001
+From: Joao Martins <joao.m.martins@oracle.com>
+Date: Thu, 27 Jun 2024 12:01:01 +0100
+Subject: [PATCH 404/960] iommufd/iova_bitmap: Cache mapped length in
+ iova_bitmap_map struct
+
+commit a84c690e10ae03f1cddec908ac7f5068ceed67a8 upstream.
+
+The amount of IOVA mapped will be used more often in iova_bitmap_set() in
+preparation to dynamically iterate the bitmap. Cache said length to avoid
+having to calculate it all the time.
+
+Link: https://lore.kernel.org/r/20240627110105.62325-8-joao.m.martins@oracle.com
+Signed-off-by: Joao Martins <joao.m.martins@oracle.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Tested-by: Matt Ochs <mochs@nvidia.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Chengfei Huang <huangchengfei3@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/iova_bitmap.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/iommu/iommufd/iova_bitmap.c b/drivers/iommu/iommufd/iova_bitmap.c
+index 631f757589b9..46233ce08712 100644
+--- a/drivers/iommu/iommufd/iova_bitmap.c
++++ b/drivers/iommu/iommufd/iova_bitmap.c
+@@ -35,6 +35,9 @@ struct iova_bitmap_map {
+ 	/* base IOVA representing bit 0 of the first page */
+ 	unsigned long iova;
+ 
++	/* mapped length */
++	unsigned long length;
++
+ 	/* page size order that each bit granules to */
+ 	unsigned long pgshift;
+ 
+@@ -155,6 +158,8 @@ static unsigned long iova_bitmap_mapped_iova(struct iova_bitmap *bitmap)
+ 	return bitmap->iova + iova_bitmap_index_to_offset(bitmap, skip);
+ }
+ 
++static unsigned long iova_bitmap_mapped_length(struct iova_bitmap *bitmap);
++
+ /*
+  * Pins the bitmap user pages for the current range window.
+  * This is internal to IOVA bitmap and called when advancing the
+@@ -205,6 +210,7 @@ static int iova_bitmap_get(struct iova_bitmap *bitmap)
+ 	 * aligned.
+ 	 */
+ 	mapped->pgoff = offset_in_page(addr);
++	mapped->length = iova_bitmap_mapped_length(bitmap);
+ 	return 0;
+ }
+ 
+-- 
+2.43.0
+

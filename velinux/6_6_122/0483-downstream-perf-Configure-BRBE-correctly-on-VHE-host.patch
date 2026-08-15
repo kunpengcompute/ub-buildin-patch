@@ -1,0 +1,67 @@
+From fcb0f4ad51d776a1ac1ebe3536ef52de08d68b3a Mon Sep 17 00:00:00 2001
+From: Yicong Yang <yangyicong@hisilicon.com>
+Date: Wed, 12 Mar 2025 09:38:58 +0800
+Subject: [PATCH 483/960] downstream: perf: Configure BRBE correctly on VHE
+ host
+
+The BRBE support backported of v18 didn't configure the BRBCR_EL1
+correctly which will miss some key functions like FZP during sampling.
+
+In VHE mode with MDCR_EL2.HPMN set to PMCR_EL0.N, the counters are
+controlled by BRBCR_EL1 rather than BRBCR_EL2 (which writes to
+BRBCR_EL1 are redirected to). Use the same value for both register
+except keep EL1 and EL0 recording disabled in guests.
+
+The fix is backported from the v19 version [1].
+
+[1] https://lore.kernel.org/linux-arm-kernel/
+    20250202-arm-brbe-v19-v19-0-1c1300802385@kernel.org/
+    T/#m887b1dcf7f6784b7293626952052f27b68784beb
+
+Fixes: 6c6848e7e00c ("drivers: perf: arm_pmuv3: Enable branch stack sampling via FEAT_BRBE")
+Signed-off-by: Yicong Yang <yangyicong@hisilicon.com>
+Signed-off-by: Qizhi Zhang <zhangqizhi3@h-partners.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/perf/arm_brbe.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/drivers/perf/arm_brbe.c b/drivers/perf/arm_brbe.c
+index d795e8fd646f..22e4828feec8 100644
+--- a/drivers/perf/arm_brbe.c
++++ b/drivers/perf/arm_brbe.c
+@@ -874,6 +874,16 @@ void armv8pmu_branch_enable(struct arm_pmu *arm_pmu)
+ 	brbcr &= ~BRBCR_ELx_CONFIG_MASK;
+ 	brbcr |= branch_type_to_brbcr(cpuc->branch_sample_type);
+ 	write_sysreg_s(brbcr, SYS_BRBCR_EL1);
++
++	/*
++	 * In VHE mode with MDCR_EL2.HPMN set to PMCR_EL0.N, the counters are
++	 * controlled by BRBCR_EL1 rather than BRBCR_EL2 (which writes to
++	 * BRBCR_EL1 are redirected to). Use the same value for both register
++	 * except keep EL1 and EL0 recording disabled in guests.
++	 */
++	if (is_kernel_in_hyp_mode())
++		write_sysreg_s(brbcr & ~(BRBCR_ELx_ExBRE | BRBCR_ELx_E0BRE), SYS_BRBCR_EL12);
++
+ 	isb();
+ }
+ 
+@@ -886,6 +896,11 @@ void armv8pmu_branch_disable(void)
+ 	brbcr &= ~(BRBCR_ELx_E0BRE | BRBCR_ELx_ExBRE);
+ 	brbfcr |= BRBFCR_EL1_PAUSED;
+ 	write_sysreg_s(brbcr, SYS_BRBCR_EL1);
++
++	/* See the comment in armv8pmu_branch_enable() */
++	if (is_kernel_in_hyp_mode())
++		write_sysreg_s(brbcr, SYS_BRBCR_EL12);
++
+ 	write_sysreg_s(brbfcr, SYS_BRBFCR_EL1);
+ 	isb();
+ }
+-- 
+2.43.0
+

@@ -1,0 +1,201 @@
+From 22f6333b50a66ee71761d300b52f43ecb8589528 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 28 Apr 2025 19:56:59 +0800
+Subject: [PATCH 710/960] downstream: arm64/mpam: Add limit feature
+
+Allow users can configure the mata hard-limit feature and cache soft-limit
+feature by the schemata MBHDL:${domain_id}=${value} interface under the
+resctrl fs.
+
+When MAX bandwidth is exceeded, the hard-limit feature not allows the
+partition use any more bandwidth until the memory bandwidth measurement
+for the partition falls below MAX.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  | 17 ++++++++++--
+ drivers/platform/mpam/mpam_internal.h |  2 ++
+ drivers/platform/mpam/mpam_resctrl.c  | 40 ++++++++++++++++++++++++++-
+ include/linux/resctrl_types.h         |  1 +
+ 4 files changed, 56 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index 23613c27335f..1b37bde8f33a 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -607,8 +607,10 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
+ 			mpam_set_feature(mpam_feat_mbw_part, props);
+ 
+ 		props->bwa_wd = FIELD_GET(MPAMF_MBW_IDR_BWA_WD, mbw_features);
+-		if (props->bwa_wd && FIELD_GET(MPAMF_MBW_IDR_HAS_MAX, mbw_features))
++		if (props->bwa_wd && FIELD_GET(MPAMF_MBW_IDR_HAS_MAX, mbw_features)) {
+ 			mpam_set_feature(mpam_feat_mbw_max, props);
++			mpam_set_feature(mpam_feat_max_limit, props);
++		}
+ 
+ 		if (props->bwa_wd && FIELD_GET(MPAMF_MBW_IDR_HAS_MIN, mbw_features))
+ 			mpam_set_feature(mpam_feat_mbw_min, props);
+@@ -1190,6 +1192,7 @@ static void mpam_reset_msc_bitmap(struct mpam_msc *msc, u16 reg, u16 wd)
+ static void mpam_reprogram_ris_partid(struct mpam_msc_ris *ris, u16 partid,
+ 				      struct mpam_config *cfg)
+ {
++	bool limit;
+ 	u32 pri_val = 0;
+ 	u16 intpri, dspri;
+ 	u16 cmax = MPAMCFG_CMAX_CMAX;
+@@ -1243,8 +1246,16 @@ static void mpam_reprogram_ris_partid(struct mpam_msc_ris *ris, u16 partid,
+ 
+ 	if (mpam_has_feature(mpam_feat_mbw_max, rprops)) {
+ 		if (mpam_has_feature(mpam_feat_mbw_max, cfg))
+-			mpam_write_partsel_reg(msc, MBW_MAX, cfg->mbw_max |
+-									MPAMCFG_MBW_MAX_HARDLIM);
++			bwa_fract = cfg->mbw_max;
++
++		if (mpam_has_feature(mpam_feat_max_limit, cfg))
++			limit = cfg->max_limit;
++		else
++			limit = false;
++
++		if (limit)
++			mpam_write_partsel_reg(msc, MBW_MAX, bwa_fract |
++					       MPAMCFG_MBW_MAX_HARDLIM);
+ 		else
+ 			mpam_write_partsel_reg(msc, MBW_MAX, bwa_fract);
+ 	}
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index d30f826159d5..88c98ef9ee37 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -89,6 +89,7 @@ enum mpam_device_features {
+ 	mpam_feat_mbw_part,
+ 	mpam_feat_mbw_min,
+ 	mpam_feat_mbw_max,
++	mpam_feat_max_limit,
+ 	mpam_feat_mbw_prop,
+ 	mpam_feat_intpri_part,
+ 	mpam_feat_intpri_part_0_low,
+@@ -161,6 +162,7 @@ struct mpam_config {
+ 	u32	mbw_pbm;
+ 	u16	mbw_max;
+ 	u16	mbw_min;
++	bool	max_limit;
+ 	u16	cmax;
+ 	u16	cmin;
+ 
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 3bc525368675..adf0cb1cc37e 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -522,6 +522,14 @@ static bool class_has_usable_intpri(struct mpam_props *cprops)
+ 	return false;
+ }
+ 
++static bool class_has_usable_max_limit(struct mpam_props *cprops)
++{
++	if (mpam_has_feature(mpam_feat_max_limit, cprops))
++		return true;
++
++	return false;
++}
++
+ /*
+  * Calculate the percentage change from each implemented bit in the control
+  * This can return 0 when BWA_WD is greater than 6. (100 / (1<<7) == 0)
+@@ -722,8 +730,8 @@ static void mpam_resctrl_pick_caches(void)
+ 
+ static void mpam_resctrl_pick_mba(void)
+ {
++	bool has_mba, has_mbw_min, has_intpri, has_limit;
+ 	struct mpam_resctrl_res *res;
+-	bool has_mba, has_mbw_min, has_intpri;
+ 	struct mpam_class *class;
+ 	int idx;
+ 
+@@ -736,6 +744,7 @@ static void mpam_resctrl_pick_mba(void)
+ 		has_mba = class_has_usable_mba(cprops);
+ 		has_mbw_min = class_has_usable_mbw_min(cprops);
+ 		has_intpri = class_has_usable_intpri(cprops);
++		has_limit = class_has_usable_max_limit(cprops);
+ 
+ 		if (class->level < 3)
+ 			continue;
+@@ -760,6 +769,12 @@ static void mpam_resctrl_pick_mba(void)
+ 			res->class = class;
+ 			res->resctrl_res.name = "MBPRI";
+ 		}
++
++		if (has_limit) {
++			res = &mpam_resctrl_exports[RDT_RESOURCE_MB_HDL];
++			res->class = class;
++			res->resctrl_res.name = "MBHDL";
++		}
+ 	}
+ 	srcu_read_unlock(&mpam_srcu, idx);
+ }
+@@ -980,6 +995,19 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 			r->alloc_capable = true;
+ 		break;
+ 
++	case RDT_RESOURCE_MB_HDL:
++		r->format_str = "%d=%0*u";
++		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
++		r->fflags = RFTYPE_RES_MB;
++		r->default_ctrl = 1;
++		r->data_width = 1;
++
++		r->membw.bw_gran = 1;
++
++		if (class_has_usable_max_limit(cprops))
++			r->alloc_capable = true;
++		break;
++
+ 	default:
+ 		break;
+ 	}
+@@ -1126,6 +1154,10 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 		configured_by = mpam_feat_mbw_min;
+ 		break;
+ 
++	case RDT_RESOURCE_MB_HDL:
++		configured_by = mpam_feat_max_limit;
++		break;
++
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -1151,6 +1183,8 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 		return mbw_max_to_percent(cfg->mbw_max, cprops->bwa_wd);
+ 	case mpam_feat_mbw_min:
+ 		return mbw_max_to_percent(cfg->mbw_min, cprops->bwa_wd);
++	case mpam_feat_max_limit:
++		return cfg->max_limit;
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -1219,6 +1253,10 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 		cfg.mbw_min = percent_to_mbw_max(cfg_val, cprops->bwa_wd);
+ 		mpam_set_feature(mpam_feat_mbw_min, &cfg);
+ 		break;
++	case RDT_RESOURCE_MB_HDL:
++		cfg.max_limit = cfg_val;
++		mpam_set_feature(mpam_feat_max_limit, &cfg);
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+diff --git a/include/linux/resctrl_types.h b/include/linux/resctrl_types.h
+index ad8d1ac7ca29..fd1704766c29 100644
+--- a/include/linux/resctrl_types.h
++++ b/include/linux/resctrl_types.h
+@@ -87,6 +87,7 @@ enum resctrl_res_level {
+ 	RDT_RESOURCE_L3_PRI,
+ 	RDT_RESOURCE_L2_PRI,
+ 	RDT_RESOURCE_MB_PRI,
++	RDT_RESOURCE_MB_HDL,
+ #endif
+ 
+ 	/* Must be the last */
+-- 
+2.43.0
+

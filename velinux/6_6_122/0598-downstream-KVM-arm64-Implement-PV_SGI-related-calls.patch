@@ -1,0 +1,331 @@
+From 594546d7db10feb340d2fe87c99ac4d0f7e9adfe Mon Sep 17 00:00:00 2001
+From: Zhou Wang <wangzhou1@hisilicon.com>
+Date: Fri, 23 May 2025 20:45:28 +0800
+Subject: [PATCH 598/960] downstream: KVM: arm64: Implement PV_SGI related
+ calls
+
+This provides a mechanism for querying whether IPIV are available
+in this hypervisor. Add some SMCCC compatible hypercalls for PV SGI:
+PV_SGI_FEATURES: 0xC6000090
+PV_SGI_ENABLE:   0xC6000091
+
+ipiv_enable is a global variable, indicating whether the hardware
+supports IPIV.
+enable_ipiv_from_vmm indicates whether the VMM (such as QEMU) enables
+IPIV through ioctl.
+enable_ipiv_from_guest indicates whether the guest OS enables IPIV
+through the SMCCC interface.
+
+Signed-off-by: Zhou Wang <wangzhou1@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/uapi/asm/kvm.h             |  5 ++++
+ arch/arm64/kvm/hisilicon/hisi_virt.c          | 25 ++++++++++++++++++
+ arch/arm64/kvm/hisilicon/hisi_virt.h          |  7 +++++
+ arch/arm64/kvm/hypercalls.c                   | 26 +++++++++++++++++++
+ arch/arm64/kvm/vgic/vgic-its.c                |  9 +++++++
+ arch/arm64/kvm/vgic/vgic-mmio-v3.c            |  3 ---
+ drivers/irqchip/irq-gic-v3-its.c              | 16 ++++--------
+ include/linux/arm-smccc.h                     | 15 +++++++++++
+ include/linux/irqchip/arm-gic-v4.h            |  2 +-
+ tools/arch/arm64/include/uapi/asm/kvm.h       |  5 ++++
+ .../selftests/kvm/aarch64/hypercalls.c        |  2 +-
+ 11 files changed, 99 insertions(+), 16 deletions(-)
+
+diff --git a/arch/arm64/include/uapi/asm/kvm.h b/arch/arm64/include/uapi/asm/kvm.h
+index f7ddd73a8c0f..bcdf9d6dc37b 100644
+--- a/arch/arm64/include/uapi/asm/kvm.h
++++ b/arch/arm64/include/uapi/asm/kvm.h
+@@ -376,6 +376,11 @@ enum {
+ enum {
+ 	KVM_REG_ARM_VENDOR_HYP_BIT_FUNC_FEAT	= 0,
+ 	KVM_REG_ARM_VENDOR_HYP_BIT_PTP		= 1,
++	/*
++	 * If the mainline conflicts, do not change the
++	 * current sequence, add in sequence.
++	 */
++	KVM_REG_ARM_VENDOR_HYP_BIT_IPIV		= 2,
+ #ifdef __KERNEL__
+ 	KVM_REG_ARM_VENDOR_HYP_BMAP_BIT_COUNT,
+ #endif
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index b527f2113599..6a7c3a7f7a69 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -193,6 +193,31 @@ bool hisi_ipiv_supported(void)
+ 	return true;
+ }
+ 
++extern struct static_key_false ipiv_enable;
++
++bool hisi_ipiv_supported_per_vm(struct kvm_vcpu *vcpu)
++{
++	/* IPIV is supported by the hardware */
++	if (!static_branch_unlikely(&ipiv_enable))
++		return false;
++
++	/* vSGI passthrough is configured */
++	if (!vcpu->kvm->arch.vgic.nassgireq)
++		return false;
++
++	/* IPIV is enabled by the user */
++	if (!vcpu->kvm->arch.vgic.its_vm.enable_ipiv_from_vmm)
++		return false;
++
++	return true;
++}
++
++void hisi_ipiv_enable_per_vm(struct kvm_vcpu *vcpu)
++{
++	/* Enable IPIV feature */
++	vcpu->kvm->arch.vgic.its_vm.enable_ipiv_from_guest = true;
++}
++
+ void ipiv_gicd_init(void)
+ {
+ 	gic_dist_enable_ipiv();
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index 08126435c733..7e7fa1399e28 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -81,6 +81,8 @@ bool hisi_ncsnp_supported(void);
+ bool hisi_dvmbm_supported(void);
+ #ifdef CONFIG_ARM64_HISI_IPIV
+ bool hisi_ipiv_supported(void);
++bool hisi_ipiv_supported_per_vm(struct kvm_vcpu *vcpu);
++void hisi_ipiv_enable_per_vm(struct kvm_vcpu *vcpu);
+ void ipiv_gicd_init(void);
+ #endif /* CONFIG_ARM64_HISI_IPIV */
+ void kvm_get_pg_cfg(void);
+@@ -117,6 +119,11 @@ static inline int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu)
+ }
+ static inline void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu) {}
+ #ifdef CONFIG_ARM64_HISI_IPIV
++static bool hisi_ipiv_supported_per_vm(struct kvm_vcpu *vcpu)
++{
++	return false;
++}
++static void hisi_ipiv_enable_per_vm(struct kvm_vcpu *vcpu) {}
+ static inline void ipiv_gicd_init(void) {}
+ #endif /* CONFIG_ARM64_HISI_IPIV */
+ static inline int kvm_sched_affinity_vm_init(struct kvm *kvm)
+diff --git a/arch/arm64/kvm/hypercalls.c b/arch/arm64/kvm/hypercalls.c
+index 7fb4df0456de..e63654972df4 100644
+--- a/arch/arm64/kvm/hypercalls.c
++++ b/arch/arm64/kvm/hypercalls.c
+@@ -9,6 +9,10 @@
+ #include <kvm/arm_hypercalls.h>
+ #include <kvm/arm_psci.h>
+ 
++#ifdef CONFIG_ARM64_HISI_IPIV
++#include "hisilicon/hisi_virt.h"
++#endif
++
+ #define KVM_ARM_SMCCC_STD_FEATURES				\
+ 	GENMASK(KVM_REG_ARM_STD_BMAP_BIT_COUNT - 1, 0)
+ #define KVM_ARM_SMCCC_STD_HYP_FEATURES				\
+@@ -116,6 +120,12 @@ static bool kvm_smccc_test_fw_bmap(struct kvm_vcpu *vcpu, u32 func_id)
+ 	case ARM_SMCCC_VENDOR_HYP_KVM_PTP_FUNC_ID:
+ 		return test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_PTP,
+ 				&smccc_feat->vendor_hyp_bmap);
++#ifdef CONFIG_ARM64_HISI_IPIV
++	case ARM_SMCCC_VENDOR_PV_SGI_FEATURES:
++	case ARM_SMCCC_VENDOR_PV_SGI_ENABLE:
++		return test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_IPIV,
++				&smccc_feat->vendor_hyp_bmap);
++#endif
+ 	default:
+ 		return false;
+ 	}
+@@ -342,6 +352,22 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
+ 		if (gpa != INVALID_GPA)
+ 			val[0] = gpa;
+ 		break;
++#ifdef CONFIG_ARM64_HISI_IPIV
++	case ARM_SMCCC_VENDOR_PV_SGI_FEATURES:
++		if (hisi_ipiv_supported_per_vm(vcpu))
++			val[0] = SMCCC_RET_SUCCESS;
++		else
++			val[0] = SMCCC_RET_NOT_SUPPORTED;
++		break;
++	case ARM_SMCCC_VENDOR_PV_SGI_ENABLE:
++		if (hisi_ipiv_supported_per_vm(vcpu)) {
++			hisi_ipiv_enable_per_vm(vcpu);
++			val[0] = SMCCC_RET_SUCCESS;
++		} else {
++			val[0] = SMCCC_RET_NOT_SUPPORTED;
++		}
++		break;
++#endif
+ 	case ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID:
+ 		val[0] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_0;
+ 		val[1] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_1;
+diff --git a/arch/arm64/kvm/vgic/vgic-its.c b/arch/arm64/kvm/vgic/vgic-its.c
+index 608c39859f4e..9f8a99a09816 100644
+--- a/arch/arm64/kvm/vgic/vgic-its.c
++++ b/arch/arm64/kvm/vgic/vgic-its.c
+@@ -2741,6 +2741,15 @@ static void vgic_its_reset(struct kvm *kvm, struct vgic_its *its)
+ 	its->enabled = 0;
+ 	vgic_its_free_device_list(kvm, its);
+ 	vgic_its_free_collection_list(kvm, its);
++
++#ifdef CONFIG_ARM64_HISI_IPIV
++	/*
++	 * For the para-virtualization feature IPIV, ensure that
++	 * the flag of the guest OS is reset when the guest OS is
++	 * reset.
++	 */
++	kvm->arch.vgic.its_vm.enable_ipiv_from_guest = false;
++#endif
+ }
+ 
+ static int vgic_its_has_attr(struct kvm_device *dev,
+diff --git a/arch/arm64/kvm/vgic/vgic-mmio-v3.c b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+index bf3577b399c5..4db39e9f7372 100644
+--- a/arch/arm64/kvm/vgic/vgic-mmio-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+@@ -132,9 +132,6 @@ static void vgic_mmio_write_v3_misc(struct kvm_vcpu *vcpu,
+ 
+ 		/* Switching HW SGIs? */
+ 		dist->nassgireq = val & GICD_CTLR_nASSGIreq;
+-#ifdef CONFIG_ARM64_HISI_IPIV
+-		dist->its_vm.nassgireq = dist->nassgireq;
+-#endif
+ 		if (is_hwsgi != dist->nassgireq)
+ 			vgic_v4_configure_vsgis(vcpu->kvm);
+ 
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 8d6466273769..24b8f4e7e77a 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -381,10 +381,6 @@ static int alloc_devid_from_rsv_pools(struct rsv_devid_pool **devid_pool,
+ #define gic_data_rdist_rd_base()	(gic_data_rdist()->rd_base)
+ #define gic_data_rdist_vlpi_base()	(gic_data_rdist_rd_base() + SZ_128K)
+ 
+-#ifdef CONFIG_ARM64_HISI_IPIV
+-extern struct static_key_false ipiv_enable;
+-#endif
+-
+ #ifdef CONFIG_VIRT_PLAT_DEV
+ /*
+  * Currently we only build *one* devid pool.
+@@ -4425,8 +4421,7 @@ static void its_vpe_4_1_schedule(struct its_vpe *vpe,
+ 	u64 ipiv_val = 0;
+ 	u32 nr_vpes;
+ 
+-	if (static_branch_unlikely(&ipiv_enable) &&
+-	    vm->nassgireq) {
++	if (vm->enable_ipiv_from_guest) {
+ 		/* wait gicr_ipiv_busy */
+ 		WARN_ON_ONCE(readl_relaxed_poll_timeout_atomic(vlpi_base + GICR_IPIV_ST,
+ 					ipiv_val, !(ipiv_val & GICR_IPIV_ST_IPIV_BUSY), 1, 500));
+@@ -4496,8 +4491,7 @@ static void its_vpe_4_1_deschedule(struct its_vpe *vpe,
+ 	}
+ 
+ #ifdef CONFIG_ARM64_HISI_IPIV
+-	if (static_branch_unlikely(&ipiv_enable) &&
+-	    vm->nassgireq) {
++	if (vm->enable_ipiv_from_guest) {
+ 		/* wait gicr_ipiv_busy */
+ 		WARN_ON_ONCE(readl_relaxed_poll_timeout_atomic(vlpi_base + GICR_IPIV_ST,
+ 					val, !(val & GICR_IPIV_ST_IPIV_BUSY), 1, 500));
+@@ -4910,7 +4904,7 @@ static void its_vpe_irq_domain_free(struct irq_domain *domain,
+ 		its_lpi_free(vm->db_bitmap, vm->db_lpi_base, vm->nr_db_lpis);
+ 		its_free_prop_table(vm->vprop_page);
+ #ifdef CONFIG_ARM64_HISI_IPIV
+-		if (static_branch_unlikely(&ipiv_enable)) {
++		if (vm->enable_ipiv_from_vmm) {
+ 			free_pages((unsigned long)page_address(vm->vpeid_page),
+ 				    get_order(nr_irqs * 2));
+ 		}
+@@ -4957,7 +4951,7 @@ static int its_vpe_irq_domain_alloc(struct irq_domain *domain, unsigned int virq
+ 	if (gic_rdists->has_rvpeid) {
+ 		irqchip = &its_vpe_4_1_irq_chip;
+ #ifdef CONFIG_ARM64_HISI_IPIV
+-		if (static_branch_unlikely(&ipiv_enable)) {
++		if (vm->enable_ipiv_from_vmm) {
+ 			/*
+ 			 * The vpeid's size is 2 bytes, so we need to allocate 2 *
+ 			 * (num of vcpus). nr_irqs is equal to the number of vCPUs.
+@@ -4980,7 +4974,7 @@ static int its_vpe_irq_domain_alloc(struct irq_domain *domain, unsigned int virq
+ 		if (err)
+ 			break;
+ #ifdef CONFIG_ARM64_HISI_IPIV
+-		if (static_branch_unlikely(&ipiv_enable)) {
++		if (vm->enable_ipiv_from_vmm) {
+ 			vpeid_entry = (u16 *)vpeid_table_va + i;
+ 			*vpeid_entry = vm->vpes[i]->vpe_id;
+ 		}
+diff --git a/include/linux/arm-smccc.h b/include/linux/arm-smccc.h
+index 374ff338755c..73736e0dbc40 100644
+--- a/include/linux/arm-smccc.h
++++ b/include/linux/arm-smccc.h
+@@ -551,5 +551,20 @@ asmlinkage void __arm_smccc_hvc(unsigned long a0, unsigned long a1,
+ 		method;							\
+ 	})
+ 
++#ifdef CONFIG_ARM64_HISI_IPIV
++/* HiSilicon paravirtualised sgi calls */
++#define ARM_SMCCC_VENDOR_PV_SGI_FEATURES					\
++	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
++			   ARM_SMCCC_SMC_64,				\
++			   ARM_SMCCC_OWNER_VENDOR_HYP,			\
++			   0x90)
++
++#define ARM_SMCCC_VENDOR_PV_SGI_ENABLE					\
++	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
++			   ARM_SMCCC_SMC_64,				\
++			   ARM_SMCCC_OWNER_VENDOR_HYP,			\
++			   0x91)
++#endif /* CONFIG_ARM64_HISI_IPIV */
++
+ #endif /*__ASSEMBLY__*/
+ #endif /*__LINUX_ARM_SMCCC_H*/
+diff --git a/include/linux/irqchip/arm-gic-v4.h b/include/linux/irqchip/arm-gic-v4.h
+index d4a6db704e97..335b4aab6906 100644
+--- a/include/linux/irqchip/arm-gic-v4.h
++++ b/include/linux/irqchip/arm-gic-v4.h
+@@ -36,8 +36,8 @@ struct its_vm {
+ 	u32			vlpi_count[GICv4_ITS_LIST_MAX];
+ #ifdef CONFIG_ARM64_HISI_IPIV
+ 	struct page         *vpeid_page;
+-	bool                  nassgireq;
+ 	bool			enable_ipiv_from_vmm;
++	bool			enable_ipiv_from_guest;
+ #endif
+ };
+ 
+diff --git a/tools/arch/arm64/include/uapi/asm/kvm.h b/tools/arch/arm64/include/uapi/asm/kvm.h
+index f7ddd73a8c0f..bcdf9d6dc37b 100644
+--- a/tools/arch/arm64/include/uapi/asm/kvm.h
++++ b/tools/arch/arm64/include/uapi/asm/kvm.h
+@@ -376,6 +376,11 @@ enum {
+ enum {
+ 	KVM_REG_ARM_VENDOR_HYP_BIT_FUNC_FEAT	= 0,
+ 	KVM_REG_ARM_VENDOR_HYP_BIT_PTP		= 1,
++	/*
++	 * If the mainline conflicts, do not change the
++	 * current sequence, add in sequence.
++	 */
++	KVM_REG_ARM_VENDOR_HYP_BIT_IPIV		= 2,
+ #ifdef __KERNEL__
+ 	KVM_REG_ARM_VENDOR_HYP_BMAP_BIT_COUNT,
+ #endif
+diff --git a/tools/testing/selftests/kvm/aarch64/hypercalls.c b/tools/testing/selftests/kvm/aarch64/hypercalls.c
+index 31f66ba97228..f433c809b803 100644
+--- a/tools/testing/selftests/kvm/aarch64/hypercalls.c
++++ b/tools/testing/selftests/kvm/aarch64/hypercalls.c
+@@ -20,7 +20,7 @@
+ /* Last valid bits of the bitmapped firmware registers */
+ #define KVM_REG_ARM_STD_BMAP_BIT_MAX		0
+ #define KVM_REG_ARM_STD_HYP_BMAP_BIT_MAX	0
+-#define KVM_REG_ARM_VENDOR_HYP_BMAP_BIT_MAX	1
++#define KVM_REG_ARM_VENDOR_HYP_BMAP_BIT_MAX	2
+ 
+ struct kvm_fw_reg_info {
+ 	uint64_t reg;		/* Register definition */
+-- 
+2.43.0
+

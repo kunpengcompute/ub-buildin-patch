@@ -1,0 +1,188 @@
+From 9a14ea4032b8a17016046fe45c2a3c2ccbb29c72 Mon Sep 17 00:00:00 2001
+From: Zenghui Yu <yuzenghui@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:15 +0800
+Subject: [PATCH 540/960] downstream: KVM: arm64: arch_timer: Make
+ vtimer_irqbypass a Distributor attr
+
+Having the vtimer_irqbypass flag in the per-vcpu structure is actually
+pointless, as we will keep the vtimer interrupt delivery capability the
+same among all vcpus (either direct injection via MBIGEN-ITS-RDist, or
+purely emulated by KVM).
+
+Let's instead make it a Distributor attribute. This way, we configure the
+vtimer information for *all* vcpus in kvm_vtimer_config(), in one go.
+Otherwise we need to configure it for each vcpu in its first run (we may
+end-up missing the activation of vtimer interrupt for some vcpus whose
+vtimer_info hasn't been configures yet, and bad things will happen...).
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_emulate.h |  2 +-
+ arch/arm64/kvm/arch_timer.c          | 39 ++++++++++++++++++++--------
+ arch/arm64/kvm/arm.c                 |  2 +-
+ arch/arm64/kvm/vgic/vgic-v4.c        |  7 ++---
+ arch/arm64/kvm/vgic/vgic.c           |  2 --
+ include/kvm/arm_arch_timer.h         |  2 +-
+ include/kvm/arm_vgic.h               |  4 +++
+ 7 files changed, 39 insertions(+), 19 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_emulate.h b/arch/arm64/include/asm/kvm_emulate.h
+index 7a7039a395f5..382adf6befb6 100644
+--- a/arch/arm64/include/asm/kvm_emulate.h
++++ b/arch/arm64/include/asm/kvm_emulate.h
+@@ -113,7 +113,7 @@ static inline void vcpu_clear_wfx_traps(struct kvm_vcpu *vcpu)
+ 	vcpu->arch.hcr_el2 &= ~HCR_TWE;
+ 	if (atomic_read(&vcpu->arch.vgic_cpu.vgic_v3.its_vpe.vlpi_count) ||
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+-	    vcpu->arch.vgic_cpu.vtimier_irqbypass ||
++	    vcpu->kvm->arch.vgic.vtimer_irqbypass ||
+ #endif
+ 	    vcpu->kvm->arch.vgic.nassgireq)
+ 		vcpu->arch.hcr_el2 &= ~HCR_TWI;
+diff --git a/arch/arm64/kvm/arch_timer.c b/arch/arm64/kvm/arch_timer.c
+index 87c7768a4aaa..0f830ef21ad9 100644
+--- a/arch/arm64/kvm/arch_timer.c
++++ b/arch/arm64/kvm/arch_timer.c
+@@ -1684,24 +1684,41 @@ static bool vtimer_get_active_stat(struct kvm_vcpu *vcpu, int vintid)
+ 		return vtimer_mbigen_get_active(vcpu->cpu);
+ }
+ 
+-int kvm_vtimer_config(struct kvm_vcpu *vcpu)
++int kvm_vtimer_config(struct kvm *kvm)
+ {
+-	struct arch_timer_cpu *timer = &vcpu->arch.timer_cpu;
+-	int intid;
++	struct vgic_dist *dist = &kvm->arch.vgic;
++	struct kvm_vcpu *vcpu;
++	int ret = 0;
++	unsigned long c;
+ 
+ 	if (!vtimer_is_irqbypass())
+ 		return 0;
+ 
+-	if (timer->enabled)
+-		return 0;
+-
+-	if (!irqchip_in_kernel(vcpu->kvm))
++	if (!irqchip_in_kernel(kvm))
+ 		return -EINVAL;
++	mutex_lock(&kvm->lock);
++	if (dist->vtimer_irqbypass)
++		goto out;
+ 
+-	intid = timer_irq(vcpu_vtimer(vcpu));
+-	return kvm_vgic_config_vtimer_irqbypass(vcpu, intid,
+-						vtimer_get_active_stat,
+-						vtimer_set_active_stat);
++	kvm_for_each_vcpu(c, vcpu, kvm) {
++		struct arch_timer_cpu *timer = &vcpu->arch.timer_cpu;
++		int intid;
++
++		WARN_ON(timer->enabled);
++
++		intid = timer_irq(vcpu_vtimer(vcpu));
++		ret = kvm_vgic_config_vtimer_irqbypass(vcpu, intid,
++							vtimer_get_active_stat,
++							vtimer_set_active_stat);
++		if (ret)
++			goto out;
++	}
++
++	dist->vtimer_irqbypass = true;
++
++out:
++	mutex_unlock(&kvm->lock);
++	return ret;
+ }
+ #endif
+ 
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index c93f2edec648..519710106d50 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -672,7 +672,7 @@ int kvm_arch_vcpu_run_pid_change(struct kvm_vcpu *vcpu)
+ 	kvm_arm_vcpu_init_debug(vcpu);
+ 
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+-	ret = kvm_vtimer_config(vcpu);
++	ret = kvm_vtimer_config(kvm);
+ 	if (ret)
+ 		return ret;
+ #endif
+diff --git a/arch/arm64/kvm/vgic/vgic-v4.c b/arch/arm64/kvm/vgic/vgic-v4.c
+index 528a1a3b8468..1d02c50593d9 100644
+--- a/arch/arm64/kvm/vgic/vgic-v4.c
++++ b/arch/arm64/kvm/vgic/vgic-v4.c
+@@ -214,9 +214,6 @@ static void vgic_v4_enable_vtimer(struct kvm_vcpu *vcpu)
+ 	struct irq_desc *desc;
+ 	int ret;
+ 
+-	if (!vgic_cpu->vtimer_irqbypass)
+-		return;
+-
+ 	irq = vgic_get_irq(vcpu->kvm, vcpu, vtimer->intid);
+ 	irq->host_irq = irq_find_mapping(vpe->sgi_domain, vtimer->intid);
+ 
+@@ -244,9 +241,13 @@ static void vgic_v4_enable_vtimer(struct kvm_vcpu *vcpu)
+ /* Must be called with the kvm lock held */
+ void vgic_v4_configure_vtimer(struct kvm *kvm)
+ {
++	struct vgic_dist *dist = &kvm->arch.vgic;
+ 	struct kvm_vcpu *vcpu;
+ 	unsigned long i;
+ 
++	if (!dist->vtimer_irqbypass)
++		return;
++
+ 	kvm_for_each_vcpu(i, vcpu, kvm)
+ 		vgic_v4_enable_vtimer(vcpu);
+ }
+diff --git a/arch/arm64/kvm/vgic/vgic.c b/arch/arm64/kvm/vgic/vgic.c
+index d6f2027937eb..6e1fa6f2918f 100644
+--- a/arch/arm64/kvm/vgic/vgic.c
++++ b/arch/arm64/kvm/vgic/vgic.c
+@@ -603,8 +603,6 @@ int kvm_vgic_config_vtimer_irqbypass(struct kvm_vcpu *vcpu, u32 vintid,
+ 	if (WARN_ON_ONCE(!irq || !kvm_vgic_vtimer_irqbypass_support()))
+ 		return -EINVAL;
+ 
+-	vgic_cpu->vtimer_irqbypass = true;
+-
+ 	vtimer->intid = vintid;
+ 	vtimer->get_active_stat = get_as;
+ 	vtimer->set_active_stat = set_as;
+diff --git a/include/kvm/arm_arch_timer.h b/include/kvm/arm_arch_timer.h
+index 356538ccbef9..fee20f66da52 100644
+--- a/include/kvm/arm_arch_timer.h
++++ b/include/kvm/arm_arch_timer.h
+@@ -111,7 +111,7 @@ struct arch_timer_cpu {
+ int __init kvm_timer_hyp_init(bool has_gic);
+ int kvm_timer_enable(struct kvm_vcpu *vcpu);
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+-int kvm_vtimer_config(struct kvm_vcpu *vcpu);
++int kvm_vtimer_config(struct kvm *kvm);
+ #endif
+ int kvm_timer_vcpu_reset(struct kvm_vcpu *vcpu);
+ void kvm_timer_vcpu_init(struct kvm_vcpu *vcpu);
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index 229f3ef129c4..2bc5c4a8e205 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -298,6 +298,10 @@ struct vgic_dist {
+ 
+ 	/* Wants SGIs without active state */
+ 	bool			nassgireq;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	/* Indicate whether the vtimer irqbypass mode is used */
++	bool			vtimer_irqbypass;
++#endif
+ 
+ 	struct vgic_irq		*spis;
+ 
+-- 
+2.43.0
+

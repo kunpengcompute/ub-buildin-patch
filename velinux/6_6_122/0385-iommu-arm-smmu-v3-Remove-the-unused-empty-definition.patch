@@ -1,0 +1,41 @@
+From 377c7cdd420d68badb1552d51229391fc52a49c9 Mon Sep 17 00:00:00 2001
+From: Zhang Zekun <zhangzekun11@huawei.com>
+Date: Thu, 15 Aug 2024 19:15:04 +0800
+Subject: [PATCH 385/960] iommu/arm-smmu-v3: Remove the unused empty definition
+
+commit df49881956bab88298e754c73010196b49af6733 upstream.
+
+arm_smmu_sva_remove_dev_pasid() has been removed since commit d38c28dbefee
+("iommu/arm-smmu-v3: Put the SVA mmu notifier in the smmu_domain"), remain
+the empty definition untouched in header file, which is used when
+CONFIG_ARM_SMMU_V3_SVA is not set. So, let's remove the unused definition.
+
+Signed-off-by: Zhang Zekun <zhangzekun11@huawei.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Link: https://lore.kernel.org/r/20240815111504.48810-1-zhangzekun11@huawei.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+index dd734066c215..91d1d7ff3ea4 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+@@ -904,10 +904,5 @@ static inline void arm_smmu_sva_notifier_synchronize(void) {}
+ 
+ #define arm_smmu_sva_domain_alloc NULL
+ 
+-static inline void arm_smmu_sva_remove_dev_pasid(struct iommu_domain *domain,
+-						 struct device *dev,
+-						 ioasid_t id)
+-{
+-}
+ #endif /* CONFIG_ARM_SMMU_V3_SVA */
+ #endif /* _ARM_SMMU_V3_H */
+-- 
+2.43.0
+

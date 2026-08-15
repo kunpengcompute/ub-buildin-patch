@@ -1,0 +1,208 @@
+From a1c866c475c27fa9fe33ae912f518ebdcf9d4ca5 Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@kernel.org>
+Date: Tue, 11 Oct 2022 18:53:47 +0100
+Subject: [PATCH 500/960] downstream: arm64/nmi: Add handling of superpriority
+ interrupts as NMIs
+
+Our goal with superpriority interrupts is to use them as NMIs, taking
+advantage of the much smaller regions where they are masked to allow
+prompt handling of the most time critical interrupts.
+
+When an interrupt configured with superpriority we will enter EL1 as
+normal for any interrupt, the presence of a superpriority interrupt is
+indicated with a status bit in ISR_EL1. We use this to check for the
+presence of a superpriority interrupt before we unmask anything in
+elX_interrupt(), reporting without unmasking any interrupts. If no
+superpriority interrupt is present then we handle normal interrupts as
+normal, superpriority interrupts will be unmasked while doing so as a
+result of setting DAIF_PROCCTX.
+
+Both IRQs and FIQs may be configured with superpriority so we handle
+both, passing an additional root handler into the elX_interrupt()
+function along with the mask for the bit in ISR_EL1 which indicates the
+presence of the relevant kind of superpriority interrupt. These root
+handlers can be configured by the interrupt controller similarly to the
+root handlers for normal interrupts using the newly added
+set_handle_nmi_irq() and set_handle_nmi_fiq() functions.
+
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/irq.h     |  1 +
+ arch/arm64/kernel/entry-common.c | 51 +++++++++++++++++++++++++++-----
+ arch/arm64/kernel/irq.c          | 22 ++++++++++++++
+ 3 files changed, 66 insertions(+), 8 deletions(-)
+
+diff --git a/arch/arm64/include/asm/irq.h b/arch/arm64/include/asm/irq.h
+index fac08e18bcd5..62fb5117ef7b 100644
+--- a/arch/arm64/include/asm/irq.h
++++ b/arch/arm64/include/asm/irq.h
+@@ -8,6 +8,7 @@
+ 
+ struct pt_regs;
+ 
++int set_handle_nmi_irq(void (*handle_irq)(struct pt_regs *));
+ int set_handle_irq(void (*handle_irq)(struct pt_regs *));
+ #define set_handle_irq	set_handle_irq
+ int set_handle_fiq(void (*handle_fiq)(struct pt_regs *));
+diff --git a/arch/arm64/kernel/entry-common.c b/arch/arm64/kernel/entry-common.c
+index 60051ba0cf21..425263889411 100644
+--- a/arch/arm64/kernel/entry-common.c
++++ b/arch/arm64/kernel/entry-common.c
+@@ -289,6 +289,8 @@ static void do_interrupt_handler(struct pt_regs *regs,
+ 	set_irq_regs(old_regs);
+ }
+ 
++extern void (*handle_arch_nmi_irq)(struct pt_regs *regs);
++extern void (*handle_arch_nmi_fiq)(struct pt_regs *regs);
+ extern void (*handle_arch_irq)(struct pt_regs *);
+ extern void (*handle_arch_fiq)(struct pt_regs *);
+ 
+@@ -517,6 +519,14 @@ asmlinkage void noinstr el1h_64_sync_handler(struct pt_regs *regs)
+ 	}
+ }
+ 
++static __always_inline void __el1_nmi(struct pt_regs *regs,
++				      void (*handler)(struct pt_regs *))
++{
++	arm64_enter_nmi(regs);
++	do_interrupt_handler(regs, handler);
++	arm64_exit_nmi(regs);
++}
++
+ static __always_inline void __el1_pnmi(struct pt_regs *regs,
+ 				       void (*handler)(struct pt_regs *))
+ {
+@@ -538,9 +548,17 @@ static __always_inline void __el1_irq(struct pt_regs *regs,
+ 
+ 	exit_to_kernel_mode(regs);
+ }
+-static void noinstr el1_interrupt(struct pt_regs *regs,
+-				  void (*handler)(struct pt_regs *))
++
++static void noinstr el1_interrupt(struct pt_regs *regs, u64 nmi_flag,
++				  void (*handler)(struct pt_regs *),
++				  void (*nmi_handler)(struct pt_regs *))
+ {
++	/* Is there a NMI to handle? */
++	if (system_uses_nmi() && (read_sysreg(isr_el1) & nmi_flag)) {
++		__el1_nmi(regs, nmi_handler);
++		return;
++	}
++
+ 	write_sysreg(DAIF_PROCCTX_NOIRQ, daif);
+ 
+ 	if (IS_ENABLED(CONFIG_ARM64_PSEUDO_NMI) && !interrupts_enabled(regs))
+@@ -551,12 +569,12 @@ static void noinstr el1_interrupt(struct pt_regs *regs,
+ 
+ asmlinkage void noinstr el1h_64_irq_handler(struct pt_regs *regs)
+ {
+-	el1_interrupt(regs, handle_arch_irq);
++	el1_interrupt(regs, ISR_EL1_IS, handle_arch_irq, handle_arch_nmi_irq);
+ }
+ 
+ asmlinkage void noinstr el1h_64_fiq_handler(struct pt_regs *regs)
+ {
+-	el1_interrupt(regs, handle_arch_fiq);
++	el1_interrupt(regs, ISR_EL1_FS, handle_arch_fiq, handle_arch_nmi_fiq);
+ }
+ 
+ asmlinkage void noinstr el1h_64_error_handler(struct pt_regs *regs)
+@@ -779,11 +797,28 @@ asmlinkage void noinstr el0t_64_sync_handler(struct pt_regs *regs)
+ 	}
+ }
+ 
+-static void noinstr el0_interrupt(struct pt_regs *regs,
+-				  void (*handler)(struct pt_regs *))
++static void noinstr el0_interrupt(struct pt_regs *regs, u64 nmi_flag,
++				  void (*handler)(struct pt_regs *),
++				  void (*nmi_handler)(struct pt_regs *))
+ {
+ 	enter_from_user_mode(regs);
+ 
++	/* Is there a NMI to handle? */
++	if (system_uses_nmi() && (read_sysreg(isr_el1) & nmi_flag)) {
++		/*
++		 * Any system with FEAT_NMI should have FEAT_CSV2 and
++		 * not be affected by Spectre v2 so we don't mitigate
++		 * here.
++		 */
++
++		arm64_enter_nmi(regs);
++		do_interrupt_handler(regs, nmi_handler);
++		arm64_exit_nmi(regs);
++
++		exit_to_user_mode(regs);
++		return;
++	}
++
+ 	write_sysreg(DAIF_PROCCTX_NOIRQ, daif);
+ 
+ 	if (regs->pc & BIT(55))
+@@ -798,7 +833,7 @@ static void noinstr el0_interrupt(struct pt_regs *regs,
+ 
+ static void noinstr __el0_irq_handler_common(struct pt_regs *regs)
+ {
+-	el0_interrupt(regs, handle_arch_irq);
++	el0_interrupt(regs, ISR_EL1_IS, handle_arch_irq, handle_arch_nmi_irq);
+ }
+ 
+ asmlinkage void noinstr el0t_64_irq_handler(struct pt_regs *regs)
+@@ -808,7 +843,7 @@ asmlinkage void noinstr el0t_64_irq_handler(struct pt_regs *regs)
+ 
+ static void noinstr __el0_fiq_handler_common(struct pt_regs *regs)
+ {
+-	el0_interrupt(regs, handle_arch_fiq);
++	el0_interrupt(regs, ISR_EL1_FS, handle_arch_fiq, handle_arch_nmi_fiq);
+ }
+ 
+ asmlinkage void noinstr el0t_64_fiq_handler(struct pt_regs *regs)
+diff --git a/arch/arm64/kernel/irq.c b/arch/arm64/kernel/irq.c
+index 85087e2df564..b1f2a9b49039 100644
+--- a/arch/arm64/kernel/irq.c
++++ b/arch/arm64/kernel/irq.c
+@@ -87,6 +87,16 @@ void do_softirq_own_stack(void)
+ }
+ #endif
+ 
++static void default_handle_nmi_irq(struct pt_regs *regs)
++{
++	panic("Superpriority IRQ taken without a root NMI IRQ handler\n");
++}
++
++static void default_handle_nmi_fiq(struct pt_regs *regs)
++{
++	panic("Superpriority FIQ taken without a root NMI FIQ handler\n");
++}
++
+ static void default_handle_irq(struct pt_regs *regs)
+ {
+ 	panic("IRQ taken without a root IRQ handler\n");
+@@ -97,9 +107,21 @@ static void default_handle_fiq(struct pt_regs *regs)
+ 	panic("FIQ taken without a root FIQ handler\n");
+ }
+ 
++void (*handle_arch_nmi_irq)(struct pt_regs *) __ro_after_init = default_handle_nmi_irq;
++void (*handle_arch_nmi_fiq)(struct pt_regs *) __ro_after_init = default_handle_nmi_fiq;
+ void (*handle_arch_irq)(struct pt_regs *) __ro_after_init = default_handle_irq;
+ void (*handle_arch_fiq)(struct pt_regs *) __ro_after_init = default_handle_fiq;
+ 
++int __init set_handle_nmi_irq(void (*handle_nmi_irq)(struct pt_regs *))
++{
++	if (handle_arch_nmi_irq != default_handle_nmi_irq)
++		return -EBUSY;
++
++	handle_arch_nmi_irq = handle_nmi_irq;
++	pr_info("Root superpriority IRQ handler: %ps\n", handle_nmi_irq);
++	return 0;
++}
++
+ int __init set_handle_irq(void (*handle_irq)(struct pt_regs *))
+ {
+ 	if (handle_arch_irq != default_handle_irq)
+-- 
+2.43.0
+

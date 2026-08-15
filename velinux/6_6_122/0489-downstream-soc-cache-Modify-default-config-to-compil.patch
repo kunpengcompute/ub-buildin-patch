@@ -1,0 +1,57 @@
+From 190a9e6ec3486fd5d5fb35b4c2ff3a8f8fd8ed5f Mon Sep 17 00:00:00 2001
+From: Yushan Wang <wangyushan12@huawei.com>
+Date: Thu, 17 Apr 2025 21:49:31 +0800
+Subject: [PATCH 489/960] downstream: soc cache: Modify default config to
+ compile HiSilicon SoC cache driver
+
+Modify default config to compile HiSilicon SoC cache driver as modules.
+
+Signed-off-by: Yushan Wang <wangyushan12@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Conflicts:
+	config.aarch64
+	config.aarch64-64k
+[ Context conflicts. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 2 ++
+ config.aarch64-64k | 4 +++-
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 31b76d2e6e07..28140119ed41 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -404,6 +404,8 @@ CONFIG_HISILICON_ERRATUM_162100125=y
+ # end of ARM errata workarounds via the alternatives framework
+ 
+ CONFIG_ARM64_BRBE=y
++CONFIG_HISI_SOC_CACHE=m
++CONFIG_HISI_SOC_HHA=m
+ 
+ CONFIG_ARM64_4K_PAGES=y
+ # CONFIG_ARM64_16K_PAGES is not set
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 5b68a0d644a1..7437dd32fc87 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -404,6 +404,8 @@ CONFIG_HISILICON_ERRATUM_162100125=y
+ # end of ARM errata workarounds via the alternatives framework
+ 
+ CONFIG_ARM64_BRBE=y
++CONFIG_HISI_SOC_CACHE=m
++CONFIG_HISI_SOC_HHA=m
+ 
+ # CONFIG_ARM64_4K_PAGES is not set
+ # CONFIG_ARM64_16K_PAGES is not set
+@@ -10956,4 +10958,4 @@ CONFIG_ARCH_USE_MEMTEST=y
+ #
+ # end of Rust hacking
+ # end of Kernel hacking
+-CONFIG_VFIO_DEBUGFS=y
+\ No newline at end of file
++CONFIG_VFIO_DEBUGFS=y
+-- 
+2.43.0
+

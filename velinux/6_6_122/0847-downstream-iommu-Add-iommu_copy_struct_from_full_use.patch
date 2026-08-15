@@ -1,0 +1,93 @@
+From 4851dd302b0ebf2b3d714e298facf560546ddd34 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Wed, 21 Aug 2024 17:40:28 +0000
+Subject: [PATCH 847/960] downstream: iommu: Add
+ iommu_copy_struct_from_full_user_array helper
+
+The iommu_copy_struct_from_user_array helper can be used to copy a single
+entry from a user array which might not be efficient if the array is big.
+
+Add a new iommu_copy_struct_from_full_user_array to copy the entire user
+array at once. Update the existing iommu_copy_struct_from_user_array kdoc
+accordingly.
+
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ include/linux/iommu.h | 48 ++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 47 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index a2e1a90bd34c..e41c4cf179d8 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -495,7 +495,9 @@ static inline int __iommu_copy_struct_from_user_array(
+  * @index: Index to the location in the array to copy user data from
+  * @min_last: The last member of the data structure @kdst points in the
+  *            initial version.
+- * Return 0 for success, otherwise -error.
++ *
++ * Copy a single entry from a user array. Return 0 for success, otherwise
++ * -error.
+  */
+ #define iommu_copy_struct_from_user_array(kdst, user_array, data_type, index, \
+ 					  min_last)                           \
+@@ -503,6 +505,50 @@ static inline int __iommu_copy_struct_from_user_array(
+ 		kdst, user_array, data_type, index, sizeof(*(kdst)),          \
+ 		offsetofend(typeof(*(kdst)), min_last))
+ 
++/**
++ * iommu_copy_struct_from_full_user_array - Copy iommu driver specific user
++ *         space data from an iommu_user_data_array
++ * @kdst: Pointer to an iommu driver specific user data that is defined in
++ *        include/uapi/linux/iommufd.h
++ * @kdst_entry_size: sizeof(*kdst)
++ * @user_array: Pointer to a struct iommu_user_data_array for a user space
++ *              array
++ * @data_type: The data type of the @kdst. Must match with @user_array->type
++ *
++ * Copy the entire user array. kdst must have room for kdst_entry_size *
++ * user_array->entry_num bytes. Return 0 for success, otherwise -error.
++ */
++static inline int
++iommu_copy_struct_from_full_user_array(void *kdst, size_t kdst_entry_size,
++				       struct iommu_user_data_array *user_array,
++				       unsigned int data_type)
++{
++	unsigned int i;
++	int ret;
++
++	if (user_array->type != data_type)
++		return -EINVAL;
++	if (!user_array->entry_num)
++		return -EINVAL;
++	if (likely(user_array->entry_len == kdst_entry_size)) {
++		if (copy_from_user(kdst, user_array->uptr,
++				   user_array->entry_num *
++					   user_array->entry_len))
++			return -EFAULT;
++	}
++
++	/* Copy item by item */
++	for (i = 0; i != user_array->entry_num; i++) {
++		ret = copy_struct_from_user(
++			kdst + kdst_entry_size * i, kdst_entry_size,
++			user_array->uptr + user_array->entry_len * i,
++			user_array->entry_len);
++		if (ret)
++			return ret;
++	}
++	return 0;
++}
++
+ /**
+  * struct iommu_ops - iommu ops and capabilities
+  * @capable: check capability
+-- 
+2.43.0
+

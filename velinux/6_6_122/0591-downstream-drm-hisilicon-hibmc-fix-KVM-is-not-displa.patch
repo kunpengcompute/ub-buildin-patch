@@ -1,0 +1,72 @@
+From 30e87ef7e56a7d6f0b82d45b9c4b2b901b7e06c8 Mon Sep 17 00:00:00 2001
+From: Baihan Li <libaihan@huawei.com>
+Date: Tue, 27 May 2025 21:39:00 +0800
+Subject: [PATCH 591/960] downstream: drm/hisilicon/hibmc: fix KVM is not
+ displaying when GRUB VGA is on
+
+Add vdac detect_ctx(), and make vdac is always connected when DP is
+disconnected. Add force() to eliminate the influence of VGA's GRUB
+on DP when HPD occurring.
+
+Fixes: 4c962bc929f1 ("drm/hisilicon/hibmc: Add vga connector detect functions")
+Signed-off-by: Baihan Li <libaihan@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ .../gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c  | 28 ++++++++++++++++++-
+ 1 file changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c
+index 945438a01484..5bcaa0263892 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c
+@@ -56,18 +56,44 @@ static void hibmc_connector_destroy(struct drm_connector *connector)
+ 	drm_connector_cleanup(connector);
+ }
+ 
++static int hibmc_vdac_detect(struct drm_connector *connector, struct drm_modeset_acquire_ctx *ctx,
++			     bool force)
++{
++	struct hibmc_drm_private *priv = to_hibmc_drm_private(connector->dev);
++	struct hibmc_dp *dp = &priv->dp;
++
++	if (dp->hpd_status)
++		return connector_status_disconnected;
++
++	return connector_status_connected;
++}
++
+ static const struct drm_connector_helper_funcs
+ 	hibmc_connector_helper_funcs = {
+ 	.get_modes = hibmc_connector_get_modes,
+-	.detect_ctx = drm_connector_helper_detect_from_ddc,
++	.detect_ctx = hibmc_vdac_detect,
+ };
+ 
++static void hibmc_vdac_force(struct drm_connector *connector)
++{
++	struct hibmc_drm_private *priv = to_hibmc_drm_private(connector->dev);
++	struct hibmc_dp *dp = &priv->dp;
++
++	if (dp->hpd_status) {
++		connector->status = connector_status_disconnected;
++		return;
++	}
++
++	connector->status = connector_status_connected;
++}
++
+ static const struct drm_connector_funcs hibmc_connector_funcs = {
+ 	.fill_modes = drm_helper_probe_single_connector_modes,
+ 	.destroy = hibmc_connector_destroy,
+ 	.reset = drm_atomic_helper_connector_reset,
+ 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
+ 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
++	.force = hibmc_vdac_force,
+ };
+ 
+ static void hibmc_encoder_mode_set(struct drm_encoder *encoder,
+-- 
+2.43.0
+

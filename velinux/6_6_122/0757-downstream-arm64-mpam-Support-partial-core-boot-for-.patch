@@ -1,0 +1,85 @@
+From 392b2a604e148474efbb55dc5d0bdf6e011700bf Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Fri, 8 Aug 2025 11:11:56 +0800
+Subject: [PATCH 757/960] downstream: arm64/mpam: Support partial-core boot for
+ MPAM
+
+L2 shares the same power domain with its associated CPUs. Therefore, in
+scenarios where only partial cores power up, the L2 MSCs belonging to the
+un-powered cores should not access, otherwise bus-access fault would occur.
+
+During initialization of class->props, skip any L2 MSC that is not powered,
+so that ensure the class->props member unaffected from uninitialized
+ris->props in mpam_enable_merge_features().
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  | 22 ++++++++++++++--------
+ drivers/platform/mpam/mpam_internal.h |  1 +
+ 2 files changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index cb78184f202e..60f7bcf2bfe8 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -1528,8 +1528,11 @@ static int mpam_discovery_cpu_online(unsigned int cpu)
+ 
+ 	mutex_lock(&mpam_list_lock);
+ 	list_for_each_entry(msc, &mpam_all_msc, glbl_list) {
+-		if (!cpumask_test_cpu(cpu, &msc->accessibility))
++		if (!cpumask_test_cpu(cpu, &msc->accessibility)) {
++			msc->probed = true;
++			msc->skipped = true;
+ 			continue;
++		}
+ 
+ 		mutex_lock(&msc->lock);
+ 		if (!msc->probed)
+@@ -1945,14 +1948,14 @@ static void mpam_enable_init_class_features(struct mpam_class *class)
+ 	struct mpam_msc_ris *ris;
+ 	struct mpam_component *comp;
+ 
+-	comp = list_first_entry_or_null(&class->components,
+-					struct mpam_component, class_list);
+-	if (WARN_ON(!comp))
+-		return;
++	list_for_each_entry(comp, &class->components, class_list) {
++		list_for_each_entry(ris, &comp->ris, comp_list) {
++			if (!ris->msc->skipped)
++				break;
++		}
++	}
+ 
+-	ris = list_first_entry_or_null(&comp->ris,
+-				       struct mpam_msc_ris, comp_list);
+-	if (WARN_ON(!ris))
++	if (WARN_ON(!comp) || WARN_ON(!ris))
+ 		return;
+ 
+ 	class->props = ris->props;
+@@ -1972,6 +1975,9 @@ static void mpam_enable_merge_features(void)
+ 
+ 		list_for_each_entry(comp, &class->components, class_list) {
+ 			list_for_each_entry(ris, &comp->ris, comp_list) {
++				if (ris->msc->skipped)
++					continue;
++
+ 				__resource_props_mismatch(ris, class);
+ 
+ 				class->nrdy_usec = max(class->nrdy_usec,
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index 51e399186e0c..21fc8a67dc0c 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -54,6 +54,7 @@ struct mpam_msc {
+ 
+ 	struct mutex		lock;
+ 	bool			probed;
++	bool			skipped;
+ 	bool			error_irq_requested;
+ 	bool			error_irq_hw_enabled;
+ 	u16			partid_max;
+-- 
+2.43.0
+

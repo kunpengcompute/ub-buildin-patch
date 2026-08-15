@@ -1,0 +1,43 @@
+From 7d0f8761df1230cf4c60165838a20c671056a8ef Mon Sep 17 00:00:00 2001
+From: Zhou Wang <wangzhou1@hisilicon.com>
+Date: Fri, 23 May 2025 20:45:31 +0800
+Subject: [PATCH 601/960] downstream: kvm: hisi: make sure vcpu_id and vcpu_idx
+ have same value in IPIv
+
+When the VM's vgic is initialized, vpeids are written to vpeid table
+in the sequence of vcpu_idx. However, the actual hardware lookups
+vpeid_table in the sequence of vcpu_id. Therefore, ensure that
+vcpu_idx and vcpu_id are the same for IPIV.
+
+Signed-off-by: Zhou Wang <wangzhou1@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/arm.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 2fedb2d7f4b4..eb023af46360 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -1412,6 +1412,16 @@ static int kvm_vcpu_init_check_features(struct kvm_vcpu *vcpu,
+ 	if (test_bit(KVM_ARM_VCPU_HAS_EL2, &features))
+ 		return -EINVAL;
+ 
++#ifdef CONFIG_ARM64_HISI_IPIV
++	if (static_branch_unlikely(&ipiv_enable) &&
++	    vcpu->kvm->arch.vgic.its_vm.enable_ipiv_from_vmm &&
++	    vcpu->vcpu_id != vcpu->vcpu_idx) {
++		kvm_err("IPIV ERROR: vcpu_id %d != vcpu_idx %d\n",
++					vcpu->vcpu_id, vcpu->vcpu_idx);
++		return -EINVAL;
++	}
++#endif
++
+ 	return 0;
+ }
+ 
+-- 
+2.43.0
+

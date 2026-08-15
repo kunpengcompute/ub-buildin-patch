@@ -1,0 +1,230 @@
+From 897c14c4a19f2ea6d162407074e468471c29bf45 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 22 Feb 2025 11:55:08 +0800
+Subject: [PATCH 685/960] downstream: fs/resctrl: Adapt to the hardware
+ topology structures of RDT and MPAM
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When attempting to enable the MPAM memory bandwidth monitoring feature, we
+found that MPAM differs from x86 RDT in hardware topology implementation.
+To maintain compatibility with the interface of version, a small amount of
+public code needs to be split.
+
+According to the x86 SDM, both total memory bandwidth and local memory
+bandwidth are classified as part of L3 cache monitoring:
+~~~
+  mon_data
+  ├── mon_L3_00
+  │   ├── llc_occupancy
+  │   ├── mbm_local_bytes
+  │   └── mbm_total_bytes
+  └── mon_L3_01
+      ├── llc_occupancy
+      ├── mbm_local_bytes
+      └── mbm_total_bytes
+~~~
+
+In contrast, for ARM64 MPAM, L3/memory monitoring is implemented using
+separate L3/MATA resources:
+~~~
+  mon_data
+  ├── mon_L3_01
+  │   ├── llc_occupancy
+  │   └── mbm_local_bytes
+  ├── mon_L3_195
+  │   ├── llc_occupancy
+  │   └── mbm_local_bytes
+  ├── mon_MB_00
+  │   └── mbm_total_bytes
+  └── mon_MB_01
+      └── mbm_total_bytes
+~~~
+
+The public code file fs/resctrl/monitor.c has added a reference to
+resctrl_arch_mon_resource_init() and removed l3_mon_evt_init(). Both x86
+RDT and ARM64 MPAM implement their own versions of
+resctrl_arch_mon_resource_init() and l3_mon_evt_init(), with the x86 part
+retaining its original logic unchanged.
+
+Fixes: 13e249bf4944 ("x86/resctrl: Move the filesystem portions of resctrl to live in '/fs/'")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 59 ++++++++++++++++++++++++++++
+ fs/resctrl/internal.h                | 15 -------
+ fs/resctrl/monitor.c                 | 47 +---------------------
+ 3 files changed, 60 insertions(+), 61 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 02fabf2d5f21..b7549edabc3a 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -1199,6 +1199,65 @@ int mpam_resctrl_offline_cpu(unsigned int cpu)
+ 	return 0;
+ }
+ 
++static struct mon_evt llc_occupancy_event = {
++	.name		= "llc_occupancy",
++	.evtid		= QOS_L3_OCCUP_EVENT_ID,
++};
++
++static struct mon_evt mbm_total_event = {
++	.name		= "mbm_total_bytes",
++	.evtid		= QOS_L3_MBM_TOTAL_EVENT_ID,
++};
++
++static struct mon_evt mbm_local_event = {
++	.name		= "mbm_local_bytes",
++	.evtid		= QOS_L3_MBM_LOCAL_EVENT_ID,
++};
++
++/*
++ * Initialize the event list for the resource.
++ *
++ * Note that MBM events are also part of RDT_RESOURCE_L3 resource
++ * because as per the SDM the total and local memory bandwidth
++ * are enumerated as part of L3 monitoring.
++ */
++static void l3_mon_evt_init(struct rdt_resource *r)
++{
++	INIT_LIST_HEAD(&r->evt_list);
++
++	if (!r->mon_capable)
++		return;
++
++	if (r->rid == RDT_RESOURCE_L3) {
++		if (resctrl_arch_is_llc_occupancy_enabled())
++			list_add_tail(&llc_occupancy_event.list, &r->evt_list);
++
++		if (resctrl_arch_is_mbm_local_enabled())
++			list_add_tail(&mbm_local_event.list, &r->evt_list);
++	}
++
++	if ((r->rid == RDT_RESOURCE_MBA) &&
++	     resctrl_arch_is_mbm_total_enabled())
++		list_add_tail(&mbm_total_event.list, &r->evt_list);
++}
++
++int resctrl_arch_mon_resource_init(void)
++{
++	l3_mon_evt_init(resctrl_arch_get_resource(RDT_RESOURCE_L3));
++	l3_mon_evt_init(resctrl_arch_get_resource(RDT_RESOURCE_MBA));
++
++	if (resctrl_arch_is_evt_configurable(QOS_L3_MBM_TOTAL_EVENT_ID)) {
++		mbm_total_event.configurable = true;
++		mbm_config_rftype_init("mbm_total_bytes_config");
++	}
++	if (resctrl_arch_is_evt_configurable(QOS_L3_MBM_LOCAL_EVENT_ID)) {
++		mbm_local_event.configurable = true;
++		mbm_config_rftype_init("mbm_local_bytes_config");
++	}
++
++	return 0;
++}
++
+ static int __init __cacheinfo_ready(void)
+ {
+ 	cacheinfo_ready = true;
+diff --git a/fs/resctrl/internal.h b/fs/resctrl/internal.h
+index 0cdabf19ff79..9e7ff00b8514 100644
+--- a/fs/resctrl/internal.h
++++ b/fs/resctrl/internal.h
+@@ -67,20 +67,6 @@ static inline struct rdt_fs_context *rdt_fc2context(struct fs_context *fc)
+ 	return container_of(kfc, struct rdt_fs_context, kfc);
+ }
+ 
+-/**
+- * struct mon_evt - Entry in the event list of a resource
+- * @evtid:		event id
+- * @name:		name of the event
+- * @configurable:	true if the event is configurable
+- * @list:		entry in &rdt_resource->evt_list
+- */
+-struct mon_evt {
+-	enum resctrl_event_id	evtid;
+-	char			*name;
+-	bool			configurable;
+-	struct list_head	list;
+-};
+-
+ /**
+  * union mon_data_bits - Monitoring details for each event file
+  * @priv:              Used to store monitoring event data in @u
+@@ -303,7 +289,6 @@ void cqm_setup_limbo_handler(struct rdt_domain *dom, unsigned long delay_ms,
+ void cqm_handle_limbo(struct work_struct *work);
+ bool has_busy_rmid(struct rdt_domain *d);
+ void __check_limbo(struct rdt_domain *d, bool force_free);
+-void mbm_config_rftype_init(const char *config);
+ void rdt_staged_configs_clear(void);
+ int resctrl_find_cleanest_closid(void);
+ 
+diff --git a/fs/resctrl/monitor.c b/fs/resctrl/monitor.c
+index 97170a4d3edf..402985f25ac6 100644
+--- a/fs/resctrl/monitor.c
++++ b/fs/resctrl/monitor.c
+@@ -774,40 +774,6 @@ static void dom_data_exit(void)
+ 	mutex_unlock(&rdtgroup_mutex);
+ }
+ 
+-static struct mon_evt llc_occupancy_event = {
+-	.name		= "llc_occupancy",
+-	.evtid		= QOS_L3_OCCUP_EVENT_ID,
+-};
+-
+-static struct mon_evt mbm_total_event = {
+-	.name		= "mbm_total_bytes",
+-	.evtid		= QOS_L3_MBM_TOTAL_EVENT_ID,
+-};
+-
+-static struct mon_evt mbm_local_event = {
+-	.name		= "mbm_local_bytes",
+-	.evtid		= QOS_L3_MBM_LOCAL_EVENT_ID,
+-};
+-
+-/*
+- * Initialize the event list for the resource.
+- *
+- * Note that MBM events are also part of RDT_RESOURCE_L3 resource
+- * because as per the SDM the total and local memory bandwidth
+- * are enumerated as part of L3 monitoring.
+- */
+-static void l3_mon_evt_init(struct rdt_resource *r)
+-{
+-	INIT_LIST_HEAD(&r->evt_list);
+-
+-	if (resctrl_arch_is_llc_occupancy_enabled())
+-		list_add_tail(&llc_occupancy_event.list, &r->evt_list);
+-	if (resctrl_arch_is_mbm_total_enabled())
+-		list_add_tail(&mbm_total_event.list, &r->evt_list);
+-	if (resctrl_arch_is_mbm_local_enabled())
+-		list_add_tail(&mbm_local_event.list, &r->evt_list);
+-}
+-
+ int resctrl_mon_resource_init(void)
+ {
+ 	struct rdt_resource *r = resctrl_arch_get_resource(RDT_RESOURCE_L3);
+@@ -820,18 +786,7 @@ int resctrl_mon_resource_init(void)
+ 	if (ret)
+ 		return ret;
+ 
+-	l3_mon_evt_init(r);
+-
+-	if (resctrl_arch_is_evt_configurable(QOS_L3_MBM_TOTAL_EVENT_ID)) {
+-		mbm_total_event.configurable = true;
+-		mbm_config_rftype_init("mbm_total_bytes_config");
+-	}
+-	if (resctrl_arch_is_evt_configurable(QOS_L3_MBM_LOCAL_EVENT_ID)) {
+-		mbm_local_event.configurable = true;
+-		mbm_config_rftype_init("mbm_local_bytes_config");
+-	}
+-
+-	return 0;
++	return resctrl_arch_mon_resource_init();
+ }
+ 
+ void resctrl_mon_resource_exit(void)
+-- 
+2.43.0
+

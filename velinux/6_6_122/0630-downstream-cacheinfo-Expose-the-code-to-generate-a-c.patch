@@ -1,0 +1,67 @@
+From 5b8450492026482b11106ca82c5135dcc2acaa21 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:57:42 +0800
+Subject: [PATCH 630/960] downstream: cacheinfo: Expose the code to generate a
+ cache-id from a device_node
+
+The MPAM driver identifies caches by id for use with resctrl. It
+needs to know the cache-id when probeing, but the value isn't set
+in cacheinfo until device_initcall().
+
+Expose the code that generates the cache-id. The parts of the MPAM
+driver that run early can use this to set up the resctrl structures.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/base/cacheinfo.c  | 13 ++++++++++---
+ include/linux/cacheinfo.h |  1 +
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/base/cacheinfo.c b/drivers/base/cacheinfo.c
+index 54f16bb71152..24200cb949cc 100644
+--- a/drivers/base/cacheinfo.c
++++ b/drivers/base/cacheinfo.c
+@@ -183,7 +183,7 @@ static bool cache_node_is_unified(struct cacheinfo *this_leaf,
+ 	return of_property_read_bool(np, "cache-unified");
+ }
+ 
+-static void cache_of_set_id(struct cacheinfo *this_leaf, struct device_node *np)
++unsigned long cache_of_get_id(struct device_node *np)
+ {
+ 	struct device_node *cpu;
+ 	unsigned long min_id = ~0UL;
+@@ -202,8 +202,15 @@ static void cache_of_set_id(struct cacheinfo *this_leaf, struct device_node *np)
+ 		}
+ 	}
+ 
+-	if (min_id != ~0UL) {
+-		this_leaf->id = min_id;
++	return min_id;
++}
++
++static void cache_of_set_id(struct cacheinfo *this_leaf, struct device_node *np)
++{
++	unsigned long id = cache_of_get_id(np);
++
++	if (id != ~0UL) {
++		this_leaf->id = id;
+ 		this_leaf->attributes |= CACHE_ID;
+ 	}
+ }
+diff --git a/include/linux/cacheinfo.h b/include/linux/cacheinfo.h
+index 73b5bdf363a0..d5d27842ea0c 100644
+--- a/include/linux/cacheinfo.h
++++ b/include/linux/cacheinfo.h
+@@ -112,6 +112,7 @@ int acpi_get_cache_info(unsigned int cpu,
+ #endif
+ 
+ const struct attribute_group *cache_get_priv_group(struct cacheinfo *this_leaf);
++unsigned long cache_of_get_id(struct device_node *np);
+ 
+ /*
+  * Get the cacheinfo structure for the cache associated with @cpu at
+-- 
+2.43.0
+

@@ -1,0 +1,79 @@
+From 6df6ce9ef5a341246cffaccf71b3a3ecaeb9d06b Mon Sep 17 00:00:00 2001
+From: Kefeng Wang <wangkefeng.wang@huawei.com>
+Date: Fri, 24 May 2024 13:28:39 +0800
+Subject: [PATCH 005/960] mm: migrate: simplify __buffer_migrate_folio()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit 01878f10f8e01e6ca1040ccc19b76e10ff7678ad upstream.
+
+Patch series "mm: cleanup MIGRATE_SYNC_NO_COPY mode".
+
+Commit 2916ecc0f9d4 ("mm/migrate: new migrate mode MIGRATE_SYNC_NO_COPY")
+introduce a new MIGRATE_SYNC_NO_COPY mode to allow to offload the copy to
+a device DMA engine, which is only used __migrate_device_pages() to decide
+whether or not copy the old page, and the MIGRATE_SYNC_NO_COPY mode only
+used in hmm, a easy way is just to call the folio_migrate_mapping() and
+folio_migrate_flags(), which help to remove the MIGRATE_SYNC_NO_COPY mode.
+
+This patch (of 5):
+
+Use filemap_migrate_folio() helper to simplify __buffer_migrate_folio().
+
+Link: https://lkml.kernel.org/r/20240524052843.182275-1-wangkefeng.wang@huawei.com
+Link: https://lkml.kernel.org/r/20240524052843.182275-2-wangkefeng.wang@huawei.com
+Signed-off-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Reviewed-by: Matthew Wilcox (Oracle) <willy@infradead.org>
+Reviewed-by: Vishal Moola (Oracle) <vishal.moola@gmail.com>
+Reviewed-by: Miaohe Lin <linmiaohe@huawei.com>
+Cc: Alistair Popple <apopple@nvidia.com>
+Cc: Benjamin LaHaise <bcrl@kvack.org>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Hugh Dickins <hughd@google.com>
+Cc: Jérôme Glisse <jglisse@redhat.com>
+Cc: Jiaqi Yan <jiaqiyan@google.com>
+Cc: Muchun Song <muchun.song@linux.dev>
+Cc: Naoya Horiguchi <nao.horiguchi@gmail.com>
+Cc: Tony Luck <tony.luck@intel.com>
+Cc: Zi Yan <ziy@nvidia.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/migrate.c | 10 +---------
+ 1 file changed, 1 insertion(+), 9 deletions(-)
+
+diff --git a/mm/migrate.c b/mm/migrate.c
+index a9497d630641..f0e4398e3d36 100644
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -773,24 +773,16 @@ static int __buffer_migrate_folio(struct address_space *mapping,
+ 		}
+ 	}
+ 
+-	rc = folio_migrate_mapping(mapping, dst, src, 0);
++	rc = filemap_migrate_folio(mapping, dst, src, mode);
+ 	if (rc != MIGRATEPAGE_SUCCESS)
+ 		goto unlock_buffers;
+ 
+-	folio_attach_private(dst, folio_detach_private(src));
+-
+ 	bh = head;
+ 	do {
+ 		folio_set_bh(bh, dst, bh_offset(bh));
+ 		bh = bh->b_this_page;
+ 	} while (bh != head);
+ 
+-	if (mode != MIGRATE_SYNC_NO_COPY)
+-		folio_migrate_copy(dst, src);
+-	else
+-		folio_migrate_flags(dst, src);
+-
+-	rc = MIGRATEPAGE_SUCCESS;
+ unlock_buffers:
+ 	if (check_refs)
+ 		spin_unlock(&mapping->private_lock);
+-- 
+2.43.0
+

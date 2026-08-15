@@ -1,0 +1,113 @@
+From 1bf5da506f15b07c880c57f072ecf5438fa54965 Mon Sep 17 00:00:00 2001
+From: Tong Tiangen <tongtiangen@huawei.com>
+Date: Tue, 24 Sep 2024 12:45:43 +0800
+Subject: [PATCH 901/960] downstream: mm/migration: do not folio copy in
+ MIGRATE_SYNC_NO_COPY mode
+
+During page migration, if MIGRATE_SYNC_NO_COPY mode is used, the page
+content should not be migrated.
+
+This patch fix it.
+
+Fixes: f00b295b9b61 ("fs: hugetlbfs: support poisoned recover from hugetlbfs_migrate_folio()")
+Fixes: 060913999d7a ("mm: migrate: support poisoned recover from migrate folio")
+Signed-off-by: Tong Tiangen <tongtiangen@huawei.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/hugetlbfs/inode.c    |  2 +-
+ include/linux/migrate.h |  4 ++--
+ mm/migrate.c            | 26 ++++++++++++++++----------
+ 3 files changed, 19 insertions(+), 13 deletions(-)
+
+diff --git a/fs/hugetlbfs/inode.c b/fs/hugetlbfs/inode.c
+index bcd39d5eea5f..5106a0a3bf56 100644
+--- a/fs/hugetlbfs/inode.c
++++ b/fs/hugetlbfs/inode.c
+@@ -1147,7 +1147,7 @@ static int hugetlbfs_migrate_folio(struct address_space *mapping,
+ {
+ 	int rc;
+ 
+-	rc = migrate_huge_page_move_mapping(mapping, dst, src);
++	rc = migrate_huge_page_move_mapping(mapping, dst, src, mode);
+ 	if (rc != MIGRATEPAGE_SUCCESS)
+ 		return rc;
+ 
+diff --git a/include/linux/migrate.h b/include/linux/migrate.h
+index 7b6b8153be0e..d662f00ad361 100644
+--- a/include/linux/migrate.h
++++ b/include/linux/migrate.h
+@@ -72,7 +72,7 @@ struct folio *alloc_migration_target(struct folio *src, unsigned long private);
+ bool isolate_movable_page(struct page *page, isolate_mode_t mode);
+ 
+ int migrate_huge_page_move_mapping(struct address_space *mapping,
+-		struct folio *dst, struct folio *src);
++		struct folio *dst, struct folio *src, enum migrate_mode mode);
+ void migration_entry_wait_on_locked(swp_entry_t entry, spinlock_t *ptl)
+ 		__releases(ptl);
+ void folio_migrate_flags(struct folio *newfolio, struct folio *folio);
+@@ -94,7 +94,7 @@ static inline bool isolate_movable_page(struct page *page, isolate_mode_t mode)
+ 	{ return false; }
+ 
+ static inline int migrate_huge_page_move_mapping(struct address_space *mapping,
+-				  struct folio *dst, struct folio *src)
++		struct folio *dst, struct folio *src, enum migrate_mode mode)
+ {
+ 	return -ENOSYS;
+ }
+diff --git a/mm/migrate.c b/mm/migrate.c
+index 0b0a4cb533c1..03952c3514c8 100644
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -524,20 +524,30 @@ int folio_migrate_mapping(struct address_space *mapping,
+ }
+ EXPORT_SYMBOL(folio_migrate_mapping);
+ 
++static int folio_migrate_mc_copy(struct folio *dst, struct folio *src,
++				 enum migrate_mode mode, int expected_count)
++{
++	/* Check whether src does not have extra refs before we do more work */
++	if (folio_ref_count(src) != expected_count)
++		return -EAGAIN;
++
++	if (mode == MIGRATE_SYNC_NO_COPY)
++		return 0;
++
++	return folio_mc_copy(dst, src);
++}
++
+ /*
+  * The expected number of remaining references is the same as that
+  * of folio_migrate_mapping().
+  */
+ int migrate_huge_page_move_mapping(struct address_space *mapping,
+-				   struct folio *dst, struct folio *src)
++		struct folio *dst, struct folio *src, enum migrate_mode mode)
+ {
+ 	XA_STATE(xas, &mapping->i_pages, folio_index(src));
+ 	int rc, expected_count = folio_expected_refs(mapping, src);
+ 
+-	if (folio_ref_count(src) != expected_count)
+-		return -EAGAIN;
+-
+-	rc = folio_mc_copy(dst, src);
++	rc = folio_migrate_mc_copy(dst, src, mode, expected_count);
+ 	if (unlikely(rc))
+ 		return rc;
+ 
+@@ -672,11 +682,7 @@ static int __migrate_folio(struct address_space *mapping, struct folio *dst,
+ {
+ 	int rc, expected_count = folio_expected_refs(mapping, src);
+ 
+-	/* Check whether src does not have extra refs before we do more work */
+-	if (folio_ref_count(src) != expected_count)
+-		return -EAGAIN;
+-
+-	rc = folio_mc_copy(dst, src);
++	rc = folio_migrate_mc_copy(dst, src, mode, expected_count);
+ 	if (unlikely(rc))
+ 		return rc;
+ 
+-- 
+2.43.0
+

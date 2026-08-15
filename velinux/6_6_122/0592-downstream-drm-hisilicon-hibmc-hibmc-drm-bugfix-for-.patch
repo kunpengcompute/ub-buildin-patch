@@ -1,0 +1,745 @@
+From 707b5db8c1856097e49fe29538be51bf7475a529 Mon Sep 17 00:00:00 2001
+From: Baihan Li <libaihan@huawei.com>
+Date: Tue, 27 May 2025 21:39:56 +0800
+Subject: [PATCH 592/960] downstream: drm/hisilicon/hibmc: hibmc-drm bugfix for
+ DP
+
+Fix DP is not displaying in some rare scenarios.
+
+Fixes: f9698f802e50 ("drm/hisilicon/hibmc: Restructuring the header dp_reg.h")
+Signed-off-by: Baihan Li <libaihan@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Conflicts:
+	drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.h
+[ Context conflicts. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/gpu/drm/hisilicon/hibmc/dp/dp_comm.h  |  5 +-
+ drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.c    | 83 +++++++++++++------
+ drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.h    |  9 ++
+ drivers/gpu/drm/hisilicon/hibmc/dp/dp_link.c  | 67 +++++++++++----
+ drivers/gpu/drm/hisilicon/hibmc/dp/dp_reg.h   | 10 ++-
+ .../gpu/drm/hisilicon/hibmc/dp/dp_serdes.c    | 12 ---
+ .../drm/hisilicon/hibmc/hibmc_drm_debugfs.c   | 49 ++++++++++-
+ .../gpu/drm/hisilicon/hibmc/hibmc_drm_dp.c    | 51 ++++++++++++
+ .../gpu/drm/hisilicon/hibmc/hibmc_drm_drv.c   | 19 +++--
+ .../gpu/drm/hisilicon/hibmc/hibmc_drm_drv.h   |  2 +-
+ .../gpu/drm/hisilicon/hibmc/hibmc_drm_i2c.c   |  5 ++
+ .../gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c  | 13 ++-
+ 12 files changed, 256 insertions(+), 69 deletions(-)
+
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_comm.h b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_comm.h
+index 4add05c7f161..683b41ebf7ec 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_comm.h
++++ b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_comm.h
+@@ -15,6 +15,7 @@
+ 
+ #include "dp_hw.h"
+ 
++#define HIBMC_DP_LINK_RATE_CAL 27
+ #define HIBMC_DP_LANE_NUM_MAX 2
+ 
+ struct hibmc_link_status {
+@@ -25,6 +26,9 @@ struct hibmc_link_status {
+ struct hibmc_link_cap {
+ 	u8 link_rate;
+ 	u8 lanes;
++	int rx_dpcd_revision;
++	bool is_tps3;
++	bool is_tps4;
+ };
+ 
+ struct hibmc_dp_link {
+@@ -62,7 +66,6 @@ struct hibmc_dp_dev {
+ 
+ void hibmc_dp_aux_init(struct hibmc_dp *dp);
+ int hibmc_dp_link_training(struct hibmc_dp_dev *dp);
+-int hibmc_dp_serdes_init(struct hibmc_dp_dev *dp);
+ int hibmc_dp_serdes_rate_switch(u8 rate, struct hibmc_dp_dev *dp);
+ int hibmc_dp_serdes_set_tx_cfg(struct hibmc_dp_dev *dp, u8 train_set[HIBMC_DP_LANE_NUM_MAX]);
+ 
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.c b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.c
+index 8f0daec7d174..9e8f95d957f2 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.c
+@@ -154,7 +154,6 @@ int hibmc_dp_hw_init(struct hibmc_dp *dp)
+ {
+ 	struct drm_device *drm_dev = dp->drm_dev;
+ 	struct hibmc_dp_dev *dp_dev;
+-	int ret;
+ 
+ 	dp_dev = devm_kzalloc(drm_dev->dev, sizeof(struct hibmc_dp_dev), GFP_KERNEL);
+ 	if (!dp_dev)
+@@ -166,23 +165,22 @@ int hibmc_dp_hw_init(struct hibmc_dp *dp)
+ 
+ 	dp_dev->dev = drm_dev;
+ 	dp_dev->base = dp->mmio + HIBMC_DP_OFFSET;
++	dp_dev->serdes_base = dp_dev->base + HIBMC_DP_HOST_OFFSET;
+ 
+ 	hibmc_dp_aux_init(dp);
+ 
+-	ret = hibmc_dp_serdes_init(dp_dev);
+-	if (ret)
+-		return ret;
+-
+ 	dp_dev->link.cap.lanes = 0x2;
+ 	dp_dev->link.cap.link_rate = DP_LINK_BW_8_1;
+ 
+-	/* hdcp data */
+-	writel(HIBMC_DP_HDCP, dp_dev->base + HIBMC_DP_HDCP_CFG);
+ 	/* int init */
+ 	writel(0, dp_dev->base + HIBMC_DP_INTR_ENABLE);
+ 	writel(HIBMC_DP_INT_RST, dp_dev->base + HIBMC_DP_INTR_ORIGINAL_STATUS);
+ 	/* rst */
++	writel(0, dp_dev->base + HIBMC_DP_DPTX_RST_CTRL);
++	usleep_range(30, 50);
+ 	writel(HIBMC_DP_DPTX_RST, dp_dev->base + HIBMC_DP_DPTX_RST_CTRL);
++	/* hdcp data */
++	writel(HIBMC_DP_HDCP, dp_dev->base + HIBMC_DP_HDCP_CFG);
+ 	/* clock enable */
+ 	writel(HIBMC_DP_CLK_EN, dp_dev->base + HIBMC_DP_DPTX_CLK_CTRL);
+ 
+@@ -224,14 +222,17 @@ void hibmc_dp_display_en(struct hibmc_dp *dp, bool enable)
+ 	struct hibmc_dp_dev *dp_dev = dp->dp_dev;
+ 
+ 	if (enable) {
+-		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_VIDEO_CTRL, BIT(0), 0x1);
++		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_VIDEO_CTRL,
++					 HIBMC_DP_CFG_MST_ENABLE, 0x1);
+ 		writel(HIBMC_DP_SYNC_EN_MASK, dp_dev->base + HIBMC_DP_TIMING_SYNC_CTRL);
+-		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_DPTX_GCTL0, BIT(10), 0x1);
++		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_DPTX_GCTL0,
++					 HIBMC_DP_CFG_TIMING_GEN_ENABLE, 0x1);
+ 		writel(HIBMC_DP_SYNC_EN_MASK, dp_dev->base + HIBMC_DP_TIMING_SYNC_CTRL);
+ 	} else {
+-		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_DPTX_GCTL0, BIT(10), 0);
++		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_DPTX_GCTL0,
++					 HIBMC_DP_CFG_TIMING_GEN_ENABLE, 0);
+ 		writel(HIBMC_DP_SYNC_EN_MASK, dp_dev->base + HIBMC_DP_TIMING_SYNC_CTRL);
+-		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_VIDEO_CTRL, BIT(0), 0);
++		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_VIDEO_CTRL, HIBMC_DP_CFG_MST_ENABLE, 0);
+ 		writel(HIBMC_DP_SYNC_EN_MASK, dp_dev->base + HIBMC_DP_TIMING_SYNC_CTRL);
+ 	}
+ 
+@@ -257,10 +258,36 @@ int hibmc_dp_mode_set(struct hibmc_dp *dp, struct drm_display_mode *mode)
+ 	return 0;
+ }
+ 
++u8 hibmc_dp_get_link_rate(struct hibmc_dp *dp)
++{
++	if (!dp->dp_dev)
++		return 0;
++
++	return dp->dp_dev->link.cap.link_rate;
++}
++
++u8 hibmc_dp_get_lanes(struct hibmc_dp *dp)
++{
++	if (!dp->dp_dev)
++		return 0;
++
++	return dp->dp_dev->link.cap.lanes;
++}
++
++int hibmc_dp_get_dpcd(struct hibmc_dp *dp)
++{
++	if (!dp->dp_dev)
++		return 0;
++
++	return dp->dp_dev->link.cap.rx_dpcd_revision;
++}
++
+ void hibmc_dp_reset_link(struct hibmc_dp *dp)
+ {
+-	dp->dp_dev->link.status.clock_recovered = false;
+-	dp->dp_dev->link.status.channel_equalized = false;
++	if (dp->dp_dev) {
++		dp->dp_dev->link.status.clock_recovered = false;
++		dp->dp_dev->link.status.channel_equalized = false;
++	}
+ }
+ 
+ static const struct hibmc_dp_color_raw g_rgb_raw[] = {
+@@ -282,26 +309,30 @@ void hibmc_dp_set_cbar(struct hibmc_dp *dp, const struct hibmc_dp_cbar_cfg *cfg)
+ 	struct hibmc_dp_color_raw raw_data;
+ 
+ 	if (cfg->enable) {
+-		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL, BIT(9),
+-					 cfg->self_timing);
+-		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL, GENMASK(8, 1),
+-					 cfg->dynamic_rate);
++		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL,
++					 HIBMC_DP_COLOR_BAR_TIMING_SEL_M, cfg->self_timing);
++		hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL,
++					 HIBMC_DP_COLOR_BAR_CTRL_M, cfg->dynamic_rate);
+ 		if (cfg->pattern == CBAR_COLOR_BAR) {
+-			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL, BIT(10), 0);
++			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL,
++						 HIBMC_DP_COLOR_BAR_PATTERN_SEL_M, 0);
+ 		} else {
+ 			raw_data = g_rgb_raw[cfg->pattern];
+ 			drm_dbg_dp(dp->drm_dev, "r:%x g:%x b:%x\n", raw_data.r_value,
+ 				   raw_data.g_value, raw_data.b_value);
+-			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL, BIT(10), 1);
+-			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL, GENMASK(23, 12),
+-						 raw_data.r_value);
+-			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL1, GENMASK(23, 12),
+-						 raw_data.g_value);
+-			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL1, GENMASK(11, 0),
+-						 raw_data.b_value);
++			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL,
++						 HIBMC_DP_COLOR_BAR_PATTERN_SEL_M, 1);
++			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL,
++						 HIBMC_DP_COLOR_BAR_DATA_R_M, raw_data.r_value);
++			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL1,
++						 HIBMC_DP_COLOR_BAR_DATA_G_M, raw_data.g_value);
++			hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL1,
++						 HIBMC_DP_COLOR_BAR_DATA_B_M, raw_data.b_value);
+ 		}
+ 	}
+ 
+-	hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL, BIT(0), cfg->enable);
++	hibmc_dp_reg_write_field(dp_dev, HIBMC_DP_COLOR_BAR_CTRL,
++				 HIBMC_DP_COLOR_BAR_ENABLE_M, cfg->enable);
+ 	writel(HIBMC_DP_SYNC_EN_MASK, dp_dev->base + HIBMC_DP_TIMING_SYNC_CTRL);
+ }
++
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.h b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.h
+index 68867475508c..6f6b6cee2258 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.h
++++ b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_hw.h
+@@ -12,6 +12,10 @@
+ #include <drm/drm_print.h>
+ #include <drm/display/drm_dp_helper.h>
+ 
++// 27 * 10000000 * 80% = 216000000
++#define DP_MODE_VALI_CAL	216000000
++#define BPP_24				24
++
+ struct hibmc_dp_dev;
+ 
+ enum hibmc_dp_cbar_pattern {
+@@ -51,11 +55,16 @@ struct hibmc_dp {
+ 	struct hibmc_dp_cbar_cfg cfg;
+ 	u32 irq_status;
+ 	int hpd_status;
++	bool is_connected;
+ };
+ 
+ int hibmc_dp_hw_init(struct hibmc_dp *dp);
+ int hibmc_dp_mode_set(struct hibmc_dp *dp, struct drm_display_mode *mode);
+ void hibmc_dp_display_en(struct hibmc_dp *dp, bool enable);
++struct edid *hibmc_dp_get_edid(struct hibmc_dp *dp);
++int hibmc_dp_get_dpcd(struct hibmc_dp *dp);
++u8 hibmc_dp_get_link_rate(struct hibmc_dp *dp);
++u8 hibmc_dp_get_lanes(struct hibmc_dp *dp);
+ void hibmc_dp_set_cbar(struct hibmc_dp *dp, const struct hibmc_dp_cbar_cfg *cfg);
+ void hibmc_dp_reset_link(struct hibmc_dp *dp);
+ void hibmc_dp_hpd_cfg(struct hibmc_dp *dp);
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_link.c b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_link.c
+index 21cad69c3757..14ef709f7214 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_link.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_link.c
+@@ -39,6 +39,14 @@ static int hibmc_dp_link_training_configure(struct hibmc_dp_dev *dp)
+ 	/* enhanced frame */
+ 	hibmc_dp_reg_write_field(dp, HIBMC_DP_VIDEO_CTRL, HIBMC_DP_CFG_STREAM_FRAME_MODE, 0x1);
+ 
++	ret = hibmc_dp_get_serdes_rate_cfg(dp);
++	if (ret < 0)
++		return ret;
++
++	ret = hibmc_dp_serdes_rate_switch(ret, dp);
++	if (ret)
++		return ret;
++
+ 	/* set rate and lane count */
+ 	buf[0] = dp->link.cap.link_rate;
+ 	buf[1] = DP_LANE_COUNT_ENHANCED_FRAME_EN | dp->link.cap.lanes;
+@@ -201,21 +209,23 @@ static int hibmc_dp_link_training_cr(struct hibmc_dp_dev *dp)
+ 	bool level_changed;
+ 	u32 voltage_tries;
+ 	u32 cr_tries;
++	u32 max_cr;
+ 	int ret;
+ 
+ 	/*
+ 	 * DP 1.4 spec define 10 for maxtries value, for pre DP 1.4 version set a limit of 80
+ 	 * (4 voltage levels x 4 preemphasis levels x 5 identical voltage retries)
+ 	 */
++	max_cr = dp->link.cap.rx_dpcd_revision >= DP_DPCD_REV_14 ? 10 : 80;
+ 
+ 	voltage_tries = 1;
+-	for (cr_tries = 0; cr_tries < 80; cr_tries++) {
++	for (cr_tries = 0; cr_tries < max_cr; cr_tries++) {
+ 		drm_dp_link_train_clock_recovery_delay(dp->aux, dp->dpcd);
+ 
+ 		ret = drm_dp_dpcd_read_link_status(dp->aux, lane_status);
+ 		if (ret != DP_LINK_STATUS_SIZE) {
+-			drm_err(dp->dev, "Get lane status failed\n");
+-			return ret;
++			drm_err(dp->dev, "Get lane status failed, ret: %d\n", ret);
++			return ret >= 0 ? -EIO : ret;
+ 		}
+ 
+ 		if (drm_dp_clock_recovery_ok(lane_status, dp->link.cap.lanes)) {
+@@ -246,7 +256,7 @@ static int hibmc_dp_link_training_cr(struct hibmc_dp_dev *dp)
+ 		voltage_tries = level_changed ? 1 : voltage_tries + 1;
+ 	}
+ 
+-	drm_err(dp->dev, "dp link training clock recovery 80 times failed\n");
++	drm_err(dp->dev, "dp link training clock recovery %u timers failed\n", max_cr);
+ 	dp->link.status.clock_recovered = false;
+ 
+ 	return 0;
+@@ -256,9 +266,17 @@ static int hibmc_dp_link_training_channel_eq(struct hibmc_dp_dev *dp)
+ {
+ 	u8 lane_status[DP_LINK_STATUS_SIZE] = {0};
+ 	u8 eq_tries;
++	int tps;
+ 	int ret;
+ 
+-	ret = hibmc_dp_link_set_pattern(dp, DP_TRAINING_PATTERN_2);
++	if (dp->link.cap.is_tps4)
++		tps = DP_TRAINING_PATTERN_4;
++	else if (dp->link.cap.is_tps3)
++		tps = DP_TRAINING_PATTERN_3;
++	else
++		tps = DP_TRAINING_PATTERN_2;
++
++	ret = hibmc_dp_link_set_pattern(dp, tps);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -288,7 +306,7 @@ static int hibmc_dp_link_training_channel_eq(struct hibmc_dp_dev *dp)
+ 
+ 		ret = hibmc_dp_serdes_set_tx_cfg(dp, dp->link.train_set);
+ 		if (ret)
+-			return ret;
++			break;
+ 
+ 		ret = drm_dp_dpcd_write(dp->aux, DP_TRAINING_LANE0_SET,
+ 					dp->link.train_set, dp->link.cap.lanes);
+@@ -317,7 +335,17 @@ static int hibmc_dp_link_downgrade_training_cr(struct hibmc_dp_dev *dp)
+ 
+ static int hibmc_dp_link_downgrade_training_eq(struct hibmc_dp_dev *dp)
+ {
+-	if ((dp->link.status.clock_recovered && !dp->link.status.channel_equalized)) {
++	u8 status[DP_LINK_STATUS_SIZE] = {0};
++	int ret;
++
++	ret = drm_dp_dpcd_read_link_status(dp->aux, status);
++	if (ret != DP_LINK_STATUS_SIZE) {
++		drm_err(dp->dev, "get lane status failed\n");
++		return ret >= 0 ? -EIO : ret;
++	}
++
++	if ((dp->link.status.clock_recovered && !dp->link.status.channel_equalized) ||
++	    (status[0] != 0 && !dp->link.status.clock_recovered)) { // at least one cr_done
+ 		if (!hibmc_dp_link_reduce_lane(dp))
+ 			return 0;
+ 	}
+@@ -325,6 +353,20 @@ static int hibmc_dp_link_downgrade_training_eq(struct hibmc_dp_dev *dp)
+ 	return hibmc_dp_link_reduce_rate(dp);
+ }
+ 
++static void hibmc_dp_update_caps(struct hibmc_dp_dev *dp)
++{
++	dp->link.cap.rx_dpcd_revision = dp->dpcd[DP_DPCD_REV];
++
++	dp->link.cap.is_tps3 = (dp->dpcd[DP_DPCD_REV] >= DP_DPCD_REV_13) &&
++			       (dp->dpcd[DP_MAX_LANE_COUNT] & DP_TPS3_SUPPORTED);
++	dp->link.cap.is_tps4 = (dp->dpcd[DP_DPCD_REV] >= DP_DPCD_REV_14) &&
++			       (dp->dpcd[DP_MAX_DOWNSPREAD] & DP_TPS4_SUPPORTED);
++	dp->link.cap.link_rate = dp->dpcd[DP_MAX_LINK_RATE];
++	dp->link.cap.lanes = dp->dpcd[DP_MAX_LANE_COUNT] & DP_MAX_LANE_COUNT_MASK;
++	if (dp->link.cap.lanes > HIBMC_DP_LANE_NUM_MAX)
++		dp->link.cap.lanes = HIBMC_DP_LANE_NUM_MAX;
++}
++
+ int hibmc_dp_link_training(struct hibmc_dp_dev *dp)
+ {
+ 	struct hibmc_dp_link *link = &dp->link;
+@@ -334,16 +376,7 @@ int hibmc_dp_link_training(struct hibmc_dp_dev *dp)
+ 	if (ret)
+ 		drm_err(dp->dev, "dp aux read dpcd failed, ret: %d\n", ret);
+ 
+-	dp->link.cap.link_rate = dp->dpcd[DP_MAX_LINK_RATE];
+-	dp->link.cap.lanes = 0x2;
+-
+-	ret = hibmc_dp_get_serdes_rate_cfg(dp);
+-	if (ret < 0)
+-		return ret;
+-
+-	ret = hibmc_dp_serdes_rate_switch(ret, dp);
+-	if (ret)
+-		return ret;
++	hibmc_dp_update_caps(dp);
+ 
+ 	while (true) {
+ 		ret = hibmc_dp_link_training_cr_pre(dp);
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_reg.h b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_reg.h
+index 394b1e933c3a..156e5d63c47f 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_reg.h
++++ b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_reg.h
+@@ -68,8 +68,14 @@
+ #define HIBMC_DP_CFG_STREAM_HBLANK_SIZE		GENMASK(15, 0)
+ 
+ #define HIBMC_DP_COLOR_BAR_CTRL			0x260
++#define HIBMC_DP_COLOR_BAR_ENABLE_M		BIT(0)
++#define HIBMC_DP_COLOR_BAR_CTRL_M		GENMASK(8, 1)
++#define HIBMC_DP_COLOR_BAR_TIMING_SEL_M		BIT(9)
++#define HIBMC_DP_COLOR_BAR_PATTERN_SEL_M	BIT(10)
++#define HIBMC_DP_COLOR_BAR_DATA_R_M		GENMASK(23, 12)
+ #define HIBMC_DP_COLOR_BAR_CTRL1		0x264
+-
++#define HIBMC_DP_COLOR_BAR_DATA_B_M		GENMASK(11, 0)
++#define HIBMC_DP_COLOR_BAR_DATA_G_M		GENMASK(23, 12)
+ #define HIBMC_DP_TIMING_GEN_CONFIG0		0x26c
+ #define HIBMC_DP_CFG_TIMING_GEN0_HACTIVE	GENMASK(31, 16)
+ #define HIBMC_DP_CFG_TIMING_GEN0_HBLANK		GENMASK(15, 0)
+@@ -90,6 +96,8 @@
+ 
+ #define HIBMC_DP_DPTX_GCTL0			0x708
+ #define HIBMC_DP_CFG_PHY_LANE_NUM		GENMASK(2, 1)
++#define HIBMC_DP_CFG_TIMING_GEN_ENABLE		BIT(10)
++#define HIBMC_DP_CFG_MST_ENABLE			BIT(0)
+ 
+ #define HIBMC_DP_INTR_ENABLE			0x720
+ #define HIBMC_DP_INTR_ORIGINAL_STATUS		0x728
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_serdes.c b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_serdes.c
+index 676059d4c1e6..8191233aa965 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/dp/dp_serdes.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/dp/dp_serdes.c
+@@ -57,15 +57,3 @@ int hibmc_dp_serdes_rate_switch(u8 rate, struct hibmc_dp_dev *dp)
+ 
+ 	return 0;
+ }
+-
+-int hibmc_dp_serdes_init(struct hibmc_dp_dev *dp)
+-{
+-	dp->serdes_base = dp->base + HIBMC_DP_HOST_OFFSET;
+-
+-	writel(FIELD_PREP(HIBMC_DP_PMA_TXDEEMPH, DP_SERDES_VOL0_PRE0),
+-	       dp->serdes_base + HIBMC_DP_PMA_LANE0_OFFSET);
+-	writel(FIELD_PREP(HIBMC_DP_PMA_TXDEEMPH, DP_SERDES_VOL0_PRE0),
+-	       dp->serdes_base + HIBMC_DP_PMA_LANE1_OFFSET);
+-
+-	return hibmc_dp_serdes_rate_switch(DP_SERDES_BW_8_1, dp);
+-}
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_debugfs.c b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_debugfs.c
+index f585387c3a49..840ef38c8c22 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_debugfs.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_debugfs.c
+@@ -15,6 +15,44 @@
+ 
+ #define MAX_BUF_SIZE 12
+ 
++static int hibmc_dp_show(struct seq_file *m, void *arg)
++{
++	struct drm_info_node *node = m->private;
++	struct drm_device *dev = node->minor->dev;
++	struct hibmc_drm_private *priv = to_hibmc_drm_private(dev);
++	int idx, rate;
++
++	if (!drm_dev_enter(dev, &idx))
++		return -ENODEV;
++
++	switch (hibmc_dp_get_link_rate(&priv->dp)) {
++	case 0x1e:
++		rate = 810; // 8.1Gbps
++		break;
++	case 0x14:
++		rate = 540; // 5.4Gbps
++		break;
++	case 0xA:
++		rate = 270; // 2.7Gbps
++		break;
++	case 0x6:
++		rate = 162; // 1.62Gbps
++		break;
++	default:
++		rate = 0;
++	}
++
++	seq_printf(m, "enable lanes: %u\n", hibmc_dp_get_lanes(&priv->dp));
++	seq_printf(m, "link rate: %d\n", rate);
++	seq_printf(m, "vfresh: %d\n", drm_mode_vrefresh(&priv->crtc.mode));
++	seq_printf(m, "dpcd version: 0x%x\n", hibmc_dp_get_dpcd(&priv->dp));
++	seq_printf(m, "hpd status: %d\n", priv->dp.hpd_status);
++
++	drm_dev_exit(idx);
++
++	return 0;
++}
++
+ static ssize_t hibmc_control_write(struct file *file, const char __user *user_buf,
+ 				   size_t count, loff_t *ppos)
+ {
+@@ -93,12 +131,19 @@ static const struct file_operations hibmc_dbg_fops = {
+ 	.release = single_release,
+ };
+ 
++static struct drm_info_list hibmc_debugfs_list[] = {
++		{ "hibmc-dp", hibmc_dp_show },
++};
++
+ void hibmc_debugfs_init(struct drm_connector *connector, struct dentry *root)
+ {
+ 	struct drm_device *dev = connector->dev;
+ 	struct hibmc_drm_private *priv = to_hibmc_drm_private(dev);
++	struct drm_minor *minor = dev->primary;
+ 
+ 	/* create the file in drm directory, so we don't need to remove manually */
+-	debugfs_create_file("colorbar-cfg", 0200,
+-			    root, priv, &hibmc_dbg_fops);
++	debugfs_create_file("colorbar-cfg", 0200, root, priv, &hibmc_dbg_fops);
++
++	drm_debugfs_create_files(hibmc_debugfs_list, ARRAY_SIZE(hibmc_debugfs_list),
++				 minor->debugfs_root, minor);
+ }
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_dp.c b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_dp.c
+index 41a5d3a9625c..4b07e53dcada 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_dp.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_dp.c
+@@ -11,6 +11,7 @@
+ #include <drm/drm_edid.h>
+ 
+ #include "hibmc_drm_drv.h"
++#include "hibmc_drm_regs.h"
+ #include "dp/dp_hw.h"
+ 
+ #define HIBMC_DP_MASKED_SINK_HPD_PLUG_INT	BIT(2)
+@@ -18,6 +19,7 @@
+ 
+ static int hibmc_dp_connector_get_modes(struct drm_connector *connector)
+ {
++	struct hibmc_dp *dp = to_hibmc_dp(connector);
+ 	const struct drm_edid *drm_edid;
+ 	int count;
+ 
+@@ -26,12 +28,39 @@ static int hibmc_dp_connector_get_modes(struct drm_connector *connector)
+ 	drm_edid_connector_update(connector, drm_edid);
+ 
+ 	count = drm_edid_connector_add_modes(connector);
++	if (count)
++		dp->is_connected = true;
++	else
++		dp->is_connected = false;
+ 
+ 	drm_edid_free(drm_edid);
+ 
+ 	return count;
+ }
+ 
++static int hibmc_dp_mode_valid(struct drm_connector *connector,
++			       struct drm_display_mode *mode,
++			       struct drm_modeset_acquire_ctx *ctx,
++			       enum drm_mode_status *status)
++{
++	struct hibmc_dp *dp = to_hibmc_dp(connector);
++	u64 cur_val, max_val;
++
++	if (!dp->is_connected) {
++		*status = MODE_OK;
++		return 0;
++	}
++
++	cur_val = (u64)mode->htotal * mode->vtotal * drm_mode_vrefresh(mode) * BPP_24;
++	max_val = (u64)hibmc_dp_get_link_rate(dp) * DP_MODE_VALI_CAL * hibmc_dp_get_lanes(dp);
++	if (cur_val > max_val)
++		*status = MODE_CLOCK_HIGH;
++	else
++		*status = MODE_OK;
++
++	return 0;
++}
++
+ static int hibmc_dp_detect(struct drm_connector *connector,
+ 			   struct drm_modeset_acquire_ctx *ctx, bool force)
+ {
+@@ -45,6 +74,7 @@ static int hibmc_dp_detect(struct drm_connector *connector,
+ 
+ static const struct drm_connector_helper_funcs hibmc_dp_conn_helper_funcs = {
+ 	.get_modes = hibmc_dp_connector_get_modes,
++	.mode_valid_ctx = hibmc_dp_mode_valid,
+ 	.detect_ctx = hibmc_dp_detect,
+ };
+ 
+@@ -110,9 +140,26 @@ static void hibmc_dp_encoder_disable(struct drm_encoder *drm_encoder,
+ 	hibmc_dp_display_en(dp, false);
+ }
+ 
++static void hibmc_dp_encoder_mode_set(struct drm_encoder *encoder,
++				      struct drm_crtc_state *crtc_state,
++				      struct drm_connector_state *conn_state)
++{
++	u32 reg;
++	struct drm_device *dev = encoder->dev;
++	struct hibmc_drm_private *priv = to_hibmc_drm_private(dev);
++
++	reg = readl(priv->mmio + HIBMC_DISPLAY_CONTROL_HISILE);
++	reg |= HIBMC_DISPLAY_CONTROL_FPVDDEN(1);
++	reg |= HIBMC_DISPLAY_CONTROL_PANELDATE(1);
++	reg |= HIBMC_DISPLAY_CONTROL_FPEN(1);
++	reg |= HIBMC_DISPLAY_CONTROL_VBIASEN(1);
++	writel(reg, priv->mmio + HIBMC_DISPLAY_CONTROL_HISILE);
++}
++
+ static const struct drm_encoder_helper_funcs hibmc_dp_encoder_helper_funcs = {
+ 	.atomic_enable = hibmc_dp_encoder_enable,
+ 	.atomic_disable = hibmc_dp_encoder_disable,
++	.atomic_mode_set = hibmc_dp_encoder_mode_set,
+ };
+ 
+ irqreturn_t hibmc_dp_hpd_isr(int irq, void *arg)
+@@ -132,6 +179,8 @@ irqreturn_t hibmc_dp_hpd_isr(int irq, void *arg)
+ 			dp->hpd_status = 0;
+ 			if (dev->registered)
+ 				drm_connector_helper_hpd_irq_event(&dp->connector);
++		} else {
++			drm_dbg_dp(dev, "HPD OUT occur but err!\n");
+ 		}
+ 	} else {
+ 		if (dp->irq_status & HIBMC_DP_MASKED_SINK_HPD_PLUG_INT) {
+@@ -140,6 +189,8 @@ irqreturn_t hibmc_dp_hpd_isr(int irq, void *arg)
+ 			dp->hpd_status = 1;
+ 			if (dev->registered)
+ 				drm_connector_helper_hpd_irq_event(&dp->connector);
++		} else {
++			drm_dbg_dp(dev, "HPD IN occur but err!\n");
+ 		}
+ 	}
+ 
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.c b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.c
+index 9c963e083ea2..5059cbab354e 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.c
+@@ -133,7 +133,7 @@ static int hibmc_kms_init(struct hibmc_drm_private *priv)
+ 	ret = hibmc_de_init(priv);
+ 	if (ret) {
+ 		drm_err(dev, "failed to init de: %d\n", ret);
+-		return ret;
++		goto err;
+ 	}
+ 
+ 	/*
+@@ -143,17 +143,24 @@ static int hibmc_kms_init(struct hibmc_drm_private *priv)
+ 	ret = readl(priv->mmio + HIBMC_DP_HOST_SERDES_CTRL);
+ 	if (ret) {
+ 		ret = hibmc_dp_init(priv);
+-		if (ret)
++		if (ret) {
+ 			drm_err(dev, "failed to init dp: %d\n", ret);
++			goto err;
++		}
+ 	}
+ 
+ 	ret = hibmc_vdac_init(priv);
+ 	if (ret) {
+ 		drm_err(dev, "failed to init vdac: %d\n", ret);
+-		return ret;
++		goto err;
+ 	}
+ 
+ 	return 0;
++
++err:
++	drm_atomic_helper_shutdown(dev);
++
++	return ret;
+ }
+ 
+ /*
+@@ -328,8 +335,10 @@ static int hibmc_load(struct drm_device *dev)
+ 	}
+ 
+ 	ret = hibmc_kms_init(priv);
+-	if (ret)
+-		goto err;
++	if (ret) {
++		drm_err(dev, "hibmc kms init failed, ret:%d\n", ret);
++		return ret;
++	}
+ 
+ 	ret = drm_vblank_init(dev, dev->mode_config.num_crtc);
+ 	if (ret) {
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.h b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.h
+index 915b15216252..2814f4edfdcc 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.h
++++ b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_drv.h
+@@ -71,7 +71,7 @@ int hibmc_vdac_init(struct hibmc_drm_private *priv);
+ 
+ int hibmc_mm_init(struct hibmc_drm_private *hibmc);
+ int hibmc_ddc_create(struct drm_device *drm_dev, struct hibmc_vdac *connector);
+-
++void hibmc_ddc_del(struct hibmc_vdac *vdac);
+ int hibmc_dp_init(struct hibmc_drm_private *priv);
+ 
+ void hibmc_debugfs_init(struct drm_connector *connector, struct dentry *root);
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_i2c.c b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_i2c.c
+index 99b3b77b5445..44860011855e 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_i2c.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_i2c.c
+@@ -95,3 +95,8 @@ int hibmc_ddc_create(struct drm_device *drm_dev, struct hibmc_vdac *vdac)
+ 
+ 	return i2c_bit_add_bus(&vdac->adapter);
+ }
++
++void hibmc_ddc_del(struct hibmc_vdac *vdac)
++{
++	i2c_del_adapter(&vdac->adapter);
++}
+diff --git a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c
+index 5bcaa0263892..b1be55a56b2e 100644
+--- a/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c
++++ b/drivers/gpu/drm/hisilicon/hibmc/hibmc_drm_vdac.c
+@@ -48,7 +48,7 @@ static int hibmc_connector_get_modes(struct drm_connector *connector)
+ 	return count;
+ }
+ 
+-static void hibmc_connector_destroy(struct drm_connector *connector)
++static void hibmc_vdac_connector_destroy(struct drm_connector *connector)
+ {
+ 	struct hibmc_vdac *vdac = to_hibmc_vdac(connector);
+ 
+@@ -89,7 +89,7 @@ static void hibmc_vdac_force(struct drm_connector *connector)
+ 
+ static const struct drm_connector_funcs hibmc_connector_funcs = {
+ 	.fill_modes = drm_helper_probe_single_connector_modes,
+-	.destroy = hibmc_connector_destroy,
++	.destroy = hibmc_vdac_connector_destroy,
+ 	.reset = drm_atomic_helper_connector_reset,
+ 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
+ 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+@@ -135,7 +135,7 @@ int hibmc_vdac_init(struct hibmc_drm_private *priv)
+ 	ret = drmm_encoder_init(dev, encoder, NULL, DRM_MODE_ENCODER_DAC, NULL);
+ 	if (ret) {
+ 		drm_err(dev, "failed to init encoder: %d\n", ret);
+-		return ret;
++		goto err;
+ 	}
+ 
+ 	drm_encoder_helper_add(encoder, &hibmc_encoder_helper_funcs);
+@@ -146,7 +146,7 @@ int hibmc_vdac_init(struct hibmc_drm_private *priv)
+ 					  &vdac->adapter);
+ 	if (ret) {
+ 		drm_err(dev, "failed to init connector: %d\n", ret);
+-		return ret;
++		goto err;
+ 	}
+ 
+ 	drm_connector_helper_add(connector, &hibmc_connector_helper_funcs);
+@@ -156,4 +156,9 @@ int hibmc_vdac_init(struct hibmc_drm_private *priv)
+ 	connector->polled = DRM_CONNECTOR_POLL_CONNECT | DRM_CONNECTOR_POLL_DISCONNECT;
+ 
+ 	return 0;
++
++err:
++	hibmc_ddc_del(vdac);
++
++	return ret;
+ }
+-- 
+2.43.0
+

@@ -1,0 +1,62 @@
+From b644fb4ac51fff5f48562b3aab22a23b7cb91cdb Mon Sep 17 00:00:00 2001
+From: Jie Zhan <zhanjie9@hisilicon.com>
+Date: Mon, 27 Oct 2025 17:12:24 +0800
+Subject: [PATCH 779/960] downstream: cpufreq: CPPC: Set the default boost
+ state
+
+It's expected by users that the system would be boosted by default if
+the performance boost is enabled on the platform, e.g. enabling it from
+BIOS setup.
+
+Set the default boost state during the driver init according to the
+platform _CPC capabilities.
+
+Signed-off-by: Jie Zhan <zhanjie9@hisilicon.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/cpufreq/cppc_cpufreq.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/drivers/cpufreq/cppc_cpufreq.c b/drivers/cpufreq/cppc_cpufreq.c
+index d58a4ae31b7c..5a93df5ea123 100644
+--- a/drivers/cpufreq/cppc_cpufreq.c
++++ b/drivers/cpufreq/cppc_cpufreq.c
+@@ -914,6 +914,26 @@ static void cppc_check_hisi_workaround(void)
+ 	acpi_put_table(tbl);
+ }
+ 
++static bool cppc_cpufreq_default_boost_init(void)
++{
++	u64 highest_perf, nominal_perf;
++	int cpu, rc;
++	
++	for_each_online_cpu(cpu) {
++		rc = cppc_get_highest_perf(cpu, &highest_perf);
++		if(rc)
++			continue;
++		
++		rc = cppc_get_nominal_perf(cpu, &nominal_perf);
++		if(rc)
++			continue;
++		if(highest_perf > nominal_perf)
++			return true;
++	}
++
++	return false;
++}
++
+ static int __init cppc_cpufreq_init(void)
+ {
+ 	int ret;
+@@ -924,6 +944,7 @@ static int __init cppc_cpufreq_init(void)
+ 	cppc_check_hisi_workaround();
+ 	cppc_freq_invariance_init();
+ 	populate_efficiency_class();
++	cppc_cpufreq_driver.boost_enabled = cppc_cpufreq_default_boost_init();
+ 
+ 	ret = cpufreq_register_driver(&cppc_cpufreq_driver);
+ 	if (ret)
+-- 
+2.43.0
+

@@ -1,0 +1,120 @@
+From a4cbc0e584f966633bb9495c81bd0ce2fb63b46c Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:16 +0800
+Subject: [PATCH 541/960] downstream: mbigen: vtimer: add support for
+ MBIX1_CPPI_NEGEDGE_CLR_EN_SETR(CLRR)
+
+Disable gic_auto_clr when vcpu put and enable it when vcpu load.
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/arch_timer.c          | 14 ++++++++++++--
+ drivers/irqchip/irq-mbigen.c         | 25 +++++++++++++++++++++++++
+ include/clocksource/arm_arch_timer.h |  1 +
+ 3 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kvm/arch_timer.c b/arch/arm64/kvm/arch_timer.c
+index 0f830ef21ad9..4f89e45f9cb2 100644
+--- a/arch/arm64/kvm/arch_timer.c
++++ b/arch/arm64/kvm/arch_timer.c
+@@ -671,6 +671,11 @@ static void kvm_vtimer_mbigen_auto_clr_set(struct kvm_vcpu *vcpu, bool set)
+ 	vtimer_mbigen_set_auto_clr(vcpu->cpu, set);
+ }
+ 
++static void kvm_vtimer_gic_auto_clr_set(struct kvm_vcpu *vcpu, bool set)
++{
++	vtimer_gic_set_auto_clr(vcpu->cpu, set);
++}
++
+ static void kvm_vtimer_mbigen_restore_stat(struct kvm_vcpu *vcpu)
+ {
+ 	struct vtimer_mbigen_context *mbigen_ctx = vcpu_vtimer_mbigen(vcpu);
+@@ -907,8 +912,10 @@ void kvm_timer_vcpu_load(struct kvm_vcpu *vcpu)
+ 	timer_restore_state(map.direct_vtimer);
+ 
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+-	if (vtimer_is_irqbypass())
++	if (vtimer_is_irqbypass()) {
+ 		kvm_vtimer_mbigen_auto_clr_set(vcpu, true);
++		kvm_vtimer_gic_auto_clr_set(vcpu, true);
++	}
+ #endif
+ 	if (map.direct_ptimer)
+ 		timer_restore_state(map.direct_ptimer);
+@@ -973,9 +980,12 @@ void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
+ 	get_timer_map(vcpu, &map);
+ 
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+-	if (vtimer_is_irqbypass())
++	if (vtimer_is_irqbypass()) {
+ 		kvm_vtimer_mbigen_auto_clr_set(vcpu, false);
++		kvm_vtimer_gic_auto_clr_set(vcpu, false);
++	}
+ #endif
++
+ 	timer_save_state(map.direct_vtimer);
+ 
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+diff --git a/drivers/irqchip/irq-mbigen.c b/drivers/irqchip/irq-mbigen.c
+index 0308d0b12383..2f5ccaa80984 100644
+--- a/drivers/irqchip/irq-mbigen.c
++++ b/drivers/irqchip/irq-mbigen.c
+@@ -84,6 +84,8 @@
+ #define VTIMER_MBIGEN_REG_SET_AUTO_CLR_OFFSET  0x1100
+ #define VTIMER_MBIGEN_REG_CLR_AUTO_CLR_OFFSET  0x1110
+ #define VTIMER_MBIGEN_REG_ATV_STAT_OFFSET      0x1120
++#define VTIMER_GIC_REG_SET_AUTO_CLR_OFFSET     0x1150
++#define VTIMER_GIC_REG_CLR_AUTO_CLR_OFFSET     0x1160
+ #define VTIMER_MBIGEN_REG_VEC_OFFSET           0x1200
+ #define VTIMER_MBIGEN_REG_ATV_CLR_OFFSET       0xa008
+ 
+@@ -220,6 +222,29 @@ void vtimer_mbigen_set_auto_clr(int cpu_id, bool set)
+ 	dsb(sy);
+ }
+ 
++void vtimer_gic_set_auto_clr(int cpu_id, bool set)
++{
++	struct vtimer_mbigen_device *chip;
++	void __iomem *addr;
++	int cpu_abs_offset;
++	u64 offset;
++	u32 val;
++
++	chip = get_vtimer_mbigen(cpu_id);
++	if (!chip)
++		return;
++
++	cpu_abs_offset = get_abs_offset(cpu_id, chip->cpu_base);
++	offset = set ? VTIMER_GIC_REG_SET_AUTO_CLR_OFFSET :
++		 VTIMER_GIC_REG_CLR_AUTO_CLR_OFFSET;
++	addr = chip->base + offset +
++	       (cpu_abs_offset / PPIS_PER_MBIGEN_NODE) * VTIMER_MBIGEN_REG_WIDTH;
++	val = 1 << (cpu_abs_offset % PPIS_PER_MBIGEN_NODE);
++
++	writel_relaxed(val, addr);
++	dsb(sy);
++}
++
+ void vtimer_mbigen_set_active(int cpu_id, bool set)
+ {
+ 	struct vtimer_mbigen_device *chip;
+diff --git a/include/clocksource/arm_arch_timer.h b/include/clocksource/arm_arch_timer.h
+index 99c4c5de8d20..2a82abe2bb7f 100644
+--- a/include/clocksource/arm_arch_timer.h
++++ b/include/clocksource/arm_arch_timer.h
+@@ -124,6 +124,7 @@ static inline bool vtimer_irqbypass_hw_support(struct arch_timer_kvm_info *info)
+ void vtimer_mbigen_set_vector(int cpu_id, u16 vpeid);
+ bool vtimer_mbigen_get_active(int cpu_id);
+ void vtimer_mbigen_set_auto_clr(int cpu_id, bool set);
++void vtimer_gic_set_auto_clr(int cpu_id, bool set);
+ void vtimer_mbigen_set_active(int cpu_id, bool set);
+ #endif
+ 
+-- 
+2.43.0
+

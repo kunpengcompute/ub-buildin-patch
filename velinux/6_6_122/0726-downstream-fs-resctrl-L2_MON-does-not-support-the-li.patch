@@ -1,0 +1,72 @@
+From b2c9732b95e4c9ab676e60c84781ff388496ba40 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Tue, 10 Jun 2025 16:03:38 +0800
+Subject: [PATCH 726/960] downstream: fs/resctrl: L2_MON does not support the
+ limbo mechanism
+
+Currently, only L3_MON supports the limbo mechanism, while L2_MON does not.
+Therefore, during initialization, avoid incorrect initialization of the
+resctrl_rmid_realloc_limit and resctrl_rmid_realloc_threshold variables by
+L2_MON.
+
+Similarly, since L2_MON does not support read/write operations on the
+max_threshold_occupancy interface, and directly returns.
+
+Fixes: 556688623b2b ("fs/resctrl: Create l2 cache monitors")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 6 ++++--
+ fs/resctrl/rdtgroup.c                | 9 +++++++++
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 05a5f9ea3929..a0c88291a4c7 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -693,8 +693,10 @@ static void mpam_resctrl_pick_caches(void)
+ 			continue;
+ 		}
+ 
+-		if (mpam_has_feature(mpam_feat_msmon_csu, cprops))
+-			update_rmid_limits(cache_size);
++		if (mpam_has_feature(mpam_feat_msmon_csu, cprops)) {
++			if (class->level == 3)
++				update_rmid_limits(cache_size);
++		}
+ 
+ 		if (has_cpor) {
+ 			if (class->level == 2) {
+diff --git a/fs/resctrl/rdtgroup.c b/fs/resctrl/rdtgroup.c
+index b97d49f01b1c..da5c44983183 100644
+--- a/fs/resctrl/rdtgroup.c
++++ b/fs/resctrl/rdtgroup.c
+@@ -1166,6 +1166,11 @@ static int rdt_delay_linear_show(struct kernfs_open_file *of,
+ static int max_threshold_occ_show(struct kernfs_open_file *of,
+ 				  struct seq_file *seq, void *v)
+ {
++	struct rdt_resource *r = of->kn->parent->priv;
++
++	if (r->cache_level != 3)
++		return 0;
++
+ 	seq_printf(seq, "%u\n", resctrl_rmid_realloc_threshold);
+ 
+ 	return 0;
+@@ -1188,9 +1193,13 @@ static int rdt_thread_throttle_mode_show(struct kernfs_open_file *of,
+ static ssize_t max_threshold_occ_write(struct kernfs_open_file *of,
+ 				       char *buf, size_t nbytes, loff_t off)
+ {
++	struct rdt_resource *r = of->kn->parent->priv;
+ 	unsigned int bytes;
+ 	int ret;
+ 
++	if (r->cache_level != 3)
++		return 0;
++
+ 	ret = kstrtouint(buf, 0, &bytes);
+ 	if (ret)
+ 		return ret;
+-- 
+2.43.0
+

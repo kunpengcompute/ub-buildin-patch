@@ -1,0 +1,1878 @@
+From 9d8b5db289bdf25852dc52ca374f2b88f420c557 Mon Sep 17 00:00:00 2001
+From: Liu Shixin <liushixin2@huawei.com>
+Date: Wed, 7 Feb 2024 12:11:13 +0800
+Subject: [PATCH 888/960] downstream: mm/numa_remote: support to manager
+ remotely borrowed memory
+
+Add dedicated NUMA node and new ZONE_EXTMEM to manage remotely borrowed
+memory.
+Add custom usage constraints for memory within this zone, and implement
+pre-borrow functionality to accelerte the memory borrowing process.
+
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ .../admin-guide/kernel-parameters.txt         |  17 +
+ drivers/base/Kconfig                          |  11 +
+ drivers/base/Makefile                         |   1 +
+ drivers/base/arch_numa.c                      |   9 +-
+ drivers/base/memory.c                         |  95 +++
+ drivers/base/node.c                           |   4 +
+ drivers/base/numa_remote.c                    | 682 ++++++++++++++++++
+ fs/proc/meminfo.c                             |   3 +
+ include/asm-generic/numa.h                    |   2 +-
+ include/linux/gfp.h                           |  24 +-
+ include/linux/memory.h                        |  24 +
+ include/linux/memory_hotplug.h                |  11 +
+ include/linux/mmzone.h                        |  29 +
+ include/linux/numa_remote.h                   |  93 +++
+ include/linux/oom.h                           |   1 +
+ include/linux/vm_event_item.h                 |   8 +-
+ include/trace/events/mmflags.h                |   7 +
+ mm/Kconfig                                    |  12 +
+ mm/hugetlb.c                                  |  31 +-
+ mm/hugetlb_vmemmap.c                          |  41 ++
+ mm/hugetlb_vmemmap.h                          |  12 +
+ mm/memory_hotplug.c                           |  44 +-
+ mm/mempolicy.c                                |   9 +
+ mm/oom_kill.c                                 |  27 +-
+ mm/page_alloc.c                               |  30 +-
+ mm/vmstat.c                                   |   8 +-
+ 26 files changed, 1211 insertions(+), 24 deletions(-)
+ create mode 100644 drivers/base/numa_remote.c
+ create mode 100644 include/linux/numa_remote.h
+
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index adbe00f46e2a..1ce6dc4bcd7b 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -4048,6 +4048,23 @@
+ 			This can be set from sysctl after boot.
+ 			See Documentation/admin-guide/sysctl/vm.rst for details.
+ 
++	numa_remote=	[ARM64,KNL]
++		Prepare unused NUMA Nodes as remote Nodes, allows to hotplug
++		remote memory on these remote NUMA Nodes when CONFIG_NUMA_REMOTE
++		is enabled. By default, all unused NUMA Nodes will be configured
++		as remote Nodes. cmdline numa_remote_max_nodes can be used to limit
++		the number of remote NUMA Nodes.
++		Format: [arg0,][arg1]
++		preonline - allow to online unready memory and keep them isolated,
++					to improve the online performance.
++		nofallback - the remote nodes don't appear in the zonelists of
++					 other nodes, the remote memory can only be allocated by
++					 specifying the remote node.
++		hugetlb_nowatermark - allocate hugetlb in remote node will ignore
++							  watermark, and all memory can be allocated as
++							  hugetlb.
++		<int> - limit the number of remote NUMA Nodes.
++
+ 	ohci1394_dma=early	[HW] enable debugging via the ohci1394 driver.
+ 			See Documentation/core-api/debugging-via-ohci1394.rst for more
+ 			info.
+diff --git a/drivers/base/Kconfig b/drivers/base/Kconfig
+index 2b8fd6bb7da0..0a10de13ad85 100644
+--- a/drivers/base/Kconfig
++++ b/drivers/base/Kconfig
+@@ -175,6 +175,17 @@ config HMEM_REPORTING
+ 	  Enable reporting for heterogeneous memory access attributes under
+ 	  their non-uniform memory nodes.
+ 
++config NUMA_REMOTE
++	bool "Establish numa node for remote memory"
++	depends on NUMA
++	depends on ARM64 && ARM64_4K_PAGES
++	depends on SPARSEMEM_VMEMMAP
++	depends on ZONE_EXTMEM
++	help
++	  This option will initialize any useless node as memory-less node.
++	  In order to support online remote memory on these nodes.
++	  Such node is called remote node.
++
+ source "drivers/base/test/Kconfig"
+ 
+ config SYS_HYPERVISOR
+diff --git a/drivers/base/Makefile b/drivers/base/Makefile
+index 3079bfe53d04..ed91fb97f930 100644
+--- a/drivers/base/Makefile
++++ b/drivers/base/Makefile
+@@ -14,6 +14,7 @@ obj-$(CONFIG_ISA_BUS_API)	+= isa.o
+ obj-y				+= firmware_loader/
+ obj-$(CONFIG_NUMA)	+= node.o
+ obj-$(CONFIG_MEMORY_HOTPLUG) += memory.o
++obj-$(CONFIG_NUMA_REMOTE) += numa_remote.o
+ ifeq ($(CONFIG_SYSFS),y)
+ obj-$(CONFIG_MODULES)	+= module.o
+ endif
+diff --git a/drivers/base/arch_numa.c b/drivers/base/arch_numa.c
+index 5b59d133b6af..db4d8e524fd2 100644
+--- a/drivers/base/arch_numa.c
++++ b/drivers/base/arch_numa.c
+@@ -12,6 +12,7 @@
+ #include <linux/memblock.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
++#include <linux/numa_remote.h>
+ 
+ #include <asm/sections.h>
+ 
+@@ -305,7 +306,7 @@ static int __init numa_alloc_distance(void)
+  * If @from or @to is higher than the highest known node or lower than zero
+  * or @distance doesn't make sense, the call is ignored.
+  */
+-void __init numa_set_distance(int from, int to, int distance)
++void __ref numa_set_distance(int from, int to, int distance)
+ {
+ 	if (!numa_distance) {
+ 		pr_warn_once("Warning: distance table not allocated yet\n");
+@@ -358,13 +359,17 @@ static int __init numa_register_nodes(void)
+ 		}
+ 	}
+ 
++	numa_register_remote_nodes();
++
+ 	/* Finally register nodes. */
+ 	for_each_node_mask(nid, numa_nodes_parsed) {
+ 		unsigned long start_pfn, end_pfn;
+ 
+ 		get_pfn_range_for_nid(nid, &start_pfn, &end_pfn);
+ 		setup_node_data(nid, start_pfn, end_pfn);
+-		node_set_online(nid);
++
++		if (!numa_is_remote_node(nid))
++			node_set_online(nid);
+ 	}
+ 
+ 	/* Setup online nodes to actual nodes*/
+diff --git a/drivers/base/memory.c b/drivers/base/memory.c
+index 8a13babd826c..32a7bbc00599 100644
+--- a/drivers/base/memory.c
++++ b/drivers/base/memory.c
+@@ -25,6 +25,7 @@
+ 
+ #include <linux/atomic.h>
+ #include <linux/uaccess.h>
++#include <linux/numa_remote.h>
+ 
+ #define MEMORY_CLASS_NAME	"memory"
+ 
+@@ -33,6 +34,9 @@ static const char *const online_type_to_str[] = {
+ 	[MMOP_ONLINE] = "online",
+ 	[MMOP_ONLINE_KERNEL] = "online_kernel",
+ 	[MMOP_ONLINE_MOVABLE] = "online_movable",
++#ifdef CONFIG_ZONE_EXTMEM
++	[MMOP_ONLINE_EXTMEM] = "online_extmem",
++#endif
+ };
+ 
+ int mhp_online_type_from_str(const char *str)
+@@ -371,6 +375,9 @@ static ssize_t state_store(struct device *dev, struct device_attribute *attr,
+ 	switch (online_type) {
+ 	case MMOP_ONLINE_KERNEL:
+ 	case MMOP_ONLINE_MOVABLE:
++#ifdef CONFIG_ZONE_EXTMEM
++	case MMOP_ONLINE_EXTMEM:
++#endif
+ 	case MMOP_ONLINE:
+ 		/* mem->online_type is protected by device_hotplug_lock */
+ 		mem->online_type = online_type;
+@@ -460,6 +467,10 @@ static ssize_t valid_zones_show(struct device *dev,
+ 				  MMOP_ONLINE_KERNEL, default_zone);
+ 	len += print_allowed_zone(buf, len, nid, group, start_pfn, nr_pages,
+ 				  MMOP_ONLINE_MOVABLE, default_zone);
++#ifdef CONFIG_ZONE_EXTMEM
++	len += print_allowed_zone(buf, len, nid, group, start_pfn, nr_pages,
++				  MMOP_ONLINE_EXTMEM, default_zone);
++#endif
+ out:
+ 	len += sysfs_emit_at(buf, len, "\n");
+ 	return len;
+@@ -467,6 +478,17 @@ static ssize_t valid_zones_show(struct device *dev,
+ static DEVICE_ATTR_RO(valid_zones);
+ #endif
+ 
++#ifdef CONFIG_NUMA_REMOTE
++static ssize_t preonline_show(struct device *dev,
++				struct device_attribute *attr, char *buf)
++{
++	struct memory_block *mem = to_memory_block(dev);
++
++	return sysfs_emit_at(buf, 0, "%d\n", mem->pre_online);
++}
++static DEVICE_ATTR_RO(preonline);
++#endif
++
+ static DEVICE_ATTR_RO(phys_index);
+ static DEVICE_ATTR_RW(state);
+ static DEVICE_ATTR_RO(phys_device);
+@@ -642,6 +664,9 @@ static struct attribute *memory_memblk_attrs[] = {
+ 	&dev_attr_removable.attr,
+ #ifdef CONFIG_MEMORY_HOTREMOVE
+ 	&dev_attr_valid_zones.attr,
++#endif
++#ifdef CONFIG_NUMA_REMOTE
++	&dev_attr_preonline.attr,
+ #endif
+ 	NULL
+ };
+@@ -906,6 +931,76 @@ void remove_memory_block_devices(unsigned long start, unsigned long size)
+ 	}
+ }
+ 
++#ifdef CONFIG_NUMA_REMOTE
++
++enum check_state_type {
++	CHECK_NID,
++	CHECK_PREONLINE,
++	CHECK_ONLINE,
++};
++
++static inline bool check_memory_block_state(unsigned long start, unsigned long size,
++						enum check_state_type type, int check_val)
++{
++	unsigned long start_block_id = pfn_to_block_id(PFN_DOWN(start));
++	unsigned long end_block_id = pfn_to_block_id(PFN_DOWN(start + size - 1));
++	unsigned long block_id;
++	struct memory_block *mem;
++	bool check_res = true;
++
++	for (block_id = start_block_id; block_id <= end_block_id; block_id++) {
++		mem = find_memory_block_by_id(block_id);
++		if (!mem)
++			return false;
++
++		if (type == CHECK_NID)
++			check_res = (mem->nid == check_val);
++		else if (type == CHECK_PREONLINE)
++			check_res = (mem->pre_online == check_val);
++		else if (type == CHECK_ONLINE)
++			check_res = (mem->state == check_val);
++		put_device(&mem->dev);
++		if (!check_res)
++			return false;
++	}
++	return true;
++}
++
++bool check_memory_block_nid(unsigned long start, unsigned long size, int nid)
++{
++	return check_memory_block_state(start, size, CHECK_NID, nid);
++}
++
++bool check_memory_block_pre_online(unsigned long start, unsigned long size,
++				   bool pre_online)
++{
++	return check_memory_block_state(start, size, CHECK_PREONLINE, pre_online);
++}
++
++bool check_memory_block_online(unsigned long start, unsigned long size)
++{
++	return check_memory_block_state(start, size, CHECK_ONLINE, MEM_ONLINE);
++}
++
++void set_memory_block_pre_online(unsigned long start, unsigned long size,
++				   bool pre_online)
++{
++	unsigned long start_block_id = pfn_to_block_id(PFN_DOWN(start));
++	unsigned long end_block_id = pfn_to_block_id(PFN_DOWN(start + size - 1));
++	unsigned long block_id;
++	struct memory_block *mem;
++
++	for (block_id = start_block_id; block_id <= end_block_id; block_id++) {
++		mem = find_memory_block_by_id(block_id);
++		if (!mem)
++			continue;
++
++		mem->pre_online = pre_online;
++		put_device(&mem->dev);
++	}
++}
++#endif
++
+ static struct attribute *memory_root_attrs[] = {
+ #ifdef CONFIG_ARCH_MEMORY_PROBE
+ 	&dev_attr_probe.attr,
+diff --git a/drivers/base/node.c b/drivers/base/node.c
+index 2b398c8a0f06..067551787e65 100644
+--- a/drivers/base/node.c
++++ b/drivers/base/node.c
+@@ -20,6 +20,7 @@
+ #include <linux/pm_runtime.h>
+ #include <linux/swap.h>
+ #include <linux/slab.h>
++#include <linux/numa_remote.h>
+ 
+ static struct bus_type node_subsys = {
+ 	.name = "node",
+@@ -486,6 +487,7 @@ static ssize_t node_read_meminfo(struct device *dev,
+ #endif
+ 			    );
+ 	len += hugetlb_report_node_meminfo(buf, len, nid);
++	len += numa_remote_report_node_meminfo(buf, len, nid);
+ 	return len;
+ }
+ 
+@@ -625,6 +627,7 @@ static int register_node(struct node *node, int num)
+ 	} else {
+ 		hugetlb_register_node(node);
+ 		compaction_register_node(node);
++		numa_remote_register_node(node);
+ 	}
+ 
+ 	return error;
+@@ -641,6 +644,7 @@ void unregister_node(struct node *node)
+ {
+ 	hugetlb_unregister_node(node);
+ 	compaction_unregister_node(node);
++	numa_remote_unregister_node(node);
+ 	node_remove_accesses(node);
+ 	node_remove_caches(node);
+ 	device_unregister(&node->dev);
+diff --git a/drivers/base/numa_remote.c b/drivers/base/numa_remote.c
+new file mode 100644
+index 000000000000..b4bbd6164a9d
+--- /dev/null
++++ b/drivers/base/numa_remote.c
+@@ -0,0 +1,682 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Copyright (C) 2024  Huawei Technologies Co., Ltd.
++ * Author: Liu Shixin <liushixin2@huawei.com>
++ */
++
++#define pr_fmt(fmt) "NUMA remote: " fmt
++
++#include <linux/device.h>
++#include <linux/hugetlb.h>
++#include <linux/page-isolation.h>
++#include <linux/memory.h>
++#include <linux/numa_remote.h>
++#include <linux/oom.h>
++#include "../../mm/hugetlb_vmemmap.h"
++#include "../../mm/internal.h"
++
++/* The default distance between local node and remote node */
++#define REMOTE_TO_LOCAL_DISTANCE	100
++/* The default distance between two remtoe node */
++#define REMOTE_TO_REMOTE_DISTANCE	254
++
++static bool numa_remote_enabled __ro_after_init;
++static bool numa_remote_nofallback_mode __ro_after_init;
++static bool numa_remote_preonline_mode __ro_after_init;
++static bool numa_remote_hugetlb_nowatermark_mode __ro_after_init;
++static int numa_remote_max_nodes __ro_after_init = MAX_NUMNODES;
++
++static nodemask_t numa_nodes_remote;
++
++struct undo_fake_online_control {
++	u64 start;
++	u64 size;
++	struct llist_node llist;
++};
++
++static LLIST_HEAD(undo_fake_online_list);
++
++static atomic_long_t undo_fake_online_pages_node[MAX_NUMNODES];
++static atomic_long_t pre_online_pages_node[MAX_NUMNODES];
++static atomic_long_t pre_online_pages;
++
++static DEFINE_MUTEX(numa_remote_lock);
++static DECLARE_RWSEM(numa_remote_state_lock);
++
++bool numa_is_remote_node(int nid)
++{
++	return !!node_isset(nid, numa_nodes_remote);
++}
++EXPORT_SYMBOL_GPL(numa_is_remote_node);
++
++bool numa_remote_nofallback(int nid)
++{
++	return numa_remote_nofallback_mode && numa_is_remote_node(nid);
++}
++
++bool numa_remote_preonline(int nid)
++{
++	return numa_remote_preonline_mode && numa_is_remote_node(nid);
++}
++
++bool numa_remote_hugetlb_nowatermark(int nid)
++{
++	return numa_remote_hugetlb_nowatermark_mode && numa_is_remote_node(nid);
++}
++
++static void numa_remote_reset_distance(int nid)
++{
++	int i;
++
++	for (i = 0; i < MAX_NUMNODES; i++) {
++		if (i == nid)
++			continue;
++		if (!numa_is_remote_node(i)) {
++			numa_set_distance(i, nid, REMOTE_TO_LOCAL_DISTANCE);
++			numa_set_distance(nid, i, REMOTE_TO_LOCAL_DISTANCE);
++		} else {
++			numa_set_distance(i, nid, REMOTE_TO_REMOTE_DISTANCE);
++			numa_set_distance(nid, i, REMOTE_TO_REMOTE_DISTANCE);
++		}
++	}
++}
++
++void __init numa_register_remote_nodes(void)
++{
++	int i, count = 0;
++
++	if (!numa_remote_enabled)
++		return;
++
++	for (i = 0; i < MAX_NUMNODES; i++) {
++		if (!node_test_and_set(i, numa_nodes_parsed)) {
++			node_set(i, numa_nodes_remote);
++			count++;
++			if (count >= numa_remote_max_nodes)
++				break;
++		}
++	}
++
++	for (i = 0; i < MAX_NUMNODES; i++) {
++		if (numa_is_remote_node(i))
++			numa_remote_reset_distance(i);
++	}
++
++	pr_info("%d nodes", nodes_weight(numa_nodes_remote));
++}
++
++/*
++ * Parse a series of numa_remote options.
++ *
++ * 'nofallback': skip remote node from zonelists.
++ * 'preonline': support to online remote memory before it is ready.
++ */
++static int __init numa_parse_remote_nodes(char *buf)
++{
++	char *sep;
++	int val;
++
++	numa_remote_enabled = true;
++
++	if (!buf)
++		return 0;
++
++	while (*buf) {
++		sep = strchr(buf, ',');
++		if (sep)
++			*sep = 0;
++		if (!strcmp(buf, "nofallback"))
++			numa_remote_nofallback_mode = true;
++		else if (!strcmp(buf, "preonline"))
++			numa_remote_preonline_mode = true;
++#ifdef CONFIG_HUGETLB_PAGE
++		else if (!strcmp(buf, "hugetlb_nowatermark"))
++			numa_remote_hugetlb_nowatermark_mode = true;
++#endif
++		else if (!kstrtoint(buf, 0, &val)) {
++			if (val > 0)
++				numa_remote_max_nodes = val;
++		}
++		if (!sep)
++			break;
++		buf = sep + 1;
++	}
++
++	return 0;
++}
++early_param("numa_remote", numa_parse_remote_nodes);
++
++static void numa_remote_optimize_vmemmap(unsigned long start_pfn,
++					 unsigned long end_pfn)
++{
++	unsigned long pfn;
++	struct page *page;
++
++	for (pfn = start_pfn; pfn < end_pfn; pfn += MAX_ORDER_NR_PAGES) {
++		page = pfn_to_page(pfn);
++		if (!page)
++			continue;
++
++		fake_online_pages_vmemmap_optimize(page, MAX_ORDER_NR_PAGES);
++	}
++}
++
++static int numa_remote_restore_vmemmap(unsigned long start_pfn,
++				       unsigned long end_pfn)
++{
++	unsigned long pfn;
++	struct page *page;
++	int ret;
++
++	for (pfn = start_pfn; pfn < end_pfn; pfn += MAX_ORDER_NR_PAGES) {
++		page = pfn_to_page(pfn);
++		if (!page)
++			continue;
++
++		ret = fake_online_pages_vmemmap_restore(page, MAX_ORDER_NR_PAGES);
++		if (ret) {
++			numa_remote_optimize_vmemmap(start_pfn, pfn);
++			return ret;
++		}
++	}
++
++	return 0;
++}
++
++static void numa_remote_preonline_going_offline(unsigned long pfn,
++						  unsigned long nr_pages)
++{
++	struct page *page;
++	unsigned long i;
++
++	adjust_managed_page_count(pfn_to_page(pfn), nr_pages);
++	for (i = 0; i < nr_pages; i++) {
++		page = pfn_to_page(pfn + i);
++		if (WARN_ON(!page_ref_dec_and_test(page)))
++			dump_page(page, "preonline page referenced");
++	}
++}
++
++static void numa_remote_preonline_cancel_offline(unsigned long pfn,
++						  unsigned long nr_pages)
++{
++	unsigned long i;
++
++	adjust_managed_page_count(pfn_to_page(pfn), -nr_pages);
++	for (i = 0; i < nr_pages; i++)
++		page_ref_inc(pfn_to_page(pfn + i));
++}
++
++static int numa_remote_memory_notifier_cb(struct notifier_block *nb,
++					 unsigned long action, void *arg)
++{
++	struct memory_notify *mhp = arg;
++	const unsigned long start = PFN_PHYS(mhp->start_pfn);
++	const unsigned long size = PFN_PHYS(mhp->nr_pages);
++	int nid = pfn_to_nid(mhp->start_pfn);
++
++	if (!check_memory_block_pre_online(start, size, true))
++		return NOTIFY_DONE;
++
++	switch (action) {
++	case MEM_GOING_OFFLINE:
++		numa_remote_preonline_going_offline(mhp->start_pfn, mhp->nr_pages);
++		break;
++	case MEM_CANCEL_OFFLINE:
++		numa_remote_preonline_cancel_offline(mhp->start_pfn, mhp->nr_pages);
++		break;
++	case MEM_OFFLINE:
++		atomic_long_add(-mhp->nr_pages, &pre_online_pages_node[nid]);
++		atomic_long_add(-mhp->nr_pages, &pre_online_pages);
++		break;
++	default:
++		break;
++	}
++
++	return NOTIFY_OK;
++}
++
++struct notifier_block numa_remote_memory_notifier = {
++	.notifier_call = numa_remote_memory_notifier_cb,
++};
++
++static void numa_remote_online_pages_cb(struct page *page, unsigned int order)
++{
++	unsigned long start_pfn, end_pfn, pfn, nr_pages;
++	int nid = page_to_nid(page);
++	struct page *p;
++
++	start_pfn = page_to_pfn(page);
++	nr_pages = 1 << order;
++	end_pfn = start_pfn + nr_pages;
++
++	if (!check_memory_block_pre_online(PFN_PHYS(start_pfn), nr_pages * PAGE_SIZE, true)) {
++		generic_online_page(page, order);
++		return;
++	}
++
++	for (pfn = start_pfn; pfn < end_pfn; pfn++) {
++		p = pfn_to_page(pfn);
++		__SetPageOffline(p);
++		ClearPageReserved(p);
++	}
++	numa_remote_optimize_vmemmap(start_pfn, end_pfn);
++	atomic_long_add(nr_pages, &pre_online_pages_node[nid]);
++	atomic_long_add(nr_pages, &pre_online_pages);
++}
++
++static void numa_remote_online_pages(unsigned long start_pfn, unsigned long end_pfn)
++{
++	unsigned long nr_pages = end_pfn - start_pfn;
++	unsigned long pfn, i;
++	struct page *page;
++
++	for (i = 0; i < nr_pages; ++i) {
++		page = pfn_to_page(start_pfn + i);
++		__ClearPageOffline(page);
++	}
++
++	for (pfn = start_pfn; pfn < end_pfn; pfn += (1UL << MAX_ORDER))
++		generic_online_page(pfn_to_page(pfn), MAX_ORDER);
++}
++
++/*
++ * Undo fake-online a remote node. Have to be called in preonline mode then
++ * the memory on the node can be allocated.
++ */
++static int __ref numa_remote_undo_fake_online(u64 start, u64 size)
++{
++	unsigned long start_pfn = PFN_DOWN(start);
++	unsigned long end_pfn = PFN_DOWN(start + size);
++	unsigned long nr_pages = end_pfn - start_pfn;
++	struct zone *zone;
++	int nid;
++	int ret = 0;
++
++	mem_hotplug_begin();
++	/* Re-check whether all memory block are pre-online. */
++	if (!check_memory_block_pre_online(start, size, true)) {
++		ret = -EINVAL;
++		goto out;
++	}
++
++	if (!check_memory_block_online(start, size)) {
++		ret = -EINVAL;
++		goto out;
++	}
++
++	zone = page_zone(phys_to_page(start));
++	nid = zone_to_nid(zone);
++	if (!check_memory_block_nid(start, size, nid)) {
++		ret = -EINVAL;
++		goto out;
++	}
++
++	ret = numa_remote_restore_vmemmap(start_pfn, end_pfn);
++	if (ret) {
++		pr_err_ratelimited("restore vmemmap failed\n");
++		goto out;
++	}
++
++	set_memory_block_pre_online(start, size, false);
++	atomic_long_add(-nr_pages, &pre_online_pages_node[nid]);
++	atomic_long_add(-nr_pages, &pre_online_pages);
++	numa_remote_online_pages(start_pfn, end_pfn);
++
++	init_per_zone_wmark_min();
++	writeback_set_ratelimit();
++
++out:
++	atomic_long_add(-nr_pages, &undo_fake_online_pages_node[nid]);
++	mem_hotplug_done();
++	return ret;
++}
++
++static int __ref numa_remote_restore_isolation(u64 start, u64 size)
++{
++	unsigned long start_pfn = PFN_DOWN(start);
++	unsigned long end_pfn = PFN_DOWN(start + size);
++	int ret = 0;
++
++	mem_hotplug_begin();
++
++	ret = numa_remote_restore_vmemmap(start_pfn, end_pfn);
++	if (ret) {
++		pr_err_ratelimited("restore vmemmap failed\n");
++		goto out;
++	}
++
++out:
++	mem_hotplug_done();
++	return ret;
++}
++
++static void undo_fake_online_work_fn(struct work_struct *work)
++{
++	struct undo_fake_online_control *uic;
++	struct llist_node *node;
++
++	node = llist_del_all(&undo_fake_online_list);
++
++	while (node) {
++		uic = container_of(node, struct undo_fake_online_control, llist);
++		node = node->next;
++
++		mutex_lock(&numa_remote_lock);
++		numa_remote_undo_fake_online(uic->start, uic->size);
++		mutex_unlock(&numa_remote_lock);
++		kfree(uic);
++	}
++}
++
++static DECLARE_WORK(undo_fake_online_work, undo_fake_online_work_fn);
++
++static void numa_remote_wait_undo_fake_online(void)
++{
++	flush_work(&undo_fake_online_work);
++}
++
++bool numa_remote_try_wait_undo_fake_online(int nid)
++{
++	int ret = false;
++
++	if (!numa_remote_preonline(nid))
++		return ret;
++
++	if (!atomic_long_read(&undo_fake_online_pages_node[nid]))
++		return ret;
++
++	/*
++	 * Avoid circular locking lockdep warnings. Preonline and
++	 * offline require numa_remote_lock and vma lock. undo_fake_online_work
++	 * requires numa_remote_lock. handle_mm_fault() may flush undo_fake_online_work
++	 * with vma lock held. This forms circular locking dependency. However,
++	 * numa_remote_state_lock guarantees when preonline or offline is doing,
++	 * handle_mm_fault() won't flush undo_fake_online_work. False positive.
++	 */
++	lockdep_off();
++	if (!down_read_trylock(&numa_remote_state_lock))
++		goto out;
++
++	numa_remote_wait_undo_fake_online();
++	up_read(&numa_remote_state_lock);
++	ret = true;
++out:
++	lockdep_on();
++	return ret;
++}
++
++static int find_unused_remote_node(void)
++{
++	int nid;
++
++	for_each_node_mask(nid, numa_nodes_remote) {
++		if (!node_online(nid))
++			return nid;
++	}
++
++	return NUMA_NO_NODE;
++}
++
++/*
++ * Add remote memory to the system as system RAM from CXL or UB.
++ * The resource_name (visible via /proc/iomem) has to have the format
++ * "System RAM (Remote)".
++ *
++ * @nid:	which node to online
++ * @start:	start address of memory range
++ * @size:	size of memory range
++ * @flags:	memory hotplug flags
++ *
++ * Returns:
++ *	node in case add memory succeed.
++ *	NUMA_NO_NODE in case add memory failed.
++ */
++int add_memory_remote(int nid, u64 start, u64 size, int flags)
++{
++	int real_nid = NUMA_NO_NODE;
++	mhp_t mhp_flags = MHP_MERGE_RESOURCE;
++
++	if (!numa_remote_enabled)
++		return NUMA_NO_NODE;
++
++	if (nid < NUMA_NO_NODE || nid >= MAX_NUMNODES)
++		return NUMA_NO_NODE;
++
++	if (nid != NUMA_NO_NODE && !numa_is_remote_node(nid))
++		return NUMA_NO_NODE;
++
++	if (!numa_remote_preonline_mode && !(flags & MEMORY_DIRECT_ONLINE))
++		return NUMA_NO_NODE;
++
++	if (flags & ~(MEMORY_KEEP_ISOLATED | MEMORY_DIRECT_ONLINE))
++		return NUMA_NO_NODE;
++
++	if (flags == (MEMORY_KEEP_ISOLATED | MEMORY_DIRECT_ONLINE))
++		return NUMA_NO_NODE;
++
++	if (flags & (MEMORY_KEEP_ISOLATED | MEMORY_DIRECT_ONLINE)) {
++		numa_remote_wait_undo_fake_online();
++		down_write(&numa_remote_state_lock);
++	}
++	mutex_lock(&numa_remote_lock);
++
++	if (numa_remote_preonline_mode && !flags) {
++		struct undo_fake_online_control *uic;
++
++		if (check_hotplug_memory_range(start, size))
++			goto out;
++		/* Check whether all memory block are pre-online. */
++		if (!check_memory_block_pre_online(start, size, true))
++			goto out;
++
++		real_nid = (nid == NUMA_NO_NODE) ?
++			   page_to_nid(phys_to_page(start)) : nid;
++		if (!check_memory_block_nid(start, size, real_nid)) {
++			real_nid = NUMA_NO_NODE;
++			goto out;
++		}
++
++		uic = kzalloc(sizeof(struct undo_fake_online_control),
++					GFP_KERNEL);
++		if (!uic) {
++			real_nid = NUMA_NO_NODE;
++			goto out;
++		}
++
++		atomic_long_add(size / PAGE_SIZE, &undo_fake_online_pages_node[real_nid]);
++		uic->start = start;
++		uic->size = size;
++		if (llist_add(&uic->llist, &undo_fake_online_list))
++			schedule_work(&undo_fake_online_work);
++		goto out;
++	}
++
++	lock_device_hotplug();
++
++	real_nid = (nid == NUMA_NO_NODE) ? find_unused_remote_node() : nid;
++	if (real_nid == NUMA_NO_NODE)
++		goto unlock;
++
++	if (flags & MEMORY_KEEP_ISOLATED)
++		mhp_flags |= MHP_PREONLINE;
++
++	if (__add_memory(real_nid, start, size, mhp_flags))
++		real_nid = NUMA_NO_NODE;
++
++unlock:
++	unlock_device_hotplug();
++out:
++	mutex_unlock(&numa_remote_lock);
++	if (flags & (MEMORY_KEEP_ISOLATED | MEMORY_DIRECT_ONLINE))
++		up_write(&numa_remote_state_lock);
++	return real_nid;
++}
++EXPORT_SYMBOL_GPL(add_memory_remote);
++
++/*
++ * Remove remote memory.
++ *
++ * Returns:
++ *	0 in case of memory hotremove succeed.
++ *	-errno in case of memory hotremove failed.
++ */
++int remove_memory_remote(int nid, u64 start, u64 size)
++{
++	int ret = -EINVAL;
++
++	if (!numa_remote_enabled)
++		return -EINVAL;
++
++	if (nid <= NUMA_NO_NODE || nid >= MAX_NUMNODES)
++		return -EINVAL;
++
++	if (!numa_is_remote_node(nid) || !node_online(nid))
++		return -EINVAL;
++
++	numa_remote_wait_undo_fake_online();
++
++	down_write(&numa_remote_state_lock);
++	mutex_lock(&numa_remote_lock);
++	if (!check_memory_block_nid(start, size, nid))
++		goto out;
++
++	/*
++	 * If all memory block are already online, do nothing here.
++	 * If all memory block are pre-online, restore the isolation
++	 * and count. If mixed, don't allow to offline.
++	 */
++	if (numa_remote_preonline(nid) &&
++	    !check_memory_block_pre_online(start, size, false)) {
++		if (!check_memory_block_pre_online(start, size, true))
++			goto out;
++		if (numa_remote_restore_isolation(start, size))
++			goto out;
++	}
++
++	ret = offline_and_remove_memory(start, size);
++	if (ret)
++		goto out;
++
++	if (!node_online(nid))
++		numa_remote_reset_distance(nid);
++
++out:
++	mutex_unlock(&numa_remote_lock);
++	up_write(&numa_remote_state_lock);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(remove_memory_remote);
++
++int numa_remote_set_distance(int target, int *node_ids, int *node_distances,
++			     int count)
++{
++	int i;
++
++	if (!numa_remote_enabled)
++		return -EINVAL;
++
++	if (target <= NUMA_NO_NODE || target >= MAX_NUMNODES)
++		return -EINVAL;
++
++	if (!numa_is_remote_node(target))
++		return -EINVAL;
++
++	for (i = 0; i < count; i++) {
++		if (numa_is_remote_node(node_ids[i]))
++			return -EINVAL;
++	}
++
++	for (i = 0; i < count; i++) {
++		numa_set_distance(target, node_ids[i], node_distances[i]);
++		numa_set_distance(node_ids[i], target, node_distances[i]);
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(numa_remote_set_distance);
++
++static ssize_t remote_show(struct device *dev,
++			   struct device_attribute *dev_attr, char *buf)
++{
++	return sprintf(buf, "%d\n", numa_is_remote_node(dev->id));
++}
++static DEVICE_ATTR_RO(remote);
++
++void numa_remote_register_node(struct node *node)
++{
++	if (numa_remote_enabled)
++		device_create_file(&node->dev, &dev_attr_remote);
++}
++
++void numa_remote_unregister_node(struct node *node)
++{
++	if (numa_remote_enabled)
++		device_remove_file(&node->dev, &dev_attr_remote);
++}
++
++void numa_remote_report_meminfo(struct seq_file *m)
++{
++	pg_data_t *pgdat;
++	struct zone *zone;
++	unsigned long total_pages = 0;
++	unsigned long free_pages = 0;
++
++	if (!numa_remote_enabled)
++		return;
++
++	for_each_online_pgdat(pgdat) {
++		zone = &pgdat->node_zones[ZONE_EXTMEM];
++		if (populated_zone(zone)) {
++			total_pages += zone_managed_pages(zone);
++			free_pages += zone_page_state(zone, NR_FREE_PAGES);
++		}
++	}
++
++	seq_printf(m, "RemoteMemTotal: %8lu kB\n"
++			"RemoteMemFree:  %8lu kB\n"
++			"RemoteMemPreonline: %4lu kB\n",
++			K(total_pages), K(free_pages),
++			K(atomic_long_read(&pre_online_pages)));
++}
++
++int numa_remote_report_node_meminfo(char *buf, int len, int nid)
++{
++	if (!numa_remote_enabled)
++		return 0;
++
++	return sysfs_emit_at(buf, len,
++			     "Node %d RemoteMemPreonline: %4lu kB\n",
++			     nid, K(atomic_long_read(&pre_online_pages_node[nid])));
++}
++
++static int __init numa_remote_init(void)
++{
++	int ret;
++
++	if (!numa_remote_enabled)
++		return 0;
++
++	sysctl_oom_kill_cpuless_numa_allocating_task = 1;
++
++	if (!numa_remote_preonline_mode)
++		return 0;
++
++	ret = set_online_page_callback(&numa_remote_online_pages_cb);
++	if (ret)
++		goto err_online_callback;
++
++	ret = register_memory_notifier(&numa_remote_memory_notifier);
++	if (ret)
++		goto err_register_notifier;
++
++	return 0;
++
++err_register_notifier:
++	restore_online_page_callback(&numa_remote_online_pages_cb);
++err_online_callback:
++	numa_remote_preonline_mode = false;
++	pr_err("fail to enable preonline mode\n");
++	return ret;
++}
++late_initcall(numa_remote_init);
+diff --git a/fs/proc/meminfo.c b/fs/proc/meminfo.c
+index 45af9a989d40..b09cac3642a1 100644
+--- a/fs/proc/meminfo.c
++++ b/fs/proc/meminfo.c
+@@ -18,6 +18,7 @@
+ #include <linux/cma.h>
+ #endif
+ #include <linux/zswap.h>
++#include <linux/numa_remote.h>
+ #include <asm/page.h>
+ #include "internal.h"
+ 
+@@ -168,6 +169,8 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
+ 
+ 	arch_report_meminfo(m);
+ 
++	numa_remote_report_meminfo(m);
++
+ 	return 0;
+ }
+ 
+diff --git a/include/asm-generic/numa.h b/include/asm-generic/numa.h
+index c32e0cf23c90..1c24d9acb858 100644
+--- a/include/asm-generic/numa.h
++++ b/include/asm-generic/numa.h
+@@ -32,7 +32,7 @@ static inline const struct cpumask *cpumask_of_node(int node)
+ 
+ void __init arch_numa_init(void);
+ int __init numa_add_memblk(int nodeid, u64 start, u64 end);
+-void __init numa_set_distance(int from, int to, int distance);
++void numa_set_distance(int from, int to, int distance);
+ void __init numa_free_distance(void);
+ void __init early_map_cpu_to_node(unsigned int cpu, int nid);
+ int __init early_cpu_to_node(int cpu);
+diff --git a/include/linux/gfp.h b/include/linux/gfp.h
+index cf24ae2e926e..4309cdf1c325 100644
+--- a/include/linux/gfp.h
++++ b/include/linux/gfp.h
+@@ -99,15 +99,21 @@ static inline bool gfpflags_allow_blocking(const gfp_t gfp_flags)
+ #error GFP_ZONES_SHIFT too large to create GFP_ZONE_TABLE integer
+ #endif
+ 
++#if GFP_ZONES_SHIFT >= 3
++#define TABLE_TYPE(X)	((uint64_t)X)
++#else
++#define TABLE_TYPE(X)	X
++#endif
++
+ #define GFP_ZONE_TABLE ( \
+-	(ZONE_NORMAL << 0 * GFP_ZONES_SHIFT)				       \
+-	| (OPT_ZONE_DMA << ___GFP_DMA * GFP_ZONES_SHIFT)		       \
+-	| (OPT_ZONE_HIGHMEM << ___GFP_HIGHMEM * GFP_ZONES_SHIFT)	       \
+-	| (OPT_ZONE_DMA32 << ___GFP_DMA32 * GFP_ZONES_SHIFT)		       \
+-	| (ZONE_NORMAL << ___GFP_MOVABLE * GFP_ZONES_SHIFT)		       \
+-	| (OPT_ZONE_DMA << (___GFP_MOVABLE | ___GFP_DMA) * GFP_ZONES_SHIFT)    \
+-	| (ZONE_MOVABLE << (___GFP_MOVABLE | ___GFP_HIGHMEM) * GFP_ZONES_SHIFT)\
+-	| (OPT_ZONE_DMA32 << (___GFP_MOVABLE | ___GFP_DMA32) * GFP_ZONES_SHIFT)\
++	(TABLE_TYPE(ZONE_NORMAL) << 0 * GFP_ZONES_SHIFT)					\
++	| (TABLE_TYPE(OPT_ZONE_DMA) << ___GFP_DMA * GFP_ZONES_SHIFT)				\
++	| (TABLE_TYPE(OPT_ZONE_HIGHMEM) << ___GFP_HIGHMEM * GFP_ZONES_SHIFT)			\
++	| (TABLE_TYPE(OPT_ZONE_DMA32) << ___GFP_DMA32 * GFP_ZONES_SHIFT)			\
++	| (TABLE_TYPE(ZONE_NORMAL) << ___GFP_MOVABLE * GFP_ZONES_SHIFT)				\
++	| (TABLE_TYPE(OPT_ZONE_DMA) << (___GFP_MOVABLE | ___GFP_DMA) * GFP_ZONES_SHIFT)		\
++	| (TABLE_TYPE(ZONE_MOVABLE) << (___GFP_MOVABLE | ___GFP_HIGHMEM) * GFP_ZONES_SHIFT)	\
++	| (TABLE_TYPE(OPT_ZONE_DMA32) << (___GFP_MOVABLE | ___GFP_DMA32) * GFP_ZONES_SHIFT)	\
+ )
+ 
+ /*
+@@ -138,6 +144,8 @@ static inline enum zone_type gfp_zone(gfp_t flags)
+ 	return z;
+ }
+ 
++#undef TABLE_TYPE
++
+ /*
+  * There is only one page-allocator function, and two main namespaces to
+  * it. The alloc_page*() variants return 'struct page *' and as such
+diff --git a/include/linux/memory.h b/include/linux/memory.h
+index f53cfdaaaa41..be51c078c497 100644
+--- a/include/linux/memory.h
++++ b/include/linux/memory.h
+@@ -83,6 +83,9 @@ struct memory_block {
+ #if defined(CONFIG_MEMORY_FAILURE) && defined(CONFIG_MEMORY_HOTPLUG)
+ 	atomic_long_t nr_hwpoison;
+ #endif
++#ifdef CONFIG_NUMA_REMOTE
++	bool pre_online;
++#endif
+ };
+ 
+ int arch_get_memory_phys_device(unsigned long start_pfn);
+@@ -146,6 +149,27 @@ int create_memory_block_devices(unsigned long start, unsigned long size,
+ 				struct vmem_altmap *altmap,
+ 				struct memory_group *group);
+ void remove_memory_block_devices(unsigned long start, unsigned long size);
++#ifdef CONFIG_NUMA_REMOTE
++bool check_memory_block_nid(unsigned long start, unsigned long size, int nid);
++bool check_memory_block_pre_online(unsigned long start, unsigned long size,
++				   bool pre_online);
++void set_memory_block_pre_online(unsigned long start, unsigned long size,
++				   bool pre_online);
++bool check_memory_block_online(unsigned long start, unsigned long size);
++static inline bool memory_block_is_pre_online(struct memory_block *mem)
++{
++	return mem->pre_online;
++}
++#else
++static inline void set_memory_block_pre_online(unsigned long start, unsigned long size,
++				   bool pre_online)
++{
++}
++static inline bool memory_block_is_pre_online(struct memory_block *mem)
++{
++	return false;
++}
++#endif
+ extern void memory_dev_init(void);
+ extern int memory_notify(unsigned long val, void *v);
+ extern struct memory_block *find_memory_block(unsigned long section_nr);
+diff --git a/include/linux/memory_hotplug.h b/include/linux/memory_hotplug.h
+index 7d2076583494..35db11bb05b0 100644
+--- a/include/linux/memory_hotplug.h
++++ b/include/linux/memory_hotplug.h
+@@ -77,6 +77,10 @@ enum {
+ 	MMOP_ONLINE_KERNEL,
+ 	/* Online the memory to ZONE_MOVABLE. */
+ 	MMOP_ONLINE_MOVABLE,
++#ifdef CONFIG_ZONE_EXTMEM
++	/* Online the memory to ZONE_EXTMEM. */
++	MMOP_ONLINE_EXTMEM,
++#endif
+ };
+ 
+ /* Flags for add_memory() and friends to specify memory hotplug details. */
+@@ -107,6 +111,12 @@ typedef int __bitwise mhp_t;
+  */
+ #define MHP_NID_IS_MGID		((__force mhp_t)BIT(2))
+ 
++/*
++ * Online memory to pre-online state, i.e., memblock device and vmemmap are
++ * created, but pages are keep isolated to avoid being allocated.
++ */
++#define MHP_PREONLINE ((__force mhp_t)BIT(3))
++
+ /*
+  * Extended parameters for memory hotplug:
+  * altmap: alternative allocator for memmap array (optional)
+@@ -168,6 +178,7 @@ extern int set_online_page_callback(online_page_callback_t callback);
+ extern int restore_online_page_callback(online_page_callback_t callback);
+ 
+ extern int try_online_node(int nid);
++extern int check_hotplug_memory_range(u64 start, u64 size);
+ 
+ extern int arch_add_memory(int nid, u64 start, u64 size,
+ 			   struct mhp_params *params);
+diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
+index c48da2bf5fb4..744728d7bf44 100644
+--- a/include/linux/mmzone.h
++++ b/include/linux/mmzone.h
+@@ -770,6 +770,9 @@ enum zone_type {
+ 	 * access.
+ 	 */
+ 	ZONE_HIGHMEM,
++#endif
++#ifdef CONFIG_ZONE_EXTMEM
++	ZONE_EXTMEM,
+ #endif
+ 	/*
+ 	 * ZONE_MOVABLE is similar to ZONE_NORMAL, except that it contains
+@@ -1498,6 +1501,32 @@ static inline bool zone_is_zone_device(struct zone *zone)
+ }
+ #endif
+ 
++#ifdef CONFIG_ZONE_EXTMEM
++static inline bool is_zone_extmem_page(const struct page *page)
++{
++	return page_zonenum(page) == ZONE_EXTMEM;
++}
++
++static inline bool zone_is_zone_extmem(struct zone *zone)
++{
++	return zone_idx(zone) == ZONE_EXTMEM;
++}
++
++#define get_extmem_zone(nid) (&NODE_DATA((nid))->node_zones[ZONE_EXTMEM])
++#else
++static inline bool is_zone_extmem_page(const struct page *page)
++{
++	return false;
++}
++
++static inline bool zone_is_zone_extmem(struct zone *zone)
++{
++	return false;
++}
++
++#define get_extmem_zone(nid) NULL
++#endif
++
+ /*
+  * Returns true if a zone has pages managed by the buddy allocator.
+  * All the reclaim decisions have to use this function rather than
+diff --git a/include/linux/numa_remote.h b/include/linux/numa_remote.h
+new file mode 100644
+index 000000000000..6f8a294a46a3
+--- /dev/null
++++ b/include/linux/numa_remote.h
+@@ -0,0 +1,93 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Copyright (C) 2024  Huawei Technologies Co., Ltd.
++ * Author: Liu Shixin <liushixin2@huawei.com>
++ */
++#ifndef _LINUX_REMOTE_MEMORY_H_
++#define _LINUX_REMOTE_MEMORY_H_
++
++#include <linux/mm.h>
++#include <linux/node.h>
++
++#define MEMORY_KEEP_ISOLATED	1
++#define MEMORY_DIRECT_ONLINE 2
++
++#ifdef CONFIG_NUMA_REMOTE
++bool numa_is_remote_node(int nid);
++bool numa_remote_nofallback(int nid);
++bool numa_remote_preonline(int nid);
++bool numa_remote_hugetlb_nowatermark(int nid);
++void numa_register_remote_nodes(void);
++bool numa_remote_try_wait_undo_fake_online(int nid);
++int add_memory_remote(int nid, u64 start, u64 size, int flags);
++int remove_memory_remote(int nid, u64 start, u64 size);
++int numa_remote_set_distance(int target, int *node_ids, int *node_distances,
++			     int count);
++void numa_remote_register_node(struct node *node);
++void numa_remote_unregister_node(struct node *node);
++void numa_remote_report_meminfo(struct seq_file *m);
++int numa_remote_report_node_meminfo(char *buf, int len, int nid);
++#else
++static inline bool numa_is_remote_node(int nid)
++{
++	return false;
++}
++
++static inline bool numa_remote_nofallback(int nid)
++{
++	return false;
++}
++
++static inline bool numa_remote_preonline(int nid)
++{
++	return false;
++}
++
++static inline bool numa_remote_hugetlb_nowatermark(int nid)
++{
++	return false;
++}
++
++static inline void numa_register_remote_nodes(void)
++{
++}
++
++static inline bool numa_remote_try_wait_undo_fake_online(int nid)
++{
++	return false;
++}
++
++static inline int add_memory_remote(int nid, u64 start, u64 size, int flags)
++{
++	return NUMA_NO_NODE;
++}
++
++static inline int remove_memory_remote(int nid, u64 start, u64 size)
++{
++	return -EINVAL;
++}
++
++static inline int numa_remote_set_distance(int target, int *node_ids,
++					   int *node_distances, int count)
++{
++	return -EINVAL;
++}
++
++static inline void numa_remote_register_node(struct node *node)
++{
++}
++
++static inline void numa_remote_unregister_node(struct node *node)
++{
++}
++
++static inline void numa_remote_report_meminfo(struct seq_file *m)
++{
++}
++
++static inline int numa_remote_report_node_meminfo(char *buf, int len, int nid)
++{
++	return 0;
++}
++#endif
++#endif /* _LINUX_REMOTE_MEMORY_H_ */
+diff --git a/include/linux/oom.h b/include/linux/oom.h
+index 0535d8025462..4699333f1284 100644
+--- a/include/linux/oom.h
++++ b/include/linux/oom.h
+@@ -59,6 +59,7 @@ struct oom_control {
+ 
+ extern struct mutex oom_lock;
+ extern struct mutex oom_adj_mutex;
++extern int sysctl_oom_kill_cpuless_numa_allocating_task;
+ 
+ static inline void set_current_oom_origin(void)
+ {
+diff --git a/include/linux/vm_event_item.h b/include/linux/vm_event_item.h
+index b61796a35d2b..66a320443f29 100644
+--- a/include/linux/vm_event_item.h
++++ b/include/linux/vm_event_item.h
+@@ -20,6 +20,12 @@
+ #define HIGHMEM_ZONE(xx)
+ #endif
+ 
++#ifdef CONFIG_ZONE_EXTMEM
++#define EXTMEM_ZONE(xx) xx##_EXTMEM,
++#else
++#define EXTMEM_ZONE(xx)
++#endif
++
+ #ifdef CONFIG_ZONE_DEVICE
+ #define DEVICE_ZONE(xx) xx##_DEVICE,
+ #else
+@@ -27,7 +33,7 @@
+ #endif
+ 
+ #define FOR_ALL_ZONES(xx) DMA_ZONE(xx) DMA32_ZONE(xx) xx##_NORMAL, \
+-	HIGHMEM_ZONE(xx) xx##_MOVABLE, DEVICE_ZONE(xx)
++	HIGHMEM_ZONE(xx) EXTMEM_ZONE(xx) xx##_MOVABLE, DEVICE_ZONE(xx)
+ 
+ enum vm_event_item { PGPGIN, PGPGOUT, PSWPIN, PSWPOUT,
+ 		FOR_ALL_ZONES(PGALLOC)
+diff --git a/include/trace/events/mmflags.h b/include/trace/events/mmflags.h
+index e010618f9326..4347971de29a 100644
+--- a/include/trace/events/mmflags.h
++++ b/include/trace/events/mmflags.h
+@@ -261,11 +261,18 @@ IF_HAVE_VM_SOFTDIRTY(VM_SOFTDIRTY,	"softdirty"	)		\
+ #define IFDEF_ZONE_HIGHMEM(X)
+ #endif
+ 
++#ifdef CONFIG_ZONE_EXTMEM
++#define IFDEF_ZONE_EXTMEM(X) X
++#else
++#define IFDEF_ZONE_EXTMEM(X)
++#endif
++
+ #define ZONE_TYPE						\
+ 	IFDEF_ZONE_DMA(		EM (ZONE_DMA,	 "DMA"))	\
+ 	IFDEF_ZONE_DMA32(	EM (ZONE_DMA32,	 "DMA32"))	\
+ 				EM (ZONE_NORMAL, "Normal")	\
+ 	IFDEF_ZONE_HIGHMEM(	EM (ZONE_HIGHMEM,"HighMem"))	\
++	IFDEF_ZONE_EXTMEM(	EM (ZONE_EXTMEM, "ExtMem"))	\
+ 				EMe(ZONE_MOVABLE,"Movable")
+ 
+ #define LRU_NAMES		\
+diff --git a/mm/Kconfig b/mm/Kconfig
+index 4c9996c16b10..64966eec5348 100644
+--- a/mm/Kconfig
++++ b/mm/Kconfig
+@@ -1095,6 +1095,18 @@ config ZONE_DEVICE
+ 	  on the physical address bits, on processor features, kernel config
+ 	  (5 level page table) and physical memory present on the system.
+ 
++config ZONE_EXTMEM
++	bool "Extension memory hotplug support"
++	default n
++	depends on MEMORY_HOTPLUG
++	depends on MEMORY_HOTREMOVE
++	depends on ARM64
++	help
++	  Extension memory hotplug support allows for customizing memory
++	  policy such as UB or CXL memory, mirroring memory, etc.
++
++	  If unsure, say N.
++
+ #
+ # Helpers to mirror range of the CPU page tables of a process into device page
+ # tables.
+diff --git a/mm/hugetlb.c b/mm/hugetlb.c
+index 00a9269bc11e..af989f84dd8a 100644
+--- a/mm/hugetlb.c
++++ b/mm/hugetlb.c
+@@ -47,6 +47,7 @@
+ #include <linux/hugetlb_cgroup.h>
+ #include <linux/node.h>
+ #include <linux/page_owner.h>
++#include <linux/numa_remote.h>
+ #include "internal.h"
+ #include "hugetlb_vmemmap.h"
+ 
+@@ -2371,8 +2372,13 @@ static struct folio *alloc_pool_huge_folio(struct hstate *h,
+ 
+ 	for_each_node_mask_to_alloc(h, nr_nodes, node, nodes_allowed) {
+ 		struct folio *folio;
++		gfp_t gfp = 0;
+ 
+-		folio = only_alloc_fresh_hugetlb_folio(h, gfp_mask, node,
++		/* Use __GFP_MEMALLOC to make sure all pages can be allocated */
++		if (numa_remote_hugetlb_nowatermark(node))
++			gfp |= __GFP_MEMALLOC;
++
++		folio = only_alloc_fresh_hugetlb_folio(h, gfp_mask | gfp, node,
+ 					nodes_allowed, node_alloc_noretry);
+ 		if (folio)
+ 			return folio;
+@@ -3848,6 +3854,23 @@ static int adjust_pool_surplus(struct hstate *h, nodemask_t *nodes_allowed,
+ 	return 1;
+ }
+ 
++#ifdef CONFIG_ZONE_EXTMEM
++static void hugetlb_drain_remote_pcp(struct hstate *h, int nid)
++{
++	pg_data_t *pgdat = NODE_DATA(nid);
++	struct zone *zone;
++
++	zone = &pgdat->node_zones[ZONE_EXTMEM];
++
++	if (zone_managed_pages(zone))
++		drain_all_pages(zone);
++}
++#else
++static inline void hugetlb_drain_remote_pcp(struct hstate *h, int nid)
++{
++}
++#endif
++
+ #define persistent_huge_pages(h) (h->nr_huge_pages - h->surplus_huge_pages)
+ static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
+ 			      nodemask_t *nodes_allowed)
+@@ -3858,6 +3881,7 @@ static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
+ 	struct folio *folio;
+ 	LIST_HEAD(page_list);
+ 	NODEMASK_ALLOC(nodemask_t, node_alloc_noretry, GFP_KERNEL);
++	bool drained = false;
+ 
+ 	/*
+ 	 * Bit mask controlling how hard we retry per-node allocations.
+@@ -3942,6 +3966,11 @@ static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
+ 		/* yield cpu to avoid soft lockup */
+ 		cond_resched();
+ 
++		if ((nid != NUMA_NO_NODE) && numa_remote_hugetlb_nowatermark(nid) && !drained) {
++			hugetlb_drain_remote_pcp(h, nid);
++			drained = true;
++		}
++
+ 		folio = alloc_pool_huge_folio(h, nodes_allowed,
+ 						node_alloc_noretry);
+ 		if (!folio) {
+diff --git a/mm/hugetlb_vmemmap.c b/mm/hugetlb_vmemmap.c
+index fe43bae01e37..236fa8bc1422 100644
+--- a/mm/hugetlb_vmemmap.c
++++ b/mm/hugetlb_vmemmap.c
+@@ -988,3 +988,44 @@ static int __init hugetlb_vmemmap_init(void)
+ 	return 0;
+ }
+ late_initcall(hugetlb_vmemmap_init);
++
++/* Similar with hugetlb_vmemmap_restore. */
++int fake_online_pages_vmemmap_restore(struct page *head, unsigned long nr_pages)
++{
++	int ret;
++	unsigned long vmemmap_start = (unsigned long)head, vmemmap_end;
++	unsigned long vmemmap_reuse;
++
++	if (!HPageVmemmapOptimized(head))
++		return 0;
++
++	vmemmap_end	= vmemmap_start + nr_pages * sizeof(struct page);
++	vmemmap_reuse	= vmemmap_start;
++	vmemmap_start	+= PAGE_SIZE;
++
++	ret = vmemmap_remap_alloc(vmemmap_start, vmemmap_end, vmemmap_reuse, 0);
++	if (!ret)
++		ClearHPageVmemmapOptimized(head);
++
++	return ret;
++}
++
++/* Similar with hugetlb_vmemmap_optimize. */
++void fake_online_pages_vmemmap_optimize(struct page *head, unsigned long nr_pages)
++{
++	unsigned long vmemmap_start = (unsigned long)head, vmemmap_end;
++	unsigned long vmemmap_reuse;
++	LIST_HEAD(vmemmap_pages);
++
++	vmemmap_end	= vmemmap_start + nr_pages * sizeof(struct page);
++	vmemmap_reuse	= vmemmap_start;
++	vmemmap_start	+= PAGE_SIZE;
++
++	if (vmemmap_remap_free(vmemmap_start, vmemmap_end, vmemmap_reuse, &vmemmap_pages, 0))
++		pr_err_ratelimited("optimize vmemmap failed\n");
++	else
++		SetHPageVmemmapOptimized(head);
++
++	free_vmemmap_page_list(&vmemmap_pages);
++
++}
+diff --git a/mm/hugetlb_vmemmap.h b/mm/hugetlb_vmemmap.h
+index 7470cd7a226e..410817ae5252 100644
+--- a/mm/hugetlb_vmemmap.h
++++ b/mm/hugetlb_vmemmap.h
+@@ -50,6 +50,9 @@ static inline unsigned int hugetlb_vmemmap_optimizable_size(const struct hstate
+ 		return 0;
+ 	return size > 0 ? size : 0;
+ }
++
++int fake_online_pages_vmemmap_restore(struct page *head, unsigned long nr_pages);
++void fake_online_pages_vmemmap_optimize(struct page *head, unsigned long nr_pages);
+ #else
+ static inline int hugetlb_vmemmap_restore(const struct hstate *h, struct page *head)
+ {
+@@ -89,6 +92,15 @@ static inline unsigned int hugetlb_vmemmap_optimizable_size(const struct hstate
+ {
+ 	return 0;
+ }
++
++static inline int fake_online_pages_vmemmap_restore(struct page *head, unsigned long nr_pages)
++{
++	return 0;
++}
++
++static inline void fake_online_pages_vmemmap_optimize(struct page *head, unsigned long nr_pages)
++{
++}
+ #endif /* CONFIG_HUGETLB_PAGE_OPTIMIZE_VMEMMAP */
+ 
+ static inline bool hugetlb_vmemmap_optimizable(const struct hstate *h)
+diff --git a/mm/memory_hotplug.c b/mm/memory_hotplug.c
+index aab166905452..3385189d8fd4 100644
+--- a/mm/memory_hotplug.c
++++ b/mm/memory_hotplug.c
+@@ -35,6 +35,7 @@
+ #include <linux/compaction.h>
+ #include <linux/rmap.h>
+ #include <linux/module.h>
++#include <linux/numa_remote.h>
+ 
+ #include <asm/tlbflush.h>
+ 
+@@ -1054,6 +1055,11 @@ struct zone *zone_for_pfn_range(int online_type, int nid,
+ 	if (online_type == MMOP_ONLINE_MOVABLE)
+ 		return &NODE_DATA(nid)->node_zones[ZONE_MOVABLE];
+ 
++#ifdef CONFIG_ZONE_EXTMEM
++	if (online_type == MMOP_ONLINE_EXTMEM)
++		return &NODE_DATA(nid)->node_zones[ZONE_EXTMEM];
++#endif
++
+ 	if (online_policy == ONLINE_POLICY_AUTO_MOVABLE)
+ 		return auto_movable_zone_for_pfn(nid, group, start_pfn, nr_pages);
+ 
+@@ -1296,7 +1302,7 @@ int try_online_node(int nid)
+ 	return ret;
+ }
+ 
+-static int check_hotplug_memory_range(u64 start, u64 size)
++int check_hotplug_memory_range(u64 start, u64 size)
+ {
+ 	/* memory range must be block size aligned */
+ 	if (!size || !IS_ALIGNED(start, memory_block_size_bytes()) ||
+@@ -1311,7 +1317,17 @@ static int check_hotplug_memory_range(u64 start, u64 size)
+ 
+ static int online_memory_block(struct memory_block *mem, void *arg)
+ {
++#ifdef CONFIG_ZONE_EXTMEM
++	int nid = *(int *)arg;
++
++	if (numa_is_remote_node(nid))
++		mem->online_type = MMOP_ONLINE_EXTMEM;
++	else
++		mem->online_type = mhp_default_online_type;
++#else
+ 	mem->online_type = mhp_default_online_type;
++#endif
++
+ 	return device_online(&mem->dev);
+ }
+ 
+@@ -1479,6 +1495,9 @@ int __ref add_memory_resource(int nid, struct resource *res, mhp_t mhp_flags)
+ 					  PFN_UP(start + size - 1),
+ 					  MEMINIT_HOTPLUG);
+ 
++	if (mhp_flags & MHP_PREONLINE)
++		set_memory_block_pre_online(start, size, true);
++
+ 	/* create new memmap entry */
+ 	if (!strcmp(res->name, "System RAM"))
+ 		firmware_map_add_hotplug(start, start + size, "System RAM");
+@@ -1494,8 +1513,9 @@ int __ref add_memory_resource(int nid, struct resource *res, mhp_t mhp_flags)
+ 		merge_system_ram_resource(res);
+ 
+ 	/* online pages if requested */
+-	if (mhp_default_online_type != MMOP_OFFLINE)
+-		walk_memory_blocks(start, size, NULL, online_memory_block);
++	if (mhp_default_online_type != MMOP_OFFLINE ||
++	    numa_is_remote_node(nid))
++		walk_memory_blocks(start, size, &nid, online_memory_block);
+ 
+ 	return ret;
+ error_free:
+@@ -1512,9 +1532,15 @@ int __ref add_memory_resource(int nid, struct resource *res, mhp_t mhp_flags)
+ int __ref __add_memory(int nid, u64 start, u64 size, mhp_t mhp_flags)
+ {
+ 	struct resource *res;
++	char *resource_name;
+ 	int ret;
+ 
+-	res = register_memory_resource(start, size, "System RAM");
++	if (numa_is_remote_node(nid))
++		resource_name = "System RAM (Remote)";
++	else
++		resource_name = "System RAM";
++
++	res = register_memory_resource(start, size, resource_name);
+ 	if (IS_ERR(res))
+ 		return PTR_ERR(res);
+ 
+@@ -1839,13 +1865,16 @@ static void node_states_check_changes_offline(unsigned long nr_pages,
+ 	/*
+ 	 * We have accounted the pages from [0..ZONE_NORMAL); ZONE_HIGHMEM
+ 	 * does not apply as we don't support 32bit.
+-	 * Here we count the possible pages from ZONE_MOVABLE.
++	 * Here we count the possible pages from ZONE_MOVABLE and ZONE_EXTMEM.
+ 	 * If after having accounted all the pages, we see that the nr_pages
+ 	 * to be offlined is over or equal to the accounted pages,
+ 	 * we know that the node will become empty, and so, we can clear
+ 	 * it for N_MEMORY as well.
+ 	 */
+ 	present_pages += pgdat->node_zones[ZONE_MOVABLE].present_pages;
++#ifdef CONFIG_ZONE_EXTMEM
++	present_pages += pgdat->node_zones[ZONE_EXTMEM].present_pages;
++#endif
+ 
+ 	if (nr_pages >= present_pages)
+ 		arg->status_change_nid = zone_to_nid(zone);
+@@ -2281,6 +2310,11 @@ static int try_offline_memory_block(struct memory_block *mem, void *arg)
+ 	if (page && zone_idx(page_zone(page)) == ZONE_MOVABLE)
+ 		online_type = MMOP_ONLINE_MOVABLE;
+ 
++#ifdef CONFIG_ZONE_EXTMEM
++	if (page && is_zone_extmem_page(page))
++		online_type = MMOP_ONLINE_EXTMEM;
++#endif
++
+ 	rc = device_offline(&mem->dev);
+ 	/*
+ 	 * Default is MMOP_OFFLINE - change it only if offlining succeeded,
+diff --git a/mm/mempolicy.c b/mm/mempolicy.c
+index 955ed3659bec..df13393590af 100644
+--- a/mm/mempolicy.c
++++ b/mm/mempolicy.c
+@@ -109,6 +109,7 @@
+ #include <linux/mmu_notifier.h>
+ #include <linux/printk.h>
+ #include <linux/swapops.h>
++#include <linux/numa_remote.h>
+ 
+ #include <asm/tlbflush.h>
+ #include <asm/tlb.h>
+@@ -2117,6 +2118,14 @@ static nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *pol,
+ 			nodemask = &pol->nodes;
+ 		if (pol->home_node != NUMA_NO_NODE)
+ 			*nid = pol->home_node;
++		/*
++		 * In nofallback mode, the remote node is not in zonelists,
++		 * set remote node as preferred_nid or it will be skipped.
++		 * MPOL_PREFERRED_MANY is not supported, becase at least
++		 * one remote node that will be skipped.
++		 */
++		else if (numa_remote_nofallback(first_node(pol->nodes)))
++			*nid = first_node(pol->nodes);
+ 
+ 		/*
+ 		 * __GFP_THISNODE shouldn't even be used with the bind policy
+diff --git a/mm/oom_kill.c b/mm/oom_kill.c
+index e4ad10dd347b..3374a11668ba 100644
+--- a/mm/oom_kill.c
++++ b/mm/oom_kill.c
+@@ -56,6 +56,7 @@
+ 
+ static int sysctl_panic_on_oom;
+ static int sysctl_oom_kill_allocating_task;
++int sysctl_oom_kill_cpuless_numa_allocating_task;
+ static int sysctl_oom_dump_tasks = 1;
+ 
+ /*
+@@ -749,6 +750,13 @@ static struct ctl_table vm_oom_kill_table[] = {
+ 		.mode		= 0644,
+ 		.proc_handler	= proc_dointvec,
+ 	},
++	{
++		.procname	= "oom_kill_cpuless_numa_allocating_task",
++		.data		= &sysctl_oom_kill_cpuless_numa_allocating_task,
++		.maxlen		= sizeof(sysctl_oom_kill_cpuless_numa_allocating_task),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec,
++	},
+ 	{
+ 		.procname	= "oom_dump_tasks",
+ 		.data		= &sysctl_oom_dump_tasks,
+@@ -1128,6 +1136,23 @@ int unregister_oom_notifier(struct notifier_block *nb)
+ }
+ EXPORT_SYMBOL_GPL(unregister_oom_notifier);
+ 
++static bool should_oom_kill_allocating_task(struct oom_control *oc)
++{
++	if (sysctl_oom_kill_allocating_task)
++		return true;
++
++	if (!oc->nodemask)
++		return false;
++
++	if (!sysctl_oom_kill_cpuless_numa_allocating_task)
++		return false;
++
++	if (nodes_intersects(*oc->nodemask, node_states[N_CPU]))
++		return false;
++
++	return true;
++}
++
+ /**
+  * out_of_memory - kill the "best" process when we run out of memory
+  * @oc: pointer to struct oom_control
+@@ -1179,7 +1204,7 @@ bool out_of_memory(struct oom_control *oc)
+ 		oc->nodemask = NULL;
+ 	check_panic_on_oom(oc);
+ 
+-	if (!is_memcg_oom(oc) && sysctl_oom_kill_allocating_task &&
++	if (!is_memcg_oom(oc) && should_oom_kill_allocating_task(oc) &&
+ 	    current->mm && !oom_unkillable_task(current) &&
+ 	    oom_cpuset_eligible(current, oc) &&
+ 	    current->signal->oom_score_adj != OOM_SCORE_ADJ_MIN) {
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index c25c26c4d2ae..c02f972d79e1 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -54,6 +54,7 @@
+ #include <linux/khugepaged.h>
+ #include <linux/delayacct.h>
+ #include <linux/cacheinfo.h>
++#include <linux/numa_remote.h>
+ #include <asm/div64.h>
+ #include "internal.h"
+ #include "shuffle.h"
+@@ -261,6 +262,9 @@ static int sysctl_lowmem_reserve_ratio[MAX_NR_ZONES] = {
+ 	[ZONE_NORMAL] = 32,
+ #ifdef CONFIG_HIGHMEM
+ 	[ZONE_HIGHMEM] = 0,
++#endif
++#ifdef CONFIG_ZONE_EXTMEM
++	[ZONE_EXTMEM] = 0,
+ #endif
+ 	[ZONE_MOVABLE] = 0,
+ };
+@@ -275,6 +279,9 @@ char * const zone_names[MAX_NR_ZONES] = {
+ 	 "Normal",
+ #ifdef CONFIG_HIGHMEM
+ 	 "HighMem",
++#endif
++#ifdef CONFIG_ZONE_EXTMEM
++	 "ExtMem",
+ #endif
+ 	 "Movable",
+ #ifdef CONFIG_ZONE_DEVICE
+@@ -3562,6 +3569,12 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
+ 			if (alloc_flags & ALLOC_NO_WATERMARKS)
+ 				goto try_this_zone;
+ 
++			if (numa_remote_try_wait_undo_fake_online(zone_to_nid(zone))) {
++				if (zone_watermark_ok(zone, order, mark,
++					ac->highest_zoneidx, alloc_flags))
++					goto try_this_zone;
++			}
++
+ 			if (!node_reclaim_enabled() ||
+ 			    !zone_allows_reclaim(ac->preferred_zoneref->zone, zone))
+ 				continue;
+@@ -5393,6 +5406,10 @@ int find_next_best_node(int node, nodemask_t *used_node_mask)
+ 		if (node_isset(n, *used_node_mask))
+ 			continue;
+ 
++		/* Don't fallback to remote node */
++		if (numa_remote_nofallback(n))
++			continue;
++
+ 		/* Use the distance array to find the distance */
+ 		val = node_distance(node, n);
+ 
+@@ -6194,9 +6211,13 @@ static void __setup_per_zone_wmarks(void)
+ 	struct zone *zone;
+ 	unsigned long flags;
+ 
+-	/* Calculate total number of !ZONE_HIGHMEM and !ZONE_MOVABLE pages */
++	/*
++	 * Calculate total number of !ZONE_HIGHMEM and !ZONE_MOVABLE and
++	 * !ZONE_EXTMEM pages.
++	 */
+ 	for_each_zone(zone) {
+-		if (!is_highmem(zone) && zone_idx(zone) != ZONE_MOVABLE)
++		if (!is_highmem(zone) && zone_idx(zone) != ZONE_MOVABLE
++		    && !zone_is_zone_extmem(zone))
+ 			lowmem_pages += zone_managed_pages(zone);
+ 	}
+ 
+@@ -6206,7 +6227,8 @@ static void __setup_per_zone_wmarks(void)
+ 		spin_lock_irqsave(&zone->lock, flags);
+ 		tmp = (u64)pages_min * zone_managed_pages(zone);
+ 		do_div(tmp, lowmem_pages);
+-		if (is_highmem(zone) || zone_idx(zone) == ZONE_MOVABLE) {
++		if (is_highmem(zone) || zone_idx(zone) == ZONE_MOVABLE ||
++		    zone_is_zone_extmem(zone)) {
+ 			/*
+ 			 * __GFP_HIGH and PF_MEMALLOC allocations usually don't
+ 			 * need highmem and movable zones pages, so cap pages_min
+@@ -6214,7 +6236,7 @@ static void __setup_per_zone_wmarks(void)
+ 			 *
+ 			 * The WMARK_HIGH-WMARK_LOW and (WMARK_LOW-WMARK_MIN)
+ 			 * deltas control async page reclaim, and so should
+-			 * not be capped for highmem and movable zones.
++			 * not be capped for highmem, movable and extmem zones.
+ 			 */
+ 			unsigned long min_pages;
+ 
+diff --git a/mm/vmstat.c b/mm/vmstat.c
+index ddc5032c7f5b..2e92d49cc8bd 100644
+--- a/mm/vmstat.c
++++ b/mm/vmstat.c
+@@ -1159,6 +1159,12 @@ int fragmentation_index(struct zone *zone, unsigned int order)
+ #define TEXT_FOR_HIGHMEM(xx)
+ #endif
+ 
++#ifdef CONFIG_ZONE_EXTMEM
++#define TEXT_FOR_EXTMEM(xx) xx "_extmem",
++#else
++#define TEXT_FOR_EXTMEM(xx)
++#endif
++
+ #ifdef CONFIG_ZONE_DEVICE
+ #define TEXT_FOR_DEVICE(xx) xx "_device",
+ #else
+@@ -1166,7 +1172,7 @@ int fragmentation_index(struct zone *zone, unsigned int order)
+ #endif
+ 
+ #define TEXTS_FOR_ZONES(xx) TEXT_FOR_DMA(xx) TEXT_FOR_DMA32(xx) xx "_normal", \
+-					TEXT_FOR_HIGHMEM(xx) xx "_movable", \
++					TEXT_FOR_HIGHMEM(xx) TEXT_FOR_EXTMEM(xx) xx "_movable", \
+ 					TEXT_FOR_DEVICE(xx)
+ 
+ const char * const vmstat_text[] = {
+-- 
+2.43.0
+

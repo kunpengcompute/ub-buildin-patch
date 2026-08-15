@@ -1,0 +1,142 @@
+From c8609e4d1ce58ed038f6e190df2268350a53b8ee Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:57 +0800
+Subject: [PATCH 801/960] downstream: arm64: support WFET in
+ smp_cond_relaxed_timeout()
+
+Support a WFET based implementation of the waited variant of
+smp_cond_load_relaxed_timeout().
+
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/barrier.h | 12 ++++++++----
+ arch/arm64/include/asm/cmpxchg.h | 26 +++++++++++++++++---------
+ 2 files changed, 25 insertions(+), 13 deletions(-)
+
+diff --git a/arch/arm64/include/asm/barrier.h b/arch/arm64/include/asm/barrier.h
+index ab2515ecd6ca..8f7861ccab7e 100644
+--- a/arch/arm64/include/asm/barrier.h
++++ b/arch/arm64/include/asm/barrier.h
+@@ -12,6 +12,7 @@
+ #include <linux/kasan-checks.h>
+ 
+ #include <asm/alternative-macros.h>
++#include <asm/delay-const.h>
+ 
+ #define __nops(n)	".rept	" #n "\nnop\n.endr\n"
+ #define nops(n)		asm volatile(__nops(n))
+@@ -198,7 +199,7 @@ do {									\
+ 		VAL = READ_ONCE(*__PTR);				\
+ 		if (cond_expr)						\
+ 			break;						\
+-		__cmpwait_relaxed(__PTR, VAL);				\
++		__cmpwait_relaxed(__PTR, VAL, ~0UL);			\
+ 	}								\
+ 	(typeof(*ptr))VAL;						\
+ })
+@@ -211,7 +212,7 @@ do {									\
+ 		VAL = smp_load_acquire(__PTR);				\
+ 		if (cond_expr)						\
+ 			break;						\
+-		__cmpwait_relaxed(__PTR, VAL);				\
++		__cmpwait_relaxed(__PTR, VAL, ~0UL);			\
+ 	}								\
+ 	(typeof(*ptr))VAL;						\
+ })
+@@ -241,11 +242,13 @@ do {									\
+ ({									\
+ 	typeof(ptr) __PTR = (ptr);					\
+ 	__unqual_scalar_typeof(*ptr) VAL;				\
++	const unsigned long __time_limit_cycles =			\
++					NSECS_TO_CYCLES(time_limit_ns);	\
+ 	for (;;) {							\
+ 		VAL = READ_ONCE(*__PTR);				\
+ 		if (cond_expr)						\
+ 			break;						\
+-		__cmpwait_relaxed(__PTR, VAL);				\
++		__cmpwait_relaxed(__PTR, VAL, __time_limit_cycles);	\
+ 		if ((time_expr_ns) >= time_limit_ns)			\
+ 			break;						\
+ 	}								\
+@@ -257,7 +260,8 @@ do {									\
+ ({									\
+ 	__unqual_scalar_typeof(*ptr) _val;				\
+ 									\
+-	int __wfe = arch_timer_evtstrm_available();			\
++	int __wfe = arch_timer_evtstrm_available() ||			\
++		    alternative_has_cap_unlikely(ARM64_HAS_WFXT);	\
+ 	if (likely(__wfe))						\
+ 		_val = __smp_cond_load_timeout_wait(ptr, cond_expr,	\
+ 						   time_expr_ns,	\
+diff --git a/arch/arm64/include/asm/cmpxchg.h b/arch/arm64/include/asm/cmpxchg.h
+index d7a540736741..bb842dab5d0e 100644
+--- a/arch/arm64/include/asm/cmpxchg.h
++++ b/arch/arm64/include/asm/cmpxchg.h
+@@ -210,7 +210,8 @@ __CMPXCHG_GEN(_mb)
+ 
+ #define __CMPWAIT_CASE(w, sfx, sz)					\
+ static inline void __cmpwait_case_##sz(volatile void *ptr,		\
+-				       unsigned long val)		\
++				       unsigned long val,		\
++				       unsigned long time_limit_cycles)	\
+ {									\
+ 	unsigned long tmp;						\
+ 									\
+@@ -220,10 +221,12 @@ static inline void __cmpwait_case_##sz(volatile void *ptr,		\
+ 	"	ldxr" #sfx "\t%" #w "[tmp], %[v]\n"			\
+ 	"	eor	%" #w "[tmp], %" #w "[tmp], %" #w "[val]\n"	\
+ 	"	cbnz	%" #w "[tmp], 1f\n"				\
+-	"	wfe\n"							\
++	ALTERNATIVE("wfe\n",						\
++		    "msr s0_3_c1_c0_0, %[time_limit_cycles]\n",		\
++		    ARM64_HAS_WFXT)					\
+ 	"1:"								\
+ 	: [tmp] "=&r" (tmp), [v] "+Q" (*(u##sz *)ptr)			\
+-	: [val] "r" (val));						\
++	: [val] "r" (val), [time_limit_cycles] "r" (time_limit_cycles));\
+ }
+ 
+ __CMPWAIT_CASE(w, b, 8);
+@@ -236,17 +239,22 @@ __CMPWAIT_CASE( ,  , 64);
+ #define __CMPWAIT_GEN(sfx)						\
+ static __always_inline void __cmpwait##sfx(volatile void *ptr,		\
+ 				  unsigned long val,			\
++				  unsigned long time_limit_cycles,	\
+ 				  int size)				\
+ {									\
+ 	switch (size) {							\
+ 	case 1:								\
+-		return __cmpwait_case##sfx##_8(ptr, (u8)val);		\
++		return __cmpwait_case##sfx##_8(ptr, (u8)val,		\
++					       time_limit_cycles);	\
+ 	case 2:								\
+-		return __cmpwait_case##sfx##_16(ptr, (u16)val);		\
++		return __cmpwait_case##sfx##_16(ptr, (u16)val,		\
++						time_limit_cycles);	\
+ 	case 4:								\
+-		return __cmpwait_case##sfx##_32(ptr, val);		\
++		return __cmpwait_case##sfx##_32(ptr, val,		\
++						time_limit_cycles);	\
+ 	case 8:								\
+-		return __cmpwait_case##sfx##_64(ptr, val);		\
++		return __cmpwait_case##sfx##_64(ptr, val,		\
++						time_limit_cycles);	\
+ 	default:							\
+ 		BUILD_BUG();						\
+ 	}								\
+@@ -258,7 +266,7 @@ __CMPWAIT_GEN()
+ 
+ #undef __CMPWAIT_GEN
+ 
+-#define __cmpwait_relaxed(ptr, val) \
+-	__cmpwait((ptr), (unsigned long)(val), sizeof(*(ptr)))
++#define __cmpwait_relaxed(ptr, val, time_limit_cycles) \
++	__cmpwait((ptr), (unsigned long)(val), time_limit_cycles, sizeof(*(ptr)))
+ 
+ #endif	/* __ASM_CMPXCHG_H */
+-- 
+2.43.0
+

@@ -1,0 +1,40 @@
+From 108b457679d9cb65e5599704e7904c102962a22e Mon Sep 17 00:00:00 2001
+From: Michael Shavit <mshavit@google.com>
+Date: Fri, 15 Sep 2023 21:17:39 +0800
+Subject: [PATCH 136/960] iommu/arm-smmu-v3: Update comment about STE liveness
+
+commit 6032f58498b70f80103f467de4213f2ffbc2b062 upstream.
+
+Update the comment to reflect the fact that the STE is not always
+installed. arm_smmu_domain_finalise_s1 intentionnaly calls
+arm_smmu_write_ctx_desc while the STE is not installed.
+
+Reviewed-by: Nicolin Chen <nicolinc@nvidia.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Michael Shavit <mshavit@google.com>
+Tested-by: Nicolin Chen <nicolinc@nvidia.com>
+Link: https://lore.kernel.org/r/20230915211705.v8.8.I7a8beb615e2520ad395d96df94b9ab9708ee0d9c@changeid
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 1cde051ee09d..0a9e80afb968 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -1091,7 +1091,7 @@ int arm_smmu_write_ctx_desc(struct arm_smmu_master *master, int ssid,
+ 		cdptr[3] = cpu_to_le64(cd->mair);
+ 
+ 		/*
+-		 * STE is live, and the SMMU might read dwords of this CD in any
++		 * STE may be live, and the SMMU might read dwords of this CD in any
+ 		 * order. Ensure that it observes valid values before reading
+ 		 * V=1.
+ 		 */
+-- 
+2.43.0
+

@@ -1,0 +1,31 @@
+From 0abfcdd5d4e4f34f5a0cfa4b8c2521071723e70e Mon Sep 17 00:00:00 2001
+From: Slim6882 <15605196882@163.com>
+Date: Tue, 17 Jun 2025 15:14:47 +0800
+Subject: [PATCH 455/960] downstream: Add gpio-hisi softdepend
+
+Add gpio-hisi for module soft depend to ensure gpio driver is
+loaded fist and I2C driver can obtain bus recovery gpio pin
+resources.
+
+Fixes: bdc031294c4d ("i2c: hisi: Add gpio bus recovery support")
+Signed-off-by: Devyn Liu <liudingyuan@huawei.com>
+Signed-off-by: lujunhua <lujunhua7@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/i2c/busses/i2c-hisi.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/i2c/busses/i2c-hisi.c b/drivers/i2c/busses/i2c-hisi.c
+index 975c0b1c44de..d4851865c23e 100644
+--- a/drivers/i2c/busses/i2c-hisi.c
++++ b/drivers/i2c/busses/i2c-hisi.c
+@@ -541,3 +541,4 @@ module_platform_driver(hisi_i2c_driver);
+ MODULE_AUTHOR("Yicong Yang <yangyicong@hisilicon.com>");
+ MODULE_DESCRIPTION("HiSilicon I2C Controller Driver");
+ MODULE_LICENSE("GPL");
++MODULE_SOFTDEP("pre: gpio-hisi");
+-- 
+2.43.0
+

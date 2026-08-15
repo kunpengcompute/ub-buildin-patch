@@ -1,0 +1,37 @@
+From 138ba020ae6d68bf9195670db8ea8920d7c9e36d Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 23 Apr 2025 18:51:39 +0800
+Subject: [PATCH 696/960] downstream: arm64/mpam: fix impossible condition in
+ get_cpumask_from_cache_id()
+
+The smatch tool complains about impossible condition warning shown below:
+
+drivers/platform/mpam/mpam_devices.c:391 get_cpumask_from_cache_id()
+warn: impossible condition '(cache_id == ~0) => (0-u32max == u64max)'
+
+cache_id is an unsigned 32-bit object, so when comparing conditions,
+keep the data types consistent.
+
+Fixes: 848cefee5a21 ("arm_mpam: Add the class and component structures for ris firmware described")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index ec981994ec8e..d5f48e1b4c2d 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -388,7 +388,7 @@ static int get_cpumask_from_cache_id(u32 cache_id, u32 cache_level,
+ 			 * during device_initcall(). Use cache_of_get_id().
+ 			 */
+ 			iter_cache_id = cache_of_get_id(iter);
+-			if (cache_id == ~0UL) {
++			if (cache_id == (~0)) {
+ 				of_node_put(iter);
+ 				continue;
+ 			}
+-- 
+2.43.0
+

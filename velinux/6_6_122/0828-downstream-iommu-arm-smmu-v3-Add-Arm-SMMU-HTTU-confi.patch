@@ -1,0 +1,97 @@
+From 6f7c31d869238008eeea9ea6eaa47c5855536550 Mon Sep 17 00:00:00 2001
+From: Jia Qingtong <jiaqingtong97@gmail.com>
+Date: Mon, 15 Jan 2024 15:16:54 +0800
+Subject: [PATCH 828/960] downstream: iommu/arm-smmu-v3: Add Arm SMMU HTTU
+ config
+
+add Arm SMMU HTTU config and set it default to no.
+enable in openEuler defconfig.
+
+Signed-off-by: Jia Qingtong <jiaqingtong97@gmail.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ config.aarch64                              | 1 +
+ config.aarch64-64k                          | 1 +
+ drivers/iommu/Kconfig                       | 7 +++++++
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 4 ++++
+ 4 files changed, 13 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 64e8204a0168..3de4da7f64e0 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -8720,6 +8720,7 @@ CONFIG_ARM_SMMU_QCOM=y
+ # CONFIG_ARM_SMMU_QCOM_DEBUG is not set
+ CONFIG_ARM_SMMU_V3=y
+ CONFIG_ARM_SMMU_V3_SVA=y
++CONFIG_ARM_SMMU_V3_HTTU=y
+ CONFIG_QCOM_IOMMU=y
+ # CONFIG_VIRTIO_IOMMU is not set
+ 
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 1a79b63cc441..4219c2d98f86 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -8713,6 +8713,7 @@ CONFIG_ARM_SMMU_QCOM=y
+ # CONFIG_ARM_SMMU_QCOM_DEBUG is not set
+ CONFIG_ARM_SMMU_V3=y
+ CONFIG_ARM_SMMU_V3_SVA=y
++CONFIG_ARM_SMMU_V3_HTTU=y
+ CONFIG_QCOM_IOMMU=y
+ # CONFIG_VIRTIO_IOMMU is not set
+ 
+diff --git a/drivers/iommu/Kconfig b/drivers/iommu/Kconfig
+index 8dcf3b8aaf4f..a74b64d1edf1 100644
+--- a/drivers/iommu/Kconfig
++++ b/drivers/iommu/Kconfig
+@@ -410,6 +410,13 @@ config ARM_SMMU_V3_SVA
+ 	  Say Y here if your system supports SVA extensions such as PCIe PASID
+ 	  and PRI.
+ 
++config ARM_SMMU_V3_HTTU
++	bool "Add arm_smmu_v3  Hardware Translation Table Update"
++	depends on ARM_SMMU_V3
++	default n
++	help
++	  Add support for Hardware Translation Table Update arm smmu v3.
++
+ config ARM_SMMU_V3_KUNIT_TEST
+ 	tristate "KUnit tests for arm-smmu-v3 driver"  if !KUNIT_ALL_TESTS
+ 	depends on KUNIT
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index dc880e898b51..219e48866255 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -3419,6 +3419,7 @@ static int arm_smmu_enable_nesting(struct iommu_domain *domain)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_ARM_SMMU_V3_HTTU
+ static int arm_smmu_split_block(struct iommu_domain *domain,
+ 				unsigned long iova, size_t size)
+ {
+@@ -3619,6 +3620,7 @@ static int arm_smmu_clear_dirty_log(struct iommu_domain *domain,
+ 	return ops->clear_dirty_log(ops, iova, size, bitmap, base_iova,
+ 				    bitmap_pgshift);
+ }
++#endif
+ 
+ static int arm_smmu_of_xlate(struct device *dev, struct of_phandle_args *args)
+ {
+@@ -3744,10 +3746,12 @@ static struct iommu_ops arm_smmu_ops = {
+ #endif
+ 		.iova_to_phys		= arm_smmu_iova_to_phys,
+ 		.enable_nesting		= arm_smmu_enable_nesting,
++#ifdef CONFIG_ARM_SMMU_V3_HTTU
+ 		.support_dirty_log	= arm_smmu_support_dirty_log,
+ 		.switch_dirty_log	= arm_smmu_switch_dirty_log,
+ 		.sync_dirty_log		= arm_smmu_sync_dirty_log,
+ 		.clear_dirty_log	= arm_smmu_clear_dirty_log,
++#endif
+ 		.free			= arm_smmu_domain_free_paging,
+ 	}
+ };
+-- 
+2.43.0
+

@@ -1,0 +1,77 @@
+From d734e79176aefe066125e3975c3a5ef8700e5dc8 Mon Sep 17 00:00:00 2001
+From: Lei Gong <gonglei25@huawei.com>
+Date: Wed, 20 Aug 2025 16:51:33 +0800
+Subject: [PATCH 954/960] downstream: iommu/ummu-core: get iova_domain from
+ iommu_domain
+
+In order to achieve on-demand iova allocation, this patch add a temporal
+function 'iommu_get_iova_domain' to get the iova_domain from
+iommu_domain. This function will be deleted when the on-demond iova
+feature is built in.This is a temporary solution that will evolve along
+the main line.
+
+Signed-off-by: Yuhao Zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Lei Gong <gonglei25@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/iommu/dma-iommu.c | 16 ++++++++++++++++
+ drivers/iommu/dma-iommu.h | 10 ++++++++++
+ 2 files changed, 26 insertions(+)
+
+diff --git a/drivers/iommu/dma-iommu.c b/drivers/iommu/dma-iommu.c
+index 2b6d6286d614..56b36fe05404 100644
+--- a/drivers/iommu/dma-iommu.c
++++ b/drivers/iommu/dma-iommu.c
+@@ -457,6 +457,22 @@ void iommu_put_dma_cookie(struct iommu_domain *domain)
+ 	domain->iova_cookie = NULL;
+ }
+ 
++#ifdef CONFIG_UB_UMMU_CORE
++struct iova_domain *iommu_get_iova_domain(struct iommu_domain *domain)
++{
++	struct iommu_dma_cookie *cookie;
++
++	if (!domain)
++		return NULL;
++
++	cookie = domain->iova_cookie;
++	if (!cookie)
++		return NULL;
++
++	return &cookie->iovad;
++}
++#endif
++
+ /**
+  * iommu_dma_get_resv_regions - Reserved region driver helper
+  * @dev: Device from iommu_get_resv_regions()
+diff --git a/drivers/iommu/dma-iommu.h b/drivers/iommu/dma-iommu.h
+index 358ffd54f167..fd263561c920 100644
+--- a/drivers/iommu/dma-iommu.h
++++ b/drivers/iommu/dma-iommu.h
+@@ -16,6 +16,9 @@ int iommu_dma_init_fq(struct iommu_domain *domain);
+ 
+ void iommu_dma_get_resv_regions(struct device *dev, struct list_head *list);
+ 
++#ifdef CONFIG_UB_UMMU_CORE
++struct iova_domain *iommu_get_iova_domain(struct iommu_domain *domain);
++#endif
+ extern bool iommu_dma_forcedac;
+ static inline void iommu_dma_set_pci_32bit_workaround(struct device *dev)
+ {
+@@ -54,5 +57,12 @@ static inline int iova_reserve_domain_addr(struct iommu_domain *domain, dma_addr
+ 	return -EINVAL;
+ }
+ 
++#ifndef CONFIG_UB_UMMU_CORE
++static inline struct iova_domain *iommu_get_iova_domain(struct iommu_domain *domain)
++{
++	return NULL;
++}
++#endif
++
+ #endif	/* CONFIG_IOMMU_DMA */
+ #endif	/* __DMA_IOMMU_H */
+-- 
+2.43.0
+

@@ -1,0 +1,64 @@
+From ff8d9bf05c17cc3a07d5839e5afed90c4e8df618 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:21:59 +0800
+Subject: [PATCH 574/960] downstream: KVM: arm64: vgic-v3: Make NMI priority
+ RES0
+
+The priority of an NMI is always RES0. Let's enforce it when
+the guest accesses the priority MMIO range.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-mmio.c | 19 ++++++++++++++-----
+ 1 file changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-mmio.c b/arch/arm64/kvm/vgic/vgic-mmio.c
+index 7aca296f9b3f..b7ba5b73cc0c 100644
+--- a/arch/arm64/kvm/vgic/vgic-mmio.c
++++ b/arch/arm64/kvm/vgic/vgic-mmio.c
+@@ -699,13 +699,17 @@ unsigned long vgic_mmio_read_priority(struct kvm_vcpu *vcpu,
+ 				      gpa_t addr, unsigned int len)
+ {
+ 	u32 intid = VGIC_ADDR_TO_INTID(addr, 8);
++	unsigned long flags;
+ 	int i;
+ 	u64 val = 0;
+ 
+ 	for (i = 0; i < len; i++) {
+ 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
+ 
+-		val |= (u64)irq->priority << (i * 8);
++		raw_spin_lock_irqsave(&irq->irq_lock, flags);
++		if (!irq->nmi)
++			val |= (u64)irq->priority << (i * 8);
++		raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
+ 
+ 		vgic_put_irq(vcpu->kvm, irq);
+ 	}
+@@ -732,10 +736,15 @@ void vgic_mmio_write_priority(struct kvm_vcpu *vcpu,
+ 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
+ 
+ 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+-		/* Narrow the priority range to what we actually support */
+-		irq->priority = (val >> (i * 8)) & GENMASK(7, 8 - VGIC_PRI_BITS);
+-		if (vgic_direct_sgi_or_ppi(irq))
+-			vgic_update_vsgi(irq);
++		if (!irq->nmi) {
++			/*
++			 * Narrow the priority range to what we
++			 * actually support
++			 */
++			irq->priority = (val >> (i * 8)) & GENMASK(7, 8 - VGIC_PRI_BITS);
++			if (vgic_direct_sgi_or_ppi(irq))
++				vgic_update_vsgi(irq);
++		}
+ 		raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
+ 
+ 		vgic_put_irq(vcpu->kvm, irq);
+-- 
+2.43.0
+

@@ -1,0 +1,139 @@
+From 51afcb6fdffe80d8bb6f7424599fa3507658f21f Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:07 +0800
+Subject: [PATCH 532/960] downstream: KVM: arm64: vgic: Add helper for vtimer
+ vppi info register
+
+Introudce vtimer_info in vgic_cpu, holds the vtimer vppi info
+for irqbypass extension.
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-init.c |  5 +++++
+ arch/arm64/kvm/vgic/vgic.c      | 28 ++++++++++++++++++++++++++++
+ include/kvm/arm_vgic.h          | 27 +++++++++++++++++++++++++++
+ 3 files changed, 60 insertions(+)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-init.c b/arch/arm64/kvm/vgic/vgic-init.c
+index 185552aa3d73..f0633b9eb8fa 100644
+--- a/arch/arm64/kvm/vgic/vgic-init.c
++++ b/arch/arm64/kvm/vgic/vgic-init.c
+@@ -229,6 +229,11 @@ int kvm_vgic_vcpu_init(struct kvm_vcpu *vcpu)
+ 			/* PPIs */
+ 			irq->config = VGIC_CONFIG_LEVEL;
+ 		}
++
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++		/* Needed? */
++		irq->vtimer_info = NULL;
++#endif
+ 	}
+ 
+ 	if (!irqchip_in_kernel(vcpu->kvm))
+diff --git a/arch/arm64/kvm/vgic/vgic.c b/arch/arm64/kvm/vgic/vgic.c
+index 8be4c1ebdec2..d6f2027937eb 100644
+--- a/arch/arm64/kvm/vgic/vgic.c
++++ b/arch/arm64/kvm/vgic/vgic.c
+@@ -590,6 +590,34 @@ int kvm_vgic_get_map(struct kvm_vcpu *vcpu, unsigned int vintid)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++int kvm_vgic_config_vtimer_irqbypass(struct kvm_vcpu *vcpu, u32 vintid,
++				bool (*get_as)(struct kvm_vcpu *, int),
++				void (*set_as)(struct kvm_vcpu *, int, bool))
++{
++	struct vgic_cpu *vgic_cpu = &vcpu->arch.vgic_cpu;
++	struct vtimer_info *vtimer = &vgic_cpu->vtimer;
++	struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, vintid);
++	unsigned long flags;
++
++	if (WARN_ON_ONCE(!irq || !kvm_vgic_vtimer_irqbypass_support()))
++		return -EINVAL;
++
++	vgic_cpu->vtimer_irqbypass = true;
++
++	vtimer->intid = vintid;
++	vtimer->get_active_stat = get_as;
++	vtimer->set_active_stat = set_as;
++
++	raw_spin_lock_irqsave(&irq->irq_lock, flags);
++	irq->vtimer_info = vtimer;
++	raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
++	vgic_put_irq(vcpu->kvm, irq);
++
++	return 0;
++}
++#endif
++
+ /**
+  * kvm_vgic_set_owner - Set the owner of an interrupt for a VM
+  *
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index bfccd961f731..229f3ef129c4 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -52,6 +52,18 @@ struct shadow_dev {
+ };
+ #endif
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++/* Information about HiSilicon implementation of vtimer (GICv4.1-based) */
++struct vtimer_info {
++	u32 intid;
++
++	bool (*get_active_stat)(struct kvm_vcpu *vcpu, int vintid);
++	void (*set_active_stat)(struct kvm_vcpu *vcpu, int vintid, bool active);
++};
++
++u16 kvm_vgic_get_vcpu_vpeid(struct kvm_vcpu *vcpu);
++#endif
++
+ enum vgic_type {
+ 	VGIC_V2,		/* Good ol' GICv2 */
+ 	VGIC_V3,		/* New fancy GICv3 */
+@@ -180,6 +192,10 @@ struct vgic_irq {
+ 
+ 	void *owner;			/* Opaque pointer to reserve an interrupt
+ 					   for in-kernel devices. */
++
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	struct vtimer_info *vtimer_info;        /* vtimer interrupt only */
++#endif
+ };
+ 
+ static inline bool vgic_irq_needs_resampling(struct vgic_irq *irq)
+@@ -360,6 +376,12 @@ struct vgic_cpu {
+ 
+ 	struct vgic_irq private_irqs[VGIC_NR_PRIVATE_IRQS];
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	/* Indicate whether the vtimer irqbypass mode is used */
++	bool vtimer_irqbypass;
++	struct vtimer_info vtimer;
++#endif
++
+ 	raw_spinlock_t ap_list_lock;	/* Protects the ap_list */
+ 
+ 	/*
+@@ -471,6 +493,11 @@ int kvm_vgic_v4_unset_forwarding(struct kvm *kvm, int irq,
+ int vgic_v4_load(struct kvm_vcpu *vcpu);
+ void vgic_v4_commit(struct kvm_vcpu *vcpu);
+ int vgic_v4_put(struct kvm_vcpu *vcpu);
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++int kvm_vgic_config_vtimer_irqbypass(struct kvm_vcpu *vcpu, u32 vintid,
++		bool (*get_as)(struct kvm_vcpu *, int),
++		void (*set_as)(struct kvm_vcpu *, int, bool));
++#endif
+ 
+ /* CPU HP callbacks */
+ void kvm_vgic_cpu_up(void);
+-- 
+2.43.0
+

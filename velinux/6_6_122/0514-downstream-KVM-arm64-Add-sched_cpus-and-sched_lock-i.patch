@@ -1,0 +1,165 @@
+From e340b1bfe568daa464b7f50e1df5ad88fd928508 Mon Sep 17 00:00:00 2001
+From: lishusen <lishusen2@huawei.com>
+Date: Tue, 6 Feb 2024 21:34:59 +0800
+Subject: [PATCH 514/960] downstream: KVM: arm64: Add sched_cpus and sched_lock
+ in kvm_arch
+
+Introduce sched_cpus and sched_lock in struct kvm_arch. sched_cpus will
+store the union of all vcpus' cpus_ptr in a VM and will be used for the
+TLBI broadcast range for this VM. sched_lock ensures a exclusive
+manipulation of sched_cpus.
+
+In vcpu_load, we should decide whether to perform the subsequent update
+operation by checking whether sched_cpus has changed.
+
+Signed-off-by: Quan Zhou <zhouquan65@huawei.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h    |  5 +++
+ arch/arm64/kvm/arm.c                 |  6 ++++
+ arch/arm64/kvm/hisilicon/hisi_virt.c | 52 ++++++++++++++++++++++++++++
+ arch/arm64/kvm/hisilicon/hisi_virt.h |  7 ++++
+ 4 files changed, 70 insertions(+)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index a1bcb0f3c78f..5a655e452883 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -279,6 +279,11 @@ struct kvm_arch {
+ 	 * the associated pKVM instance in the hypervisor.
+ 	 */
+ 	struct kvm_protected_vm pkvm;
++
++#ifdef CONFIG_KVM_HISI_VIRT
++	spinlock_t sched_lock;
++	cpumask_var_t sched_cpus;	/* Union of all vcpu's cpus_ptr */
++#endif
+ };
+ 
+ struct kvm_vcpu_fault_info {
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 045d4a893716..819fab52ae5c 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -187,6 +187,10 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
+ {
+ 	int ret;
+ 
++	ret = kvm_sched_affinity_vm_init(kvm);
++	if (ret)
++		return ret;
++
+ 	mutex_init(&kvm->arch.config_lock);
+ 
+ #ifdef CONFIG_LOCKDEP
+@@ -247,6 +251,8 @@ vm_fault_t kvm_arch_vcpu_fault(struct kvm_vcpu *vcpu, struct vm_fault *vmf)
+  */
+ void kvm_arch_destroy_vm(struct kvm *kvm)
+ {
++	kvm_sched_affinity_vm_destroy(kvm);
++
+ 	bitmap_free(kvm->arch.pmu_filter);
+ 	free_cpumask_var(kvm->arch.supported_cpus);
+ 
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index ac12fc54a6b4..fe0515c20989 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -197,10 +197,42 @@ void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu)
+ 
+ void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu)
+ {
++	struct kvm *kvm = vcpu->kvm;
++	struct kvm_vcpu *tmp;
++	cpumask_t mask;
++	unsigned long i;
++
++	/* Don't bother on old hardware */
+ 	if (!kvm_dvmbm_support)
+ 		return;
+ 
+ 	cpumask_copy(vcpu->arch.sched_cpus, current->cpus_ptr);
++
++	if (likely(cpumask_equal(vcpu->arch.sched_cpus,
++				 vcpu->arch.pre_sched_cpus)))
++		return;
++
++	/* Re-calculate sched_cpus for this VM */
++	spin_lock(&kvm->arch.sched_lock);
++
++	cpumask_clear(&mask);
++	kvm_for_each_vcpu(i, tmp, kvm) {
++		/*
++		 * We may get the stale sched_cpus if another thread
++		 * is concurrently changing its affinity. It'll
++		 * eventually go through vcpu_load() and we rely on
++		 * the last sched_lock holder to make things correct.
++		 */
++		cpumask_or(&mask, &mask, tmp->arch.sched_cpus);
++	}
++
++	if (cpumask_equal(kvm->arch.sched_cpus, &mask))
++		goto out_unlock;
++
++	cpumask_copy(kvm->arch.sched_cpus, &mask);
++
++out_unlock:
++	spin_unlock(&kvm->arch.sched_lock);
+ }
+ 
+ void kvm_tlbi_dvmbm_vcpu_put(struct kvm_vcpu *vcpu)
+@@ -210,3 +242,23 @@ void kvm_tlbi_dvmbm_vcpu_put(struct kvm_vcpu *vcpu)
+ 
+ 	cpumask_copy(vcpu->arch.pre_sched_cpus, vcpu->arch.sched_cpus);
+ }
++
++int kvm_sched_affinity_vm_init(struct kvm *kvm)
++{
++	if (!kvm_dvmbm_support)
++		return 0;
++
++	spin_lock_init(&kvm->arch.sched_lock);
++	if (!zalloc_cpumask_var(&kvm->arch.sched_cpus, GFP_ATOMIC))
++		return -ENOMEM;
++
++	return 0;
++}
++
++void kvm_sched_affinity_vm_destroy(struct kvm *kvm)
++{
++	if (!kvm_dvmbm_support)
++		return;
++
++	free_cpumask_var(kvm->arch.sched_cpus);
++}
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index 8d8ef6aa165a..3de270ad2da5 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -26,6 +26,8 @@ bool hisi_dvmbm_supported(void);
+ 
+ int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu);
+ void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu);
++int kvm_sched_affinity_vm_init(struct kvm *kvm);
++void kvm_sched_affinity_vm_destroy(struct kvm *kvm);
+ void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu);
+ void kvm_tlbi_dvmbm_vcpu_put(struct kvm_vcpu *vcpu);
+ #else
+@@ -44,6 +46,11 @@ static inline int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu)
+ 	return 0;
+ }
+ static inline void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu) {}
++static inline int kvm_sched_affinity_vm_init(struct kvm *kvm)
++{
++	return 0;
++}
++static inline void kvm_sched_affinity_vm_destroy(struct kvm *kvm) {}
+ static inline void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu) {}
+ static inline void kvm_tlbi_dvmbm_vcpu_put(struct kvm_vcpu *vcpu) {}
+ #endif /* CONFIG_KVM_HISI_VIRT */
+-- 
+2.43.0
+

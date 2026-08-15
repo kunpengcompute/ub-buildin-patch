@@ -1,0 +1,63 @@
+From 3e6c2a4ed2992829a5724aa1650292fa81f0c96b Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@kernel.org>
+Date: Fri, 11 Nov 2022 18:45:29 +0000
+Subject: [PATCH 496/960] downstream: KVM: arm64: Hide FEAT_NMI from guests
+
+FEAT_NMI is not yet useful to guests pending implementation of vGIC
+support. Mask out the feature from the ID register and prevent guests
+creating state in ALLINT.ALLINT by activating the trap on write provided
+in HCRX_EL2.TALLINT when they are running. There is no trap available
+for reads from ALLINT.
+
+We do not need to check for FEAT_HCRX since it is mandatory since v8.7
+and FEAT_NMI is a v8.8 feature.
+
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hyp/include/hyp/switch.h | 6 ++++++
+ arch/arm64/kvm/sys_regs.c               | 1 +
+ 2 files changed, 7 insertions(+)
+
+diff --git a/arch/arm64/kvm/hyp/include/hyp/switch.h b/arch/arm64/kvm/hyp/include/hyp/switch.h
+index a345518af89d..6269cab564e9 100644
+--- a/arch/arm64/kvm/hyp/include/hyp/switch.h
++++ b/arch/arm64/kvm/hyp/include/hyp/switch.h
+@@ -194,6 +194,9 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
+ 		vcpu_set_flag(vcpu, PMUSERENR_ON_CPU);
+ 	}
+ 
++	if (cpus_have_final_cap(ARM64_HAS_NMI))
++		sysreg_clear_set_s(SYS_HCRX_EL2, 0, HCRX_EL2_TALLINT);
++
+ 	*host_data_ptr(host_debug_state.mdcr_el2) = read_sysreg(mdcr_el2);
+ 	write_sysreg(vcpu->arch.mdcr_el2, mdcr_el2);
+ 
+@@ -224,6 +227,9 @@ static inline void __deactivate_traps_common(struct kvm_vcpu *vcpu)
+ {
+ 	write_sysreg(*host_data_ptr(host_debug_state.mdcr_el2), mdcr_el2);
+ 
++	if (cpus_have_final_cap(ARM64_HAS_NMI))
++		sysreg_clear_set_s(SYS_HCRX_EL2, HCRX_EL2_TALLINT, 0);
++
+ 	write_sysreg(0, hstr_el2);
+ 	if (kvm_arm_support_pmu_v3()) {
+ 		struct kvm_cpu_context *hctxt;
+diff --git a/arch/arm64/kvm/sys_regs.c b/arch/arm64/kvm/sys_regs.c
+index f033408f091e..d08b4fdab666 100644
+--- a/arch/arm64/kvm/sys_regs.c
++++ b/arch/arm64/kvm/sys_regs.c
+@@ -1339,6 +1339,7 @@ static u64 __kvm_read_sanitised_id_reg(const struct kvm_vcpu *vcpu,
+ 
+ 		val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_SME);
+ 		val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_MPAM_frac);
++		val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_NMI);
+ 		break;
+ 	case SYS_ID_AA64ISAR1_EL1:
+ 		if (!vcpu_has_ptrauth(vcpu))
+-- 
+2.43.0
+

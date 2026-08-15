@@ -1,0 +1,206 @@
+From 33e4062966d4dbd440d4ebf94b2612de4f26cc2d Mon Sep 17 00:00:00 2001
+From: lishusen <lishusen2@huawei.com>
+Date: Tue, 6 Feb 2024 21:34:58 +0800
+Subject: [PATCH 513/960] downstream: KVM: arm64: Add sched_cpus and
+ pre_sched_cpus in kvm_vcpu_arch
+
+We already have cpus_ptr in current thread struct now, through which we can
+know the pcpu range the thread is allowed to run on. So in
+kvm_arch_vcpu_{load,put}, we can also know the pcpu range the vcpu thread
+is allowed to be scheduled on, and that is the range we want to configure
+for TLBI broadcast.
+
+Introduce two variables sched_cpus and pre_sched_cpus in struct
+kvm_vcpu_arch. @sched_cpus always comes from current->cpus_ptr and
+@pre_sched_cpus always comes from @sched_cpus.
+
+Signed-off-by: Quan Zhou <zhouquan65@huawei.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h    |  6 +++++
+ arch/arm64/kvm/arm.c                 | 20 ++++++++++-----
+ arch/arm64/kvm/hisilicon/hisi_virt.c | 37 ++++++++++++++++++++++++++++
+ arch/arm64/kvm/hisilicon/hisi_virt.h | 25 +++++++++++++++++++
+ 4 files changed, 82 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index cb902bd6cef2..a1bcb0f3c78f 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -604,6 +604,12 @@ struct kvm_vcpu_arch {
+ 
+ 	/* Per-vcpu CCSIDR override or NULL */
+ 	u32 *ccsidr;
++
++#ifdef CONFIG_KVM_HISI_VIRT
++	/* pCPUs this vCPU can be scheduled on. Pure copy of current->cpus_ptr */
++	cpumask_var_t sched_cpus;
++	cpumask_var_t pre_sched_cpus;
++#endif
+ };
+ 
+ /*
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index f0dd4087972a..045d4a893716 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -47,9 +47,7 @@
+ 
+ static enum kvm_mode kvm_mode = KVM_MODE_DEFAULT;
+ 
+-#ifdef CONFIG_KVM_HISI_VIRT
+ #include "hisilicon/hisi_virt.h"
+-#endif
+ 
+ DECLARE_KVM_HYP_PER_CPU(unsigned long, kvm_hyp_vector);
+ 
+@@ -439,10 +437,16 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
+ 		return err;
+ 
+ 	err = kvm_share_hyp(vcpu, vcpu + 1);
+-	if (err)
++	if (err) {
+ 		kvm_vgic_vcpu_destroy(vcpu);
++		return err;
++	}
+ 
+-	return err;
++	err = kvm_sched_affinity_vcpu_init(vcpu);
++	if (err)
++		return err;
++
++	return kvm_share_hyp(vcpu, vcpu + 1);
+ }
+ 
+ void kvm_arch_vcpu_postcreate(struct kvm_vcpu *vcpu)
+@@ -456,6 +460,8 @@ void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
+ 	kvm_pmu_vcpu_destroy(vcpu);
+ 	kvm_vgic_vcpu_destroy(vcpu);
+ 	kvm_arm_vcpu_destroy(vcpu);
++
++	kvm_sched_affinity_vcpu_destroy(vcpu);
+ }
+ 
+ void kvm_arch_vcpu_blocking(struct kvm_vcpu *vcpu)
+@@ -512,6 +518,8 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
+ 
+ 	if (!cpumask_test_cpu(cpu, vcpu->kvm->arch.supported_cpus))
+ 		vcpu_set_on_unsupported_cpu(vcpu);
++
++	kvm_tlbi_dvmbm_vcpu_load(vcpu);
+ }
+ 
+ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
+@@ -527,6 +535,8 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
+ 
+ 	vcpu_clear_on_unsupported_cpu(vcpu);
+ 	vcpu->cpu = -1;
++
++	kvm_tlbi_dvmbm_vcpu_put(vcpu);
+ }
+ 
+ static void __kvm_arm_vcpu_power_off(struct kvm_vcpu *vcpu)
+@@ -2467,11 +2477,9 @@ static __init int kvm_arm_init(void)
+ 		return err;
+ 	}
+ 
+-#ifdef CONFIG_KVM_HISI_VIRT
+ 	probe_hisi_cpu_type();
+ 	kvm_ncsnp_support = hisi_ncsnp_supported();
+ 	kvm_dvmbm_support = hisi_dvmbm_supported();
+-#endif
+ 	kvm_info("KVM ncsnp %s\n", kvm_ncsnp_support ? "enabled" : "disabled");
+ 	kvm_info("KVM dvmbm %s\n", kvm_dvmbm_support ? "enabled" : "disabled");
+ 
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index b81488cd663b..ac12fc54a6b4 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -173,3 +173,40 @@ bool hisi_dvmbm_supported(void)
+ 	on_each_cpu(hardware_enable_dvmbm, NULL, 1);
+ 	return true;
+ }
++
++int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu)
++{
++	if (!kvm_dvmbm_support)
++		return 0;
++
++	if (!zalloc_cpumask_var(&vcpu->arch.sched_cpus, GFP_ATOMIC) ||
++	    !zalloc_cpumask_var(&vcpu->arch.pre_sched_cpus, GFP_ATOMIC))
++		return -ENOMEM;
++
++	return 0;
++}
++
++void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu)
++{
++	if (!kvm_dvmbm_support)
++		return;
++
++	free_cpumask_var(vcpu->arch.sched_cpus);
++	free_cpumask_var(vcpu->arch.pre_sched_cpus);
++}
++
++void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu)
++{
++	if (!kvm_dvmbm_support)
++		return;
++
++	cpumask_copy(vcpu->arch.sched_cpus, current->cpus_ptr);
++}
++
++void kvm_tlbi_dvmbm_vcpu_put(struct kvm_vcpu *vcpu)
++{
++	if (!kvm_dvmbm_support)
++		return;
++
++	cpumask_copy(vcpu->arch.pre_sched_cpus, vcpu->arch.sched_cpus);
++}
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index f505d44e386f..8d8ef6aa165a 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -6,6 +6,7 @@
+ #ifndef __HISI_VIRT_H__
+ #define __HISI_VIRT_H__
+ 
++#ifdef CONFIG_KVM_HISI_VIRT
+ enum hisi_cpu_type {
+ 	HI_1612,
+ 	HI_1616,
+@@ -23,4 +24,28 @@ void probe_hisi_cpu_type(void);
+ bool hisi_ncsnp_supported(void);
+ bool hisi_dvmbm_supported(void);
+ 
++int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu);
++void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu);
++void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu);
++void kvm_tlbi_dvmbm_vcpu_put(struct kvm_vcpu *vcpu);
++#else
++static inline void probe_hisi_cpu_type(void) {}
++static inline bool hisi_ncsnp_supported(void)
++{
++	return false;
++}
++static inline bool hisi_dvmbm_supported(void)
++{
++	return false;
++}
++
++static inline int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu)
++{
++	return 0;
++}
++static inline void kvm_sched_affinity_vcpu_destroy(struct kvm_vcpu *vcpu) {}
++static inline void kvm_tlbi_dvmbm_vcpu_load(struct kvm_vcpu *vcpu) {}
++static inline void kvm_tlbi_dvmbm_vcpu_put(struct kvm_vcpu *vcpu) {}
++#endif /* CONFIG_KVM_HISI_VIRT */
++
+ #endif /* __HISI_VIRT_H__ */
+-- 
+2.43.0
+

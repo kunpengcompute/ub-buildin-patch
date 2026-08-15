@@ -1,0 +1,71 @@
+From a1b567b55bdde06ee982e27ed399cd69d13676b1 Mon Sep 17 00:00:00 2001
+From: Yicong Yang <yangyicong@hisilicon.com>
+Date: Mon, 24 Feb 2025 22:03:12 +0800
+Subject: [PATCH 459/960] downstream: hwtracing: hisi_ptt: Check duplicate
+ filters before allocation
+
+Abnormally it's reported duplicated filters added in the filter list,
+though the filter we created should be unique maintained by the PCIe
+framework. Add a duplicate filters check before allocation to prevent
+this case.
+
+Fixes: 6373c463ac89 ("hwtracing: hisi_ptt: Export available filters through sysfs")
+Signed-off-by: Yicong Yang <yangyicong@hisilicon.com>
+Signed-off-by: lujunhua <lujunhua7@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/hwtracing/ptt/hisi_ptt.c | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/drivers/hwtracing/ptt/hisi_ptt.c b/drivers/hwtracing/ptt/hisi_ptt.c
+index 0f2168e11697..400468e96117 100644
+--- a/drivers/hwtracing/ptt/hisi_ptt.c
++++ b/drivers/hwtracing/ptt/hisi_ptt.c
+@@ -381,6 +381,32 @@ static ssize_t hisi_ptt_filter_show(struct device *dev, struct device_attribute
+ 	return sysfs_emit(buf, "0x%05lx\n", filter_val);
+ }
+ 
++static int hisi_ptt_check_duplicated_filters(struct hisi_ptt *hisi_ptt, u16 devid, bool is_port)
++{
++	struct hisi_ptt_filter_desc *filter;
++	struct list_head *target_list;
++	u8 devfn = devid & 0xff;
++
++	if (is_port)
++		target_list = &hisi_ptt->port_filters;
++	else
++		target_list = &hisi_ptt->req_filters;
++
++	list_for_each_entry(filter, target_list, list) {
++		if (filter->devid == devid) {
++			pci_warn(hisi_ptt->pdev,
++				 "ignore duplicated filter %04x:%02x:%02x.%d\n",
++				 pci_domain_nr(hisi_ptt->pdev->bus),
++				 PCI_BUS_NUM(devid), PCI_SLOT(devfn),
++				 PCI_FUNC(devfn));
++
++			return -EEXIST;
++		}
++	}
++
++	return 0;
++}
++
+ static struct hisi_ptt_filter_desc *
+ hisi_ptt_alloc_add_filter(struct hisi_ptt *hisi_ptt, u16 devid, bool is_port)
+ {
+@@ -388,6 +414,9 @@ hisi_ptt_alloc_add_filter(struct hisi_ptt *hisi_ptt, u16 devid, bool is_port)
+ 	u8 devfn = devid & 0xff;
+ 	char *filter_name;
+ 
++	if (hisi_ptt_check_duplicated_filters(hisi_ptt, devid, is_port))
++		return NULL;
++
+ 	filter_name = kasprintf(GFP_KERNEL, "%04x:%02x:%02x.%d", pci_domain_nr(hisi_ptt->pdev->bus),
+ 				 PCI_BUS_NUM(devid), PCI_SLOT(devfn), PCI_FUNC(devfn));
+ 	if (!filter_name) {
+-- 
+2.43.0
+

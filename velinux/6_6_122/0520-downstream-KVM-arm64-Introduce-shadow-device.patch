@@ -1,0 +1,554 @@
+From 9342216722e00dec4659e16ada1262cda81459d0 Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:26 +0800
+Subject: [PATCH 520/960] downstream: KVM: arm64: Introduce shadow device
+
+The shadow device implement that establish relationships between
+virtual devices and back-end virtual platform devices.
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/Makefile          |   1 +
+ arch/arm64/kvm/arm.c             |  46 +++++
+ arch/arm64/kvm/vgic/shadow_dev.c | 327 +++++++++++++++++++++++++++++++
+ arch/arm64/kvm/vgic/vgic-init.c  |   4 +
+ include/kvm/arm_vgic.h           |  30 +++
+ include/uapi/linux/kvm.h         |  10 +
+ 6 files changed, 418 insertions(+)
+ create mode 100644 arch/arm64/kvm/vgic/shadow_dev.c
+
+diff --git a/arch/arm64/kvm/Makefile b/arch/arm64/kvm/Makefile
+index 826a05d072d7..5914edaeaf55 100644
+--- a/arch/arm64/kvm/Makefile
++++ b/arch/arm64/kvm/Makefile
+@@ -22,6 +22,7 @@ kvm-y += arm.o mmu.o mmio.o psci.o hypercalls.o pvtime.o \
+ 	 vgic/vgic-mmio-v3.o vgic/vgic-kvm-device.o \
+ 	 vgic/vgic-its.o vgic/vgic-debug.o
+ 
++kvm-$(CONFIG_VIRT_PLAT_DEV)  += vgic/shadow_dev.o
+ kvm-$(CONFIG_HW_PERF_EVENTS)  += pmu-emul.o pmu.o
+ obj-$(CONFIG_KVM_HISI_VIRT) += hisilicon/
+ 
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 111803709c38..86d2285fe47a 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -373,6 +373,11 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
+ 	case KVM_CAP_ARM_SUPPORTED_BLOCK_SIZES:
+ 		r = kvm_supported_block_sizes();
+ 		break;
++#ifdef CONFIG_VIRT_PLAT_DEV
++	case KVM_CAP_ARM_VIRT_MSI_BYPASS:
++		r = sdev_enable;
++		break;
++#endif
+ 	default:
+ 		r = 0;
+ 	}
+@@ -1694,6 +1699,36 @@ int kvm_arch_vm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
+ 
+ 		return kvm_vm_set_attr(kvm, &attr);
+ 	}
++#ifdef CONFIG_VIRT_PLAT_DEV
++	case KVM_CREATE_SHADOW_DEV: {
++		struct kvm_master_dev_info *mdi;
++		u32 nvectors;
++		int ret;
++
++		if (get_user(nvectors, (const u32 __user *)argp))
++			return -EFAULT;
++		if (!nvectors)
++			return -EINVAL;
++
++		mdi = memdup_user(argp, sizeof(*mdi) + nvectors * sizeof(mdi->msi[0]));
++		if (IS_ERR(mdi))
++			return PTR_ERR(mdi);
++
++		ret = kvm_shadow_dev_create(kvm, mdi);
++		kfree(mdi);
++
++		return ret;
++	}
++	case KVM_DEL_SHADOW_DEV: {
++		u32 devid;
++
++		if (get_user(devid, (const u32 __user *)argp))
++			return -EFAULT;
++
++		kvm_shadow_dev_delete(kvm, devid);
++		return 0;
++	}
++#endif
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -2463,6 +2498,13 @@ void kvm_arch_irq_bypass_start(struct irq_bypass_consumer *cons)
+ 	kvm_arm_resume_guest(irqfd->kvm);
+ }
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++void kvm_arch_pre_destroy_vm(struct kvm *kvm)
++{
++	kvm_shadow_dev_delete_all(kvm);
++}
++#endif
++
+ /* Initialize Hyp-mode and memory mappings on all CPUs */
+ static __init int kvm_arm_init(void)
+ {
+@@ -2546,6 +2588,10 @@ static __init int kvm_arm_init(void)
+ 
+ 	kvm_arm_initialised = true;
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++	kvm_shadow_dev_init();
++#endif
++
+ 	return 0;
+ 
+ out_subs:
+diff --git a/arch/arm64/kvm/vgic/shadow_dev.c b/arch/arm64/kvm/vgic/shadow_dev.c
+new file mode 100644
+index 000000000000..3b1210954a94
+--- /dev/null
++++ b/arch/arm64/kvm/vgic/shadow_dev.c
+@@ -0,0 +1,327 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Copyright (C) 2019-2020 HUAWEI TECHNOLOGIES CO., LTD., All Rights Reserved.
++ * Author: Wanghaibin <wanghaibin.wang@huawei.com>
++ */
++
++#include <linux/irq.h>
++#include <linux/kvm.h>
++#include <linux/kvm_host.h>
++#include <linux/module.h>
++#include <linux/msi.h>
++#include <linux/platform_device.h>
++#include <linux/uaccess.h>
++
++static struct workqueue_struct *sdev_cleanup_wq;
++static bool virt_msi_bypass;
++bool sdev_enable;
++
++static void shadow_dev_destroy(struct work_struct *work);
++static void sdev_virt_pdev_delete(struct platform_device *pdev);
++
++int shadow_dev_virq_bypass_inject(struct kvm *kvm,
++				  struct kvm_kernel_irq_routing_entry *e)
++{
++	struct shadow_dev *sdev = e->cache.data;
++	u32 vec = e->msi.data;
++	u32 host_irq = sdev->host_irq[vec];
++	int ret;
++
++	ret = irq_set_irqchip_state(host_irq, IRQCHIP_STATE_PENDING, true);
++	WARN_RATELIMIT(ret, "IRQ %d", host_irq);
++
++	return ret;
++}
++
++/* Must be called with the dist->sdev_list_lock held */
++struct shadow_dev *kvm_shadow_dev_get(struct kvm *kvm, struct kvm_msi *msi)
++{
++	struct vgic_dist *dist = &kvm->arch.vgic;
++	struct shadow_dev *sdev;
++
++	if (!sdev_enable)
++		return NULL;
++
++	list_for_each_entry(sdev, &dist->sdev_list_head, entry) {
++		if (sdev->devid != msi->devid)
++			continue;
++
++		if (sdev->nvecs <= msi->data ||
++		    !test_bit(msi->data, sdev->enable))
++			break;
++
++		return sdev;
++	}
++
++	return NULL;
++}
++
++static struct platform_device *sdev_virt_pdev_add(u32 nvec)
++{
++	struct platform_device *virtdev;
++	int ret = -ENOMEM;
++
++	virtdev = platform_device_alloc("virt_plat_dev", PLATFORM_DEVID_AUTO);
++	if (!virtdev) {
++		kvm_err("Allocate virtual platform device failed\n");
++		goto out;
++	}
++
++	dev_set_drvdata(&virtdev->dev, &nvec);
++
++	ret = platform_device_add(virtdev);
++	if (ret) {
++		kvm_err("Add virtual platform device failed (%d)\n", ret);
++		goto put_device;
++	}
++
++	return virtdev;
++
++put_device:
++	platform_device_put(virtdev);
++out:
++	return ERR_PTR(ret);
++}
++
++static void sdev_set_irq_entry(struct shadow_dev *sdev,
++			       struct kvm_kernel_irq_routing_entry *irq_entries)
++{
++	int i;
++
++	for (i = 0; i < sdev->nvecs; i++) {
++		irq_entries[i].msi.address_lo = sdev->msi[i].address_lo;
++		irq_entries[i].msi.address_hi = sdev->msi[i].address_hi;
++		irq_entries[i].msi.data = sdev->msi[i].data;
++		irq_entries[i].msi.flags = sdev->msi[i].flags;
++		irq_entries[i].msi.devid = sdev->msi[i].devid;
++	}
++}
++
++static int sdev_virq_bypass_active(struct kvm *kvm, struct shadow_dev *sdev)
++{
++	struct kvm_kernel_irq_routing_entry *irq_entries;
++	struct msi_desc *desc;
++	u32 vec = 0;
++
++	sdev->host_irq = kcalloc(sdev->nvecs, sizeof(int), GFP_KERNEL);
++	sdev->enable   = bitmap_zalloc(sdev->nvecs, GFP_KERNEL);
++	irq_entries    = kcalloc(sdev->nvecs,
++				 sizeof(struct kvm_kernel_irq_routing_entry),
++				 GFP_KERNEL);
++
++	if (!irq_entries || !sdev->enable || !sdev->host_irq) {
++		kfree(sdev->host_irq);
++		kfree(sdev->enable);
++		kfree(irq_entries);
++		return -ENOMEM;
++	}
++
++	sdev_set_irq_entry(sdev, irq_entries);
++
++	msi_for_each_desc(desc, &sdev->pdev->dev, MSI_DESC_ALL) {
++		if (!kvm_vgic_v4_set_forwarding(kvm, desc->irq,
++						&irq_entries[vec])) {
++			set_bit(vec, sdev->enable);
++			sdev->host_irq[vec] = desc->irq;
++		} else {
++			/*
++			 * Can not use shadow device for direct injection,
++			 * though not fatal...
++			 */
++			kvm_err("Shadow device set (%d) forwarding failed",
++				desc->irq);
++		}
++		vec++;
++	}
++
++	kfree(irq_entries);
++	return 0;
++}
++
++static void sdev_msi_entry_init(struct kvm_master_dev_info *mdi,
++				struct shadow_dev *sdev)
++{
++	int i;
++
++	for (i = 0; i < sdev->nvecs; i++) {
++		sdev->msi[i].address_lo = mdi->msi[i].address_lo;
++		sdev->msi[i].address_hi = mdi->msi[i].address_hi;
++		sdev->msi[i].data = mdi->msi[i].data;
++		sdev->msi[i].flags = mdi->msi[i].flags;
++		sdev->msi[i].devid = mdi->msi[i].devid;
++	}
++}
++
++int kvm_shadow_dev_create(struct kvm *kvm, struct kvm_master_dev_info *mdi)
++{
++	struct vgic_dist *dist = &kvm->arch.vgic;
++	struct shadow_dev *sdev;
++	struct kvm_msi *msi;
++	unsigned long flags;
++	int ret;
++
++	if (WARN_ON(!sdev_enable))
++		return -EINVAL;
++
++	ret = -ENOMEM;
++	sdev = kzalloc(sizeof(struct shadow_dev), GFP_KERNEL);
++	if (!sdev)
++		return ret;
++
++	sdev->nvecs = mdi->nvectors;
++
++	msi = kcalloc(sdev->nvecs, sizeof(struct kvm_msi), GFP_KERNEL);
++	if (!msi)
++		goto free_sdev;
++
++	sdev->msi = msi;
++	sdev_msi_entry_init(mdi, sdev);
++	sdev->devid = sdev->msi[0].devid;
++
++	sdev->pdev = sdev_virt_pdev_add(sdev->nvecs);
++	if (IS_ERR(sdev->pdev)) {
++		ret = PTR_ERR(sdev->pdev);
++		goto free_sdev_msi;
++	}
++
++	ret = sdev_virq_bypass_active(kvm, sdev);
++	if (ret)
++		goto delete_virtdev;
++
++	sdev->kvm = kvm;
++	INIT_WORK(&sdev->destroy, shadow_dev_destroy);
++
++	raw_spin_lock_irqsave(&dist->sdev_list_lock, flags);
++	list_add_tail(&sdev->entry, &dist->sdev_list_head);
++	raw_spin_unlock_irqrestore(&dist->sdev_list_lock, flags);
++
++	kvm_info("Create shadow device: 0x%x\n", sdev->devid);
++	return ret;
++
++delete_virtdev:
++	sdev_virt_pdev_delete(sdev->pdev);
++free_sdev_msi:
++	kfree(sdev->msi);
++free_sdev:
++	kfree(sdev);
++	return ret;
++}
++
++static void sdev_virt_pdev_delete(struct platform_device *pdev)
++{
++	platform_device_unregister(pdev);
++}
++
++static void sdev_virq_bypass_deactive(struct kvm *kvm, struct shadow_dev *sdev)
++{
++	struct kvm_kernel_irq_routing_entry *irq_entries;
++	struct msi_desc *desc;
++	u32 vec = 0;
++
++	irq_entries = kcalloc(sdev->nvecs,
++			      sizeof(struct kvm_kernel_irq_routing_entry),
++			      GFP_KERNEL);
++	if (!irq_entries)
++		return;
++
++	sdev_set_irq_entry(sdev, irq_entries);
++
++	msi_for_each_desc(desc, &sdev->pdev->dev, MSI_DESC_ALL) {
++		if (!kvm_vgic_v4_unset_forwarding(kvm, desc->irq,
++						  &irq_entries[vec])) {
++			clear_bit(vec, sdev->enable);
++			sdev->host_irq[vec] = 0;
++		} else {
++			kvm_err("Shadow device unset (%d) forwarding failed",
++				desc->irq);
++		}
++		vec++;
++	}
++
++	kfree(sdev->host_irq);
++	kfree(sdev->enable);
++	kfree(irq_entries);
++
++	/* FIXME: no error handling */
++}
++
++static void shadow_dev_destroy(struct work_struct *work)
++{
++	struct shadow_dev *sdev = container_of(work, struct shadow_dev, destroy);
++	struct kvm *kvm = sdev->kvm;
++
++	sdev_virq_bypass_deactive(kvm, sdev);
++	sdev_virt_pdev_delete(sdev->pdev);
++
++	sdev->nvecs = 0;
++	kfree(sdev->msi);
++	kfree(sdev);
++}
++
++void kvm_shadow_dev_delete(struct kvm *kvm, u32 devid)
++{
++	struct vgic_dist *dist = &kvm->arch.vgic;
++	struct shadow_dev *sdev, *tmp;
++	unsigned long flags;
++
++	if (WARN_ON(!sdev_enable))
++		return;
++
++	raw_spin_lock_irqsave(&dist->sdev_list_lock, flags);
++	WARN_ON(list_empty(&dist->sdev_list_head)); /* shouldn't be invoked */
++
++	list_for_each_entry_safe(sdev, tmp, &dist->sdev_list_head, entry) {
++		if (sdev->devid != devid)
++			continue;
++
++		list_del(&sdev->entry);
++		queue_work(sdev_cleanup_wq, &sdev->destroy);
++		break;
++	}
++	raw_spin_unlock_irqrestore(&dist->sdev_list_lock, flags);
++
++	flush_workqueue(sdev_cleanup_wq);
++}
++
++void kvm_shadow_dev_delete_all(struct kvm *kvm)
++{
++	struct vgic_dist *dist = &kvm->arch.vgic;
++	struct shadow_dev *sdev, *tmp;
++	unsigned long flags;
++
++	if (!sdev_enable)
++		return;
++
++	raw_spin_lock_irqsave(&dist->sdev_list_lock, flags);
++
++	list_for_each_entry_safe(sdev, tmp, &dist->sdev_list_head, entry) {
++		list_del(&sdev->entry);
++		queue_work(sdev_cleanup_wq, &sdev->destroy);
++	}
++
++	raw_spin_unlock_irqrestore(&dist->sdev_list_lock, flags);
++
++	flush_workqueue(sdev_cleanup_wq);
++}
++
++static int __init early_virt_msi_bypass(char *buf)
++{
++	return strtobool(buf, &virt_msi_bypass);
++}
++early_param("kvm-arm.virt_msi_bypass", early_virt_msi_bypass);
++
++void kvm_shadow_dev_init(void)
++{
++	/*
++	 * FIXME: Ideally shadow device should only rely on a GICv4.0
++	 * capable ITS, but we should also take the reserved device ID
++	 * pools into account.
++	 */
++	sdev_enable = kvm_vgic_global_state.has_gicv4 && virt_msi_bypass;
++
++	sdev_cleanup_wq = alloc_workqueue("kvm-sdev-cleanup", 0, 0);
++	if (!sdev_cleanup_wq)
++		sdev_enable = false;
++
++	kvm_info("Shadow device %sabled\n", sdev_enable ? "en" : "dis");
++}
+diff --git a/arch/arm64/kvm/vgic/vgic-init.c b/arch/arm64/kvm/vgic/vgic-init.c
+index b7306c588d9d..185552aa3d73 100644
+--- a/arch/arm64/kvm/vgic/vgic-init.c
++++ b/arch/arm64/kvm/vgic/vgic-init.c
+@@ -56,6 +56,10 @@ void kvm_vgic_early_init(struct kvm *kvm)
+ 	INIT_LIST_HEAD(&dist->lpi_list_head);
+ 	INIT_LIST_HEAD(&dist->lpi_translation_cache);
+ 	raw_spin_lock_init(&dist->lpi_list_lock);
++#ifdef CONFIG_VIRT_PLAT_DEV
++	INIT_LIST_HEAD(&dist->sdev_list_head);
++	raw_spin_lock_init(&dist->sdev_list_lock);
++#endif
+ }
+ 
+ /* CREATION */
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index 5b27f94d4fad..0e6726a5c707 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -35,6 +35,23 @@
+ #define irq_is_spi(irq) ((irq) >= VGIC_NR_PRIVATE_IRQS && \
+ 			 (irq) <= VGIC_MAX_SPI)
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++struct shadow_dev {
++	struct kvm              *kvm;
++	struct list_head        entry;
++
++	u32                     devid;  /* guest visible device id */
++	u32                     nvecs;
++	unsigned long           *enable;
++	int                     *host_irq;
++	struct kvm_msi          *msi;
++
++	struct platform_device  *pdev;
++
++	struct work_struct      destroy;
++};
++#endif
++
+ enum vgic_type {
+ 	VGIC_V2,		/* Good ol' GICv2 */
+ 	VGIC_V3,		/* New fancy GICv3 */
+@@ -292,6 +309,10 @@ struct vgic_dist {
+ 	 * else.
+ 	 */
+ 	struct its_vm		its_vm;
++#ifdef CONFIG_VIRT_PLAT_DEV
++	raw_spinlock_t		sdev_list_lock;
++	struct list_head	sdev_list_head;
++#endif
+ };
+ 
+ struct vgic_v2_cpu_if {
+@@ -437,4 +458,13 @@ int vgic_v4_put(struct kvm_vcpu *vcpu);
+ void kvm_vgic_cpu_up(void);
+ void kvm_vgic_cpu_down(void);
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++extern bool sdev_enable;
++
++void kvm_shadow_dev_init(void);
++int kvm_shadow_dev_create(struct kvm *kvm, struct kvm_master_dev_info *mdi);
++void kvm_shadow_dev_delete(struct kvm *kvm, u32 devid);
++void kvm_shadow_dev_delete_all(struct kvm *kvm);
++#endif
++
+ #endif /* __KVM_ARM_VGIC_H */
+diff --git a/include/uapi/linux/kvm.h b/include/uapi/linux/kvm.h
+index 13065dd96132..668f86bb0a5a 100644
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -1193,6 +1193,8 @@ struct kvm_ppc_resize_hpt {
+ #define KVM_CAP_ARM_EAGER_SPLIT_CHUNK_SIZE 228
+ #define KVM_CAP_ARM_SUPPORTED_BLOCK_SIZES 229
+ 
++#define KVM_CAP_ARM_VIRT_MSI_BYPASS 799
++
+ #ifdef KVM_CAP_IRQ_ROUTING
+ 
+ struct kvm_irq_routing_irqchip {
+@@ -1461,6 +1463,11 @@ struct kvm_vfio_spapr_tce {
+ 	__s32	tablefd;
+ };
+ 
++struct kvm_master_dev_info {
++	__u32 nvectors;
++	struct kvm_msi msi[];
++};
++
+ /*
+  * KVM_CREATE_VCPU receives as a parameter the vcpu slot, and returns
+  * a vcpu fd.
+@@ -1571,6 +1578,9 @@ struct kvm_s390_ucas_mapping {
+ #define KVM_GET_DEVICE_ATTR	  _IOW(KVMIO,  0xe2, struct kvm_device_attr)
+ #define KVM_HAS_DEVICE_ATTR	  _IOW(KVMIO,  0xe3, struct kvm_device_attr)
+ 
++#define KVM_CREATE_SHADOW_DEV	  _IOW(KVMIO,  0xf0, struct kvm_master_dev_info)
++#define KVM_DEL_SHADOW_DEV	  _IOW(KVMIO,  0xf1, __u32)
++
+ /*
+  * ioctls for vcpu fds
+  */
+-- 
+2.43.0
+

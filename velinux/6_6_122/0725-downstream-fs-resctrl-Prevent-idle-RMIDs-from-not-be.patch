@@ -1,0 +1,41 @@
+From b6c9bd594b69d7b46b95bc42e14eb16ea05627bd Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Tue, 10 Jun 2025 14:35:15 +0800
+Subject: [PATCH 725/960] downstream: fs/resctrl: Prevent idle RMIDs from not
+ being released in time from limbo
+
+The L3 cache occupancy limbo handler monitors idle RMIDs. If it detects
+that the cache occupancy of the monitored RMID is below the
+max_threshold_occupancy setting value, it will release the RMID from the
+limbo back to the rmid_free list.
+
+However, in scenarios where the user sets a high max_threshold_occupancy
+value and frequently creates or deletes monitoring groups, or simply
+frequently mounts and unmounts the resctrl filesystem, because of the limbo
+handler delayed scheduling, it can cause idle RMIDs to not be released back
+to the rmid_free list in time, which leads to the creating monitor group
+operations failing with ENOSPC.
+
+Fixes: 13e249bf4944 ("x86/resctrl: Move the filesystem portions of resctrl to live in '/fs/'")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/monitor.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/resctrl/monitor.c b/fs/resctrl/monitor.c
+index cbb8fc878cde..a8f8b228b8c2 100644
+--- a/fs/resctrl/monitor.c
++++ b/fs/resctrl/monitor.c
+@@ -289,7 +289,7 @@ static void add_rmid_to_limbo(struct rmid_entry *entry)
+ 		 * setup up the limbo worker.
+ 		 */
+ 		if (!has_busy_rmid(d))
+-			cqm_setup_limbo_handler(d, CQM_LIMBOCHECK_INTERVAL,
++			cqm_setup_limbo_handler(d, 0,
+ 						RESCTRL_PICK_ANY_CPU);
+ 		set_bit(idx, d->rmid_busy_llc);
+ 		entry->busy++;
+-- 
+2.43.0
+

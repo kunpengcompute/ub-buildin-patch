@@ -1,0 +1,71 @@
+From e829d1f2664b54ea4fbbe80d6437f6d3f3325964 Mon Sep 17 00:00:00 2001
+From: Niklas Schnelle <schnelle@linux.ibm.com>
+Date: Wed, 4 Oct 2023 10:56:12 +0200
+Subject: [PATCH 436/960] s390/pci: Fix reset of IOMMU software counters
+
+commit 92bce97f0c341d3037b0f364b6839483f6a41cae upstream.
+
+Together with enabling the Function Measurement Block
+zpci_fmb_enable_device() also resets the software counters. This allows
+to use "echo 0 > /sys/kernel/debug/pci/<dev>/statistics" followed by
+echo "1 > /../statistics" to reset all counters. In commit c76c067e488c
+("s390/pci: Use dma-iommu layer") this use of the now obsolete counters
+in struct zpci_device was missed as was their removal. Fix this by
+resetting the new counters and removing the old ones.
+
+Fixes: c76c067e488c ("s390/pci: Use dma-iommu layer")
+Signed-off-by: Niklas Schnelle <schnelle@linux.ibm.com>
+Reviewed-by: Matthew Rosato <mjrosato@linux.ibm.com>
+Link: https://lore.kernel.org/r/20231004-dma_iommu_fix-v1-1-129777cd8232@linux.ibm.com
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ arch/s390/include/asm/pci.h | 9 +++++----
+ arch/s390/pci/pci.c         | 4 +---
+ 2 files changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/arch/s390/include/asm/pci.h b/arch/s390/include/asm/pci.h
+index f2710f23b382..ccba4f476037 100644
+--- a/arch/s390/include/asm/pci.h
++++ b/arch/s390/include/asm/pci.h
+@@ -171,10 +171,11 @@ struct zpci_dev {
+ 	struct zpci_fmb *fmb;
+ 	u16		fmb_update;	/* update interval */
+ 	u16		fmb_length;
+-	/* software counters */
+-	atomic64_t allocated_pages;
+-	atomic64_t mapped_pages;
+-	atomic64_t unmapped_pages;
++
++ 	/* software counters */ 
++ 	atomic64_t allocated_pages;
++ 	atomic64_t mapped_pages;
++ 	atomic64_t unmapped_pages;
+ 
+ 	u8		version;
+ 	enum pci_bus_speed max_bus_speed;
+diff --git a/arch/s390/pci/pci.c b/arch/s390/pci/pci.c
+index 0cdfd2fafe67..167de5936239 100644
+--- a/arch/s390/pci/pci.c
++++ b/arch/s390/pci/pci.c
+@@ -157,6 +157,7 @@ int zpci_unregister_ioat(struct zpci_dev *zdev, u8 dmaas)
+ int zpci_fmb_enable_device(struct zpci_dev *zdev)
+ {
+ 	u64 req = ZPCI_CREATE_REQ(zdev->fh, 0, ZPCI_MOD_FC_SET_MEASURE);
++	struct zpci_iommu_ctrs *ctrs;
+ 	struct zpci_fib fib = {0};
+ 	unsigned long flags;
+ 	u8 cc, status;
+@@ -170,9 +171,6 @@ int zpci_fmb_enable_device(struct zpci_dev *zdev)
+ 	WARN_ON((u64) zdev->fmb & 0xf);
+ 
+ 	/* reset software counters */
+-	atomic64_set(&zdev->allocated_pages, 0);
+-	atomic64_set(&zdev->mapped_pages, 0);
+-	atomic64_set(&zdev->unmapped_pages, 0);
+ 	spin_lock_irqsave(&zdev->dom_lock, flags);
+ 	ctrs = zpci_get_iommu_ctrs(zdev);
+ 	if (ctrs) {
+-- 
+2.43.0
+

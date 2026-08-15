@@ -1,0 +1,86 @@
+From beefa532c1fe3cf6073d9cc11e675c6efec76352 Mon Sep 17 00:00:00 2001
+From: Zhou Wang <wangzhou1@hisilicon.com>
+Date: Fri, 23 May 2025 20:45:27 +0800
+Subject: [PATCH 597/960] downstream: KVM: arm64: Document PV-sgi interface
+
+Introduce a paravirtualization interface for KVM/arm64 to PV-sgi.
+A hypercall interface is provided for the guest to interrogate the
+hypervisor's support for IPIV.
+
+In the previous IPIV implementation, the MPIDR value of the vCPU
+needs to be changed to prevent guests from sending multicast and
+broadcast. This series of bugfix patches provide a method: Add
+the SMCCC interface to the kernel so that the guest OS can control
+the enabling of IPIV. When IPIV is enabled, the guest OS uses multiple
+unicast to implement multicast. (Broadcasting cannot be implemented
+due to hardware limitations. If a guest sends a broadcast, an exception
+message is displayed on the host.) In this way, do not need to modify
+the MPIDR.
+
+Signed-off-by: Zhou Wang <wangzhou1@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ Documentation/virt/kvm/arm/hypercalls.rst |  4 +++
+ Documentation/virt/kvm/arm/pvsgi.rst      | 33 +++++++++++++++++++++++
+ 2 files changed, 37 insertions(+)
+ create mode 100644 Documentation/virt/kvm/arm/pvsgi.rst
+
+diff --git a/Documentation/virt/kvm/arm/hypercalls.rst b/Documentation/virt/kvm/arm/hypercalls.rst
+index 3e23084644ba..67bd102cf43b 100644
+--- a/Documentation/virt/kvm/arm/hypercalls.rst
++++ b/Documentation/virt/kvm/arm/hypercalls.rst
+@@ -127,6 +127,10 @@ The pseudo-firmware bitmap register are as follows:
+     Bit-1: KVM_REG_ARM_VENDOR_HYP_BIT_PTP:
+       The bit represents the Precision Time Protocol KVM service.
+ 
++    Bit-2: KVM_REG_ARM_VENDOR_HYP_BIT_IPIV:
++      The bit represents the ARM_SMCCC_VENDOR_PV_SGI_FEATURES and
++      ARM_SMCCC_VENDOR_PV_SGI_ENABLE function-ids.
++
+ Errors:
+ 
+     =======  =============================================================
+diff --git a/Documentation/virt/kvm/arm/pvsgi.rst b/Documentation/virt/kvm/arm/pvsgi.rst
+new file mode 100644
+index 000000000000..5f12a3aaccd2
+--- /dev/null
++++ b/Documentation/virt/kvm/arm/pvsgi.rst
+@@ -0,0 +1,33 @@
++.. SPDX-License-Identifier: GPL-2.0
++
++Paravirtualized SGI support for HiSilicon
++==========================================
++
++KVM/arm64 provides some hypervisor service calls to support a paravirtualized
++SGI(software generated interrupt) in HiSilicon Hip12 SoC.
++
++Some SMCCC compatible hypercalls are defined:
++
++* PV_SGI_FEATURES:      0xC6000090
++* PV_SGI_ENABLE:        0xC6000091
++
++The existence of the PV_SGI hypercall should be probed using the SMCCC 1.1
++ARCH_FEATURES mechanism before calling it.
++
++PV_SGI_FEATURES
++
++    ============= ========    ==========
++    Function ID:  (uint32)    0xC6000090
++    PV_call_id:   (uint32)    The function to query for support.
++                              Currently only PV_SGI_ENABLE is supported.
++    Return value: (int64)     NOT_SUPPORTED (-1) or SUCCESS (0) if the relevant
++                              PV-sgi feature is supported by the hypervisor.
++    ============= ========    ==========
++
++PV_SGI_ENABLE
++
++    ============= ========    ==========
++    Function ID:  (uint32)    0xC6000091
++    Return value: (int64)     NOT_SUPPORTED (-1) or SUCCESS (0) if this feature
++                              has been enabled.
++    ============= ========    ==========
+-- 
+2.43.0
+

@@ -1,0 +1,116 @@
+From dc07aaca7457d515e682d3574029f198a7b433b3 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:02 +0800
+Subject: [PATCH 577/960] downstream: KVM: arm64: vgic-v3: Add support for
+ GIC{D,R}_INMIR registers
+
+Plumb the distributor and redistributor NMI configuration
+registerse into the MMIO spaces. The update to the registers
+are gated by a distributor flag which is never set, so there
+is still no observable behaviour change...
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-mmio-v3.c | 55 ++++++++++++++++++++++++++++++
+ include/kvm/arm_vgic.h             |  1 +
+ 2 files changed, 56 insertions(+)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-mmio-v3.c b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+index 7ad6708a5451..bd5119646946 100644
+--- a/arch/arm64/kvm/vgic/vgic-mmio-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+@@ -611,6 +611,55 @@ static void vgic_mmio_write_invall(struct kvm_vcpu *vcpu,
+ 	vgic_set_rdist_busy(vcpu, false);
+ }
+ 
++static unsigned long vgic_mmio_read_nmi(struct kvm_vcpu *vcpu,
++					gpa_t addr, unsigned int len)
++{
++	u32 intid = VGIC_ADDR_TO_INTID(addr, 1);
++	u32 value = 0;
++	int i;
++
++	/* Loop over all IRQs affected by this read */
++	for (i = 0; i < len * 8; i++) {
++		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
++
++		if (irq->nmi)
++			value |= (1U << i);
++
++		vgic_put_irq(vcpu->kvm, irq);
++	}
++
++	return value;
++}
++
++static void vgic_mmio_write_nmi(struct kvm_vcpu *vcpu, gpa_t addr,
++				unsigned int len, unsigned long val)
++{
++	u32 intid = VGIC_ADDR_TO_INTID(addr, 1);
++	unsigned long flags;
++	int i;
++
++	if (!vcpu->kvm->arch.vgic.has_nmi)
++		return;
++
++	for (i = 0; i < len * 8; i++) {
++		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
++		bool was_nmi;
++
++		raw_spin_lock_irqsave(&irq->irq_lock, flags);
++
++		was_nmi = irq->nmi;
++		irq->nmi = (val & BIT(i));
++
++		if (irq->hw && vgic_irq_is_sgi(irq->intid) &&
++		    was_nmi != irq->nmi)
++			vgic_update_vsgi(irq);
++
++		raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
++
++		vgic_put_irq(vcpu->kvm, irq);
++	}
++}
++
+ /*
+  * The GICv3 per-IRQ registers are split to control PPIs and SGIs in the
+  * redistributors, while SPIs are covered by registers in the distributor
+@@ -684,6 +733,9 @@ static const struct vgic_register_region vgic_v3_dist_registers[] = {
+ 	REGISTER_DESC_WITH_BITS_PER_IRQ_SHARED(GICD_IGRPMODR,
+ 		vgic_mmio_read_raz, vgic_mmio_write_wi, NULL, NULL, 1,
+ 		VGIC_ACCESS_32bit),
++	REGISTER_DESC_WITH_BITS_PER_IRQ_SHARED(GICD_INMIR,
++		vgic_mmio_read_nmi, vgic_mmio_write_nmi, NULL, NULL, 1,
++		VGIC_ACCESS_32bit),
+ 	REGISTER_DESC_WITH_BITS_PER_IRQ_SHARED(GICD_IROUTER,
+ 		vgic_mmio_read_irouter, vgic_mmio_write_irouter, NULL, NULL, 64,
+ 		VGIC_ACCESS_64bit | VGIC_ACCESS_32bit),
+@@ -768,6 +820,9 @@ static const struct vgic_register_region vgic_v3_rd_registers[] = {
+ 	REGISTER_DESC_WITH_LENGTH(SZ_64K + GICR_NSACR,
+ 		vgic_mmio_read_raz, vgic_mmio_write_wi, 4,
+ 		VGIC_ACCESS_32bit),
++	REGISTER_DESC_WITH_LENGTH(SZ_64K + GICR_INMIR0,
++		vgic_mmio_read_nmi, vgic_mmio_write_nmi, 4,
++		VGIC_ACCESS_32bit),
+ };
+ 
+ unsigned int vgic_v3_init_dist_iodev(struct vgic_io_device *dev)
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index 29b17967fc23..016a7a04cb04 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -308,6 +308,7 @@ struct vgic_dist {
+ 
+ 	struct vgic_io_device	dist_iodev;
+ 
++	bool                    has_nmi;
+ 	bool			has_its;
+ 	bool			table_write_in_progress;
+ 
+-- 
+2.43.0
+

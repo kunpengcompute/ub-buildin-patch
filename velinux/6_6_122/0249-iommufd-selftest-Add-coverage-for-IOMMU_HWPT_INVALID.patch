@@ -1,0 +1,244 @@
+From cb29719eeaf5fd7ad5a3defd358dc70a6de0e6b7 Mon Sep 17 00:00:00 2001
+From: Nicolin Chen <nicolinc@nvidia.com>
+Date: Wed, 10 Jan 2024 20:10:13 -0800
+Subject: [PATCH 249/960] iommufd/selftest: Add coverage for
+ IOMMU_HWPT_INVALIDATE ioctl
+
+commit bf26eb83fd3b6f392cf68285c8858db5bfd5e570 upstream.
+
+Add test cases for the IOMMU_HWPT_INVALIDATE ioctl and verify it by using
+the new IOMMU_TEST_OP_MD_CHECK_IOTLB.
+
+Link: https://lore.kernel.org/r/20240111041015.47920-7-yi.l.liu@intel.com
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Co-developed-by: Yi Liu <yi.l.liu@intel.com>
+Signed-off-by: Yi Liu <yi.l.liu@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ tools/testing/selftests/iommu/iommufd.c       | 148 ++++++++++++++++++
+ tools/testing/selftests/iommu/iommufd_utils.h |  31 ++++
+ 2 files changed, 179 insertions(+)
+
+diff --git a/tools/testing/selftests/iommu/iommufd.c b/tools/testing/selftests/iommu/iommufd.c
+index 20ac8538bd0c..f0a504c6ad9a 100644
+--- a/tools/testing/selftests/iommu/iommufd.c
++++ b/tools/testing/selftests/iommu/iommufd.c
+@@ -116,6 +116,7 @@ TEST_F(iommufd, cmd_length)
+ 	TEST_LENGTH(iommu_destroy, IOMMU_DESTROY, id);
+ 	TEST_LENGTH(iommu_hw_info, IOMMU_GET_HW_INFO, __reserved);
+ 	TEST_LENGTH(iommu_hwpt_alloc, IOMMU_HWPT_ALLOC, __reserved);
++	TEST_LENGTH(iommu_hwpt_invalidate, IOMMU_HWPT_INVALIDATE, __reserved);
+ 	TEST_LENGTH(iommu_ioas_alloc, IOMMU_IOAS_ALLOC, out_ioas_id);
+ 	TEST_LENGTH(iommu_ioas_iova_ranges, IOMMU_IOAS_IOVA_RANGES,
+ 		    out_iova_alignment);
+@@ -271,7 +272,9 @@ TEST_F(iommufd_ioas, alloc_hwpt_nested)
+ 	struct iommu_hwpt_selftest data = {
+ 		.iotlb = IOMMU_TEST_IOTLB_DEFAULT,
+ 	};
++	struct iommu_hwpt_invalidate_selftest inv_reqs[2] = {};
+ 	uint32_t nested_hwpt_id[2] = {};
++	uint32_t num_inv;
+ 	uint32_t parent_hwpt_id = 0;
+ 	uint32_t parent_hwpt_id_not_work = 0;
+ 	uint32_t test_hwpt_id = 0;
+@@ -344,6 +347,151 @@ TEST_F(iommufd_ioas, alloc_hwpt_nested)
+ 		EXPECT_ERRNO(EBUSY,
+ 			     _test_ioctl_destroy(self->fd, parent_hwpt_id));
+ 
++		/* hwpt_invalidate only supports a user-managed hwpt (nested) */
++		num_inv = 1;
++		test_err_hwpt_invalidate(ENOENT, parent_hwpt_id, inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(!num_inv);
++
++		/* Check data_type by passing zero-length array */
++		num_inv = 0;
++		test_cmd_hwpt_invalidate(nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(!num_inv);
++
++		/* Negative test: Invalid data_type */
++		num_inv = 1;
++		test_err_hwpt_invalidate(EINVAL, nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST_INVALID,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(!num_inv);
++
++		/* Negative test: structure size sanity */
++		num_inv = 1;
++		test_err_hwpt_invalidate(EINVAL, nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs) + 1, &num_inv);
++		assert(!num_inv);
++
++		num_inv = 1;
++		test_err_hwpt_invalidate(EINVAL, nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 1, &num_inv);
++		assert(!num_inv);
++
++		/* Negative test: invalid flag is passed */
++		num_inv = 1;
++		inv_reqs[0].flags = 0xffffffff;
++		test_err_hwpt_invalidate(EOPNOTSUPP, nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(!num_inv);
++
++		/* Negative test: invalid data_uptr when array is not empty */
++		num_inv = 1;
++		inv_reqs[0].flags = 0;
++		test_err_hwpt_invalidate(EINVAL, nested_hwpt_id[0], NULL,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(!num_inv);
++
++		/* Negative test: invalid entry_len when array is not empty */
++		num_inv = 1;
++		inv_reqs[0].flags = 0;
++		test_err_hwpt_invalidate(EINVAL, nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 0, &num_inv);
++		assert(!num_inv);
++
++		/* Negative test: invalid iotlb_id */
++		num_inv = 1;
++		inv_reqs[0].flags = 0;
++		inv_reqs[0].iotlb_id = MOCK_NESTED_DOMAIN_IOTLB_ID_MAX + 1;
++		test_err_hwpt_invalidate(EINVAL, nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(!num_inv);
++
++		/*
++		 * Invalidate the 1st iotlb entry but fail the 2nd request
++		 * due to invalid flags configuration in the 2nd request.
++		 */
++		num_inv = 2;
++		inv_reqs[0].flags = 0;
++		inv_reqs[0].iotlb_id = 0;
++		inv_reqs[1].flags = 0xffffffff;
++		inv_reqs[1].iotlb_id = 1;
++		test_err_hwpt_invalidate(EOPNOTSUPP, nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(num_inv == 1);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 0, 0);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 1,
++					  IOMMU_TEST_IOTLB_DEFAULT);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 2,
++					  IOMMU_TEST_IOTLB_DEFAULT);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 3,
++					  IOMMU_TEST_IOTLB_DEFAULT);
++
++		/*
++		 * Invalidate the 1st iotlb entry but fail the 2nd request
++		 * due to invalid iotlb_id configuration in the 2nd request.
++		 */
++		num_inv = 2;
++		inv_reqs[0].flags = 0;
++		inv_reqs[0].iotlb_id = 0;
++		inv_reqs[1].flags = 0;
++		inv_reqs[1].iotlb_id = MOCK_NESTED_DOMAIN_IOTLB_ID_MAX + 1;
++		test_err_hwpt_invalidate(EINVAL, nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(num_inv == 1);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 0, 0);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 1,
++					  IOMMU_TEST_IOTLB_DEFAULT);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 2,
++					  IOMMU_TEST_IOTLB_DEFAULT);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 3,
++					  IOMMU_TEST_IOTLB_DEFAULT);
++
++		/* Invalidate the 2nd iotlb entry and verify */
++		num_inv = 1;
++		inv_reqs[0].flags = 0;
++		inv_reqs[0].iotlb_id = 1;
++		test_cmd_hwpt_invalidate(nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(num_inv == 1);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 0, 0);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 1, 0);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 2,
++					  IOMMU_TEST_IOTLB_DEFAULT);
++		test_cmd_hwpt_check_iotlb(nested_hwpt_id[0], 3,
++					  IOMMU_TEST_IOTLB_DEFAULT);
++
++		/* Invalidate the 3rd and 4th iotlb entries and verify */
++		num_inv = 2;
++		inv_reqs[0].flags = 0;
++		inv_reqs[0].iotlb_id = 2;
++		inv_reqs[1].flags = 0;
++		inv_reqs[1].iotlb_id = 3;
++		test_cmd_hwpt_invalidate(nested_hwpt_id[0], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(num_inv == 2);
++		test_cmd_hwpt_check_iotlb_all(nested_hwpt_id[0], 0);
++
++		/* Invalidate all iotlb entries for nested_hwpt_id[1] and verify */
++		num_inv = 1;
++		inv_reqs[0].flags = IOMMU_TEST_INVALIDATE_FLAG_ALL;
++		test_cmd_hwpt_invalidate(nested_hwpt_id[1], inv_reqs,
++					 IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++					 sizeof(*inv_reqs), &num_inv);
++		assert(num_inv == 1);
++		test_cmd_hwpt_check_iotlb_all(nested_hwpt_id[1], 0);
++
+ 		/* Attach device to nested_hwpt_id[0] that then will be busy */
+ 		test_cmd_mock_domain_replace(self->stdev_id, nested_hwpt_id[0]);
+ 		EXPECT_ERRNO(EBUSY,
+diff --git a/tools/testing/selftests/iommu/iommufd_utils.h b/tools/testing/selftests/iommu/iommufd_utils.h
+index fe0a0f566b67..c646264aa41f 100644
+--- a/tools/testing/selftests/iommu/iommufd_utils.h
++++ b/tools/testing/selftests/iommu/iommufd_utils.h
+@@ -219,6 +219,37 @@ static int _test_cmd_hwpt_alloc(int fd, __u32 device_id, __u32 pt_id,
+ 			test_cmd_hwpt_check_iotlb(hwpt_id, i, expected);       \
+ 	})
+ 
++static int _test_cmd_hwpt_invalidate(int fd, __u32 hwpt_id, void *reqs,
++				     uint32_t data_type, uint32_t lreq,
++				     uint32_t *nreqs)
++{
++	struct iommu_hwpt_invalidate cmd = {
++		.size = sizeof(cmd),
++		.hwpt_id = hwpt_id,
++		.data_type = data_type,
++		.data_uptr = (uint64_t)reqs,
++		.entry_len = lreq,
++		.entry_num = *nreqs,
++	};
++	int rc = ioctl(fd, IOMMU_HWPT_INVALIDATE, &cmd);
++	*nreqs = cmd.entry_num;
++	return rc;
++}
++
++#define test_cmd_hwpt_invalidate(hwpt_id, reqs, data_type, lreq, nreqs)       \
++	({                                                                    \
++		ASSERT_EQ(0,                                                  \
++			  _test_cmd_hwpt_invalidate(self->fd, hwpt_id, reqs,  \
++						    data_type, lreq, nreqs)); \
++	})
++#define test_err_hwpt_invalidate(_errno, hwpt_id, reqs, data_type, lreq, \
++				 nreqs)                                  \
++	({                                                               \
++		EXPECT_ERRNO(_errno, _test_cmd_hwpt_invalidate(          \
++					     self->fd, hwpt_id, reqs,    \
++					     data_type, lreq, nreqs));   \
++	})
++
+ static int _test_cmd_access_replace_ioas(int fd, __u32 access_id,
+ 					 unsigned int ioas_id)
+ {
+-- 
+2.43.0
+

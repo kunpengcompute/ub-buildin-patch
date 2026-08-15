@@ -1,0 +1,47 @@
+From 94668aafa7731501c209f66f9df55dcf479f9a86 Mon Sep 17 00:00:00 2001
+From: Slim6882 <15605196882@163.com>
+Date: Thu, 26 Jun 2025 17:43:06 +0800
+Subject: [PATCH 594/960] downstream: fix NMI verification failed during
+ startup
+
+fix a bug when kernel is starting up.
+[ 0.000000][  T0]kernel BUG at arch/arm64/include/asm/cpufeature.h:496!
+
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/cpucaps.h    | 2 ++
+ arch/arm64/include/asm/cpufeature.h | 3 +--
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/include/asm/cpucaps.h b/arch/arm64/include/asm/cpucaps.h
+index 270680e2b5c4..48f8929cb301 100644
+--- a/arch/arm64/include/asm/cpucaps.h
++++ b/arch/arm64/include/asm/cpucaps.h
+@@ -58,6 +58,8 @@ cpucap_is_possible(const unsigned int cap)
+ 		return IS_ENABLED(CONFIG_NVIDIA_CARMEL_CNP_ERRATUM);
+ 	case ARM64_WORKAROUND_REPEAT_TLBI:
+ 		return IS_ENABLED(CONFIG_ARM64_WORKAROUND_REPEAT_TLBI);
++	case ARM64_USES_NMI:
++		return IS_ENABLED(CONFIG_ARM64_NMI);
+ 	}
+ 
+ 	return true;
+diff --git a/arch/arm64/include/asm/cpufeature.h b/arch/arm64/include/asm/cpufeature.h
+index 7c8401b4b78c..102bd1194d06 100644
+--- a/arch/arm64/include/asm/cpufeature.h
++++ b/arch/arm64/include/asm/cpufeature.h
+@@ -807,8 +807,7 @@ static __always_inline bool system_uses_irq_prio_masking(void)
+ 
+ static __always_inline bool system_uses_nmi(void)
+ {
+-	return IS_ENABLED(CONFIG_ARM64_NMI) &&
+-		cpus_have_final_cap(ARM64_USES_NMI) &&
++	return cpus_have_cap(ARM64_USES_NMI) &&
+ 		!system_uses_irq_prio_masking();
+ }
+ 
+-- 
+2.43.0
+

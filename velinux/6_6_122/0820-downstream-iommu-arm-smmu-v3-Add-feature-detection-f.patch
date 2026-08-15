@@ -1,0 +1,71 @@
+From c5db1cdfdf16a268cb2e59110c3c697ebd66e443 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Wed, 10 Jan 2024 19:36:30 +0800
+Subject: [PATCH 820/960] downstream: iommu/arm-smmu-v3: Add feature detection
+ for BBML
+
+This detects BBML feature and if SMMU supports it, transfer BBMLx
+quirk to io-pgtable.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: jiaqingtong <jiaqingtong@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 18 ++++++++++++++++++
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h |  2 ++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 104f2ffd2dbc..5a1e8e2b1570 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -2428,6 +2428,11 @@ static int arm_smmu_domain_finalise(struct arm_smmu_domain *smmu_domain,
+ 	if (smmu->features & ARM_SMMU_FEAT_HD)
+ 		pgtbl_cfg.quirks |= IO_PGTABLE_QUIRK_ARM_HD;
+ 
++	if (smmu->features & ARM_SMMU_FEAT_BBML1)
++		pgtbl_cfg.quirks |= IO_PGTABLE_QUIRK_ARM_BBML1;
++	else if (smmu->features & ARM_SMMU_FEAT_BBML2)
++		pgtbl_cfg.quirks |= IO_PGTABLE_QUIRK_ARM_BBML2;
++
+ 	pgtbl_ops = alloc_io_pgtable_ops(fmt, &pgtbl_cfg, smmu_domain);
+ 	if (!pgtbl_ops)
+ 		return -ENOMEM;
+@@ -4315,6 +4320,19 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
+ 
+ 	/* IDR3 */
+ 	reg = readl_relaxed(smmu->base + ARM_SMMU_IDR3);
++	switch (FIELD_GET(IDR3_BBML, reg)) {
++	case IDR3_BBML0:
++		break;
++	case IDR3_BBML1:
++		smmu->features |= ARM_SMMU_FEAT_BBML1;
++		break;
++	case IDR3_BBML2:
++		smmu->features |= ARM_SMMU_FEAT_BBML2;
++		break;
++	default:
++		dev_err(smmu->dev, "unknown/unsupported BBM behavior level\n");
++	}
++
+ 	if (FIELD_GET(IDR3_RIL, reg))
+ 		smmu->features |= ARM_SMMU_FEAT_RANGE_INV;
+ 
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+index 23f6f74487fd..7bf809efc905 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+@@ -711,6 +711,8 @@ struct arm_smmu_device {
+ #define ARM_SMMU_FEAT_ATTR_TYPES_OVR	(1 << 20)
+ #define ARM_SMMU_FEAT_HA		(1 << 21)
+ #define ARM_SMMU_FEAT_HD		(1 << 22)
++#define ARM_SMMU_FEAT_BBML1		(1 << 23)
++#define ARM_SMMU_FEAT_BBML2		(1 << 24)
+ 	u32				features;
+ 
+ #define ARM_SMMU_OPT_SKIP_PREFETCH	(1 << 0)
+-- 
+2.43.0
+

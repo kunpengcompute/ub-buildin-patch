@@ -1,0 +1,90 @@
+From 80c9c1a90ca2d7a40301097da28d59afe7ad7681 Mon Sep 17 00:00:00 2001
+From: Yi Liu <yi.l.liu@intel.com>
+Date: Mon, 19 Feb 2024 19:15:57 +0800
+Subject: [PATCH 286/960] iommu/vt-d: Remove domain parameter for
+ intel_pasid_setup_dirty_tracking()
+
+commit 56ecaf6c5834ace14941d7f13dceb48bc3327111 upstream.
+
+The only usage of input @domain is to get the domain id (DID) to flush
+cache after setting dirty tracking. However, DID can be obtained from
+the pasid entry. So no need to pass in domain. This can make this helper
+cleaner when adding the missing dirty tracking for the parent domain,
+which needs to use the DID of nested domain.
+
+Signed-off-by: Yi Liu <yi.l.liu@intel.com>
+Reviewed-by: Joao Martins <joao.m.martins@oracle.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Link: https://lore.kernel.org/r/20240208082307.15759-7-yi.l.liu@intel.com
+Signed-off-by: Lu Baolu <baolu.lu@linux.intel.com>
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/intel/iommu.c | 7 +++----
+ drivers/iommu/intel/pasid.c | 3 +--
+ drivers/iommu/intel/pasid.h | 1 -
+ 3 files changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/iommu/intel/iommu.c b/drivers/iommu/intel/iommu.c
+index b992dd35e131..e088c633a51d 100644
+--- a/drivers/iommu/intel/iommu.c
++++ b/drivers/iommu/intel/iommu.c
+@@ -4749,8 +4749,7 @@ static int intel_iommu_set_dirty_tracking(struct iommu_domain *domain,
+ 		goto out_unlock;
+ 
+ 	list_for_each_entry(info, &dmar_domain->devices, link) {
+-		ret = intel_pasid_setup_dirty_tracking(info->iommu,
+-						       info->domain, info->dev,
++		ret = intel_pasid_setup_dirty_tracking(info->iommu, info->dev,
+ 						       IOMMU_NO_PASID, enable);
+ 		if (ret)
+ 			goto err_unwind;
+@@ -4764,8 +4763,8 @@ static int intel_iommu_set_dirty_tracking(struct iommu_domain *domain,
+ 
+ err_unwind:
+ 	list_for_each_entry(info, &dmar_domain->devices, link)
+-		intel_pasid_setup_dirty_tracking(info->iommu, dmar_domain,
+-						 info->dev, IOMMU_NO_PASID,
++		intel_pasid_setup_dirty_tracking(info->iommu, info->dev,
++						 IOMMU_NO_PASID,
+ 						 dmar_domain->dirty_tracking);
+ 	spin_unlock(&dmar_domain->lock);
+ 	return ret;
+diff --git a/drivers/iommu/intel/pasid.c b/drivers/iommu/intel/pasid.c
+index 953592125e4a..23b697e282b5 100644
+--- a/drivers/iommu/intel/pasid.c
++++ b/drivers/iommu/intel/pasid.c
+@@ -431,7 +431,6 @@ int intel_pasid_setup_second_level(struct intel_iommu *iommu,
+  * Set up dirty tracking on a second only or nested translation type.
+  */
+ int intel_pasid_setup_dirty_tracking(struct intel_iommu *iommu,
+-				     struct dmar_domain *domain,
+ 				     struct device *dev, u32 pasid,
+ 				     bool enabled)
+ {
+@@ -448,7 +447,7 @@ int intel_pasid_setup_dirty_tracking(struct intel_iommu *iommu,
+ 		return -ENODEV;
+ 	}
+ 
+-	did = domain_id_iommu(domain, iommu);
++	did = pasid_get_domain_id(pte);
+ 	pgtt = pasid_pte_get_pgtt(pte);
+ 	if (pgtt != PASID_ENTRY_PGTT_SL_ONLY &&
+ 	    pgtt != PASID_ENTRY_PGTT_NESTED) {
+diff --git a/drivers/iommu/intel/pasid.h b/drivers/iommu/intel/pasid.h
+index 8d40d4c66e31..487ede039bdd 100644
+--- a/drivers/iommu/intel/pasid.h
++++ b/drivers/iommu/intel/pasid.h
+@@ -307,7 +307,6 @@ int intel_pasid_setup_second_level(struct intel_iommu *iommu,
+ 				   struct dmar_domain *domain,
+ 				   struct device *dev, u32 pasid);
+ int intel_pasid_setup_dirty_tracking(struct intel_iommu *iommu,
+-				     struct dmar_domain *domain,
+ 				     struct device *dev, u32 pasid,
+ 				     bool enabled);
+ int intel_pasid_setup_pass_through(struct intel_iommu *iommu,
+-- 
+2.43.0
+

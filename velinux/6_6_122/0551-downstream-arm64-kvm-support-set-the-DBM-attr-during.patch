@@ -1,0 +1,67 @@
+From 6634beb630c2f5f76d2d1873daee7631b2771d1d Mon Sep 17 00:00:00 2001
+From: eillon <yezhenyu2@huawei.com>
+Date: Wed, 2 Apr 2025 15:56:23 +0800
+Subject: [PATCH 551/960] downstream: arm64/kvm: support set the DBM attr
+ during memory abort
+
+Since the ARMv8, the page entry has supported the DBM attribute.
+Support set the attr during user_mem_abort().
+
+Signed-off-by: eillon <yezhenyu2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_pgtable.h | 1 +
+ arch/arm64/kvm/hyp/pgtable.c         | 9 +++++++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/arch/arm64/include/asm/kvm_pgtable.h b/arch/arm64/include/asm/kvm_pgtable.h
+index cfdf40f734b1..3a971ca0f8fe 100644
+--- a/arch/arm64/include/asm/kvm_pgtable.h
++++ b/arch/arm64/include/asm/kvm_pgtable.h
+@@ -208,6 +208,7 @@ enum kvm_pgtable_prot {
+ 	KVM_PGTABLE_PROT_R			= BIT(2),
+ 
+ 	KVM_PGTABLE_PROT_DEVICE			= BIT(3),
++	KVM_PGTABLE_PROT_DBM			= BIT(4),
+ 
+ 	KVM_PGTABLE_PROT_SW0			= BIT(55),
+ 	KVM_PGTABLE_PROT_SW1			= BIT(56),
+diff --git a/arch/arm64/kvm/hyp/pgtable.c b/arch/arm64/kvm/hyp/pgtable.c
+index 5b365682a7ab..c2f3989712e6 100644
+--- a/arch/arm64/kvm/hyp/pgtable.c
++++ b/arch/arm64/kvm/hyp/pgtable.c
+@@ -44,6 +44,8 @@
+ 
+ #define KVM_PTE_LEAF_ATTR_HI_S2_XN	BIT(54)
+ 
++#define KVM_PTE_LEAF_ATTR_HI_S2_DBM	BIT(51)
++
+ #define KVM_PTE_LEAF_ATTR_HI_S1_GP	BIT(50)
+ 
+ #define KVM_PTE_LEAF_ATTR_S2_PERMS	(KVM_PTE_LEAF_ATTR_LO_S2_S2AP_R | \
+@@ -736,6 +738,10 @@ static int stage2_set_prot_attr(struct kvm_pgtable *pgt, enum kvm_pgtable_prot p
+ 	if (!kvm_lpa2_is_enabled())
+ 		attr |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S2_SH, sh);
+ 
++	if (prot & KVM_PGTABLE_PROT_DBM)
++		attr |= KVM_PTE_LEAF_ATTR_HI_S2_DBM;
++
++	attr |= FIELD_PREP(KVM_PTE_LEAF_ATTR_LO_S2_SH, sh);
+ 	attr |= KVM_PTE_LEAF_ATTR_LO_S2_AF;
+ 	attr |= prot & KVM_PTE_LEAF_ATTR_HI_SW;
+ 	*ptep = attr;
+@@ -1339,6 +1345,9 @@ int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,
+ 	if (prot & KVM_PGTABLE_PROT_W)
+ 		set |= KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W;
+ 
++	if (prot & KVM_PGTABLE_PROT_DBM)
++		set |= KVM_PTE_LEAF_ATTR_HI_S2_DBM;
++
+ 	if (prot & KVM_PGTABLE_PROT_X)
+ 		clr |= KVM_PTE_LEAF_ATTR_HI_S2_XN;
+ 
+-- 
+2.43.0
+

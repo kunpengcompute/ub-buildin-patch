@@ -1,0 +1,56 @@
+From eb9885b894898e2467639c50c57512f17bac40b5 Mon Sep 17 00:00:00 2001
+From: Luoxi Li <kaixa@kiloview.com>
+Date: Fri, 18 Oct 2024 17:22:35 +0800
+Subject: [PATCH 047/960] mm: remove unused has_isolate_pageblock
+
+commit b7f058f827392022d8c689329f88c7b324d71dad upstream.
+
+has_isolate_pageblock() has been unused since commit 55612e80e722 ("mm:
+page_alloc: close migratetype race between freeing and stealing")
+
+Remove it.
+
+Link: https://lkml.kernel.org/r/20241018092235.2764859-1-kaixa@kiloview.com
+Signed-off-by: Luoxi Li <kaixa@kiloview.com>
+Acked-by: David Hildenbrand <david@redhat.com>
+Reviewed-by: Muhammad Usama Anjum <usama.anjum@collabora.com>
+Acked-by: Johannes Weiner <hannes@cmpxchg.org>
+Reviewed-by: Anshuman Khandual <anshuman.khandual@arm.com>
+Cc: Baolin Wang <baolin.wang@linux.alibaba.com>
+Cc: Vlastimil Babka <vbabka@suse.cz>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/page-isolation.h | 8 --------
+ 1 file changed, 8 deletions(-)
+
+diff --git a/include/linux/page-isolation.h b/include/linux/page-isolation.h
+index c16db0067090..73dc2c1841ec 100644
+--- a/include/linux/page-isolation.h
++++ b/include/linux/page-isolation.h
+@@ -3,10 +3,6 @@
+ #define __LINUX_PAGEISOLATION_H
+ 
+ #ifdef CONFIG_MEMORY_ISOLATION
+-static inline bool has_isolate_pageblock(struct zone *zone)
+-{
+-	return zone->nr_isolate_pageblock;
+-}
+ static inline bool is_migrate_isolate_page(struct page *page)
+ {
+ 	return get_pageblock_migratetype(page) == MIGRATE_ISOLATE;
+@@ -16,10 +12,6 @@ static inline bool is_migrate_isolate(int migratetype)
+ 	return migratetype == MIGRATE_ISOLATE;
+ }
+ #else
+-static inline bool has_isolate_pageblock(struct zone *zone)
+-{
+-	return false;
+-}
+ static inline bool is_migrate_isolate_page(struct page *page)
+ {
+ 	return false;
+-- 
+2.43.0
+

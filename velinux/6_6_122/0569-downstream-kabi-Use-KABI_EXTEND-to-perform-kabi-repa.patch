@@ -1,0 +1,42 @@
+From 17840230ec6a0b5e227785e30f05e8eccd359b85 Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Wed, 23 Apr 2025 17:16:29 +0800
+Subject: [PATCH 569/960] downstream: kabi: Use KABI_EXTEND to perform kabi
+ repair for IPIV
+
+Follow the kabi repair method and use KABI_EXTEND. Its
+essence is to use GENKSYMS shielding.
+
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/irqchip/arm-gic-v4.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/linux/irqchip/arm-gic-v4.h b/include/linux/irqchip/arm-gic-v4.h
+index 17ecf8054f72..5c20a89aa09d 100644
+--- a/include/linux/irqchip/arm-gic-v4.h
++++ b/include/linux/irqchip/arm-gic-v4.h
+@@ -20,7 +20,6 @@ struct its_vm {
+ 	struct fwnode_handle	*fwnode;
+ 	struct irq_domain	*domain;
+ 	struct page		*vprop_page;
+-	struct page		*vpeid_page;
+ 	struct its_vpe		**vpes;
+ 	int			nr_vpes;
+ 	irq_hw_number_t		db_lpi_base;
+@@ -35,7 +34,8 @@ struct its_vm {
+ 	 */
+ 	raw_spinlock_t		vmapp_lock;
+ 	u32			vlpi_count[GICv4_ITS_LIST_MAX];
+-	bool			nassgireq;
++	KABI_EXTEND(struct page *vpeid_page)
++	KABI_EXTEND(bool nassgireq)
+ };
+ 
+ /* Embedded in kvm_vcpu.arch */
+-- 
+2.43.0
+

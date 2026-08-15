@@ -1,0 +1,136 @@
+From 75d442357f7eb3a600a9688cda1676b281634845 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Sat, 15 Feb 2025 15:40:42 +0800
+Subject: [PATCH 940/960] downstream: vfio: Fix kabi breakage due to closing
+ VFIO_CONTAINER
+
+To support vSVA, we need to open IOMMUFD_VFIO_CONTAINER and close
+VFIO_CONTAINER. Turning off VFIO_CONTAINER will cause kabi breakage.
+This patch fixes it and fixes the other kabi breakages.
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yuhao_zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h |  3 +--
+ arch/arm64/kvm/vmid.c             | 14 ++++++++++----
+ config.aarch64                    |  1 +
+ config.aarch64-64k                |  1 +
+ 4 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index cabeda7ca56a..c67bfedcaac2 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -141,7 +141,6 @@ int topup_hyp_memcache(struct kvm_hyp_memcache *mc, unsigned long min_pages);
+ 
+ struct kvm_vmid {
+ 	atomic64_t id;
+-	refcount_t pinned;
+ };
+ 
+ struct kvm_s2_mmu {
+@@ -220,7 +219,7 @@ struct kvm_arch {
+ 
+ 	/* Mandated version of PSCI */
+ 	u32 psci_version;
+-
++	refcount_t pinned;
+ 	/* Protects VM-scoped configuration data */
+ 	struct mutex config_lock;
+ 
+diff --git a/arch/arm64/kvm/vmid.c b/arch/arm64/kvm/vmid.c
+index 4e956aaa575e..e1d958644425 100644
+--- a/arch/arm64/kvm/vmid.c
++++ b/arch/arm64/kvm/vmid.c
+@@ -104,6 +104,8 @@ static u64 new_vmid(struct kvm_vmid *kvm_vmid)
+ 
+ 	if (vmid != 0) {
+ 		u64 newvmid = generation | (vmid & ~VMID_MASK);
++		struct kvm_s2_mmu *kvm_s2_mmu =
++			container_of(kvm_vmid, struct kvm_s2_mmu, vmid);
+ 
+ 		if (check_update_reserved_vmid(vmid, newvmid)) {
+ 			atomic64_set(&kvm_vmid->id, newvmid);
+@@ -115,7 +117,7 @@ static u64 new_vmid(struct kvm_vmid *kvm_vmid)
+ 		 * takes priority, because even if it is also pinned, we need to
+ 		 * update the generation into the reserved_vmids.
+ 		 */
+-		if (refcount_read(&kvm_vmid->pinned))
++		if (refcount_read(&kvm_s2_mmu->arch->pinned))
+ 			return newvmid;
+ 
+ 		if (!__test_and_set_bit(vmid2idx(vmid), vmid_map)) {
+@@ -188,6 +190,7 @@ unsigned long kvm_arm_pinned_vmid_get(struct kvm_vmid *kvm_vmid)
+ {
+ 	unsigned long flags;
+ 	u64 vmid;
++	struct kvm_s2_mmu *kvm_s2_mmu;
+ 
+ 	if (!pinned_vmid_map)
+ 		return 0;
+@@ -196,7 +199,8 @@ unsigned long kvm_arm_pinned_vmid_get(struct kvm_vmid *kvm_vmid)
+ 
+ 	vmid = atomic64_read(&kvm_vmid->id);
+ 
+-	if (refcount_inc_not_zero(&kvm_vmid->pinned))
++	kvm_s2_mmu = container_of(kvm_vmid, struct kvm_s2_mmu, vmid);
++	if (refcount_inc_not_zero(&kvm_s2_mmu->arch->pinned))
+ 		goto out_unlock;
+ 
+ 	if (nr_pinned_vmids >= max_pinned_vmids) {
+@@ -213,7 +217,7 @@ unsigned long kvm_arm_pinned_vmid_get(struct kvm_vmid *kvm_vmid)
+ 
+ 	nr_pinned_vmids++;
+ 	__set_bit(vmid2idx(vmid), pinned_vmid_map);
+-	refcount_set(&kvm_vmid->pinned, 1);
++	refcount_set(&kvm_s2_mmu->arch->pinned, 1);
+ 
+ out_unlock:
+ 	raw_spin_unlock_irqrestore(&cpu_vmid_lock, flags);
+@@ -226,6 +230,7 @@ unsigned long kvm_arm_pinned_vmid_get(struct kvm_vmid *kvm_vmid)
+ void kvm_arm_pinned_vmid_put(struct kvm_vmid *kvm_vmid)
+ {
+ 	unsigned long flags;
++	struct kvm_s2_mmu *kvm_s2_mmu;
+ 	u64 vmid = atomic64_read(&kvm_vmid->id);
+ 
+ 	if (!pinned_vmid_map)
+@@ -233,7 +238,8 @@ void kvm_arm_pinned_vmid_put(struct kvm_vmid *kvm_vmid)
+ 
+ 	raw_spin_lock_irqsave(&cpu_vmid_lock, flags);
+ 
+-	if (refcount_dec_and_test(&kvm_vmid->pinned)) {
++	kvm_s2_mmu = container_of(kvm_vmid, struct kvm_s2_mmu, vmid);
++	if (refcount_dec_and_test(&kvm_s2_mmu->arch->pinned)) {
+ 		__clear_bit(vmid2idx(vmid), pinned_vmid_map);
+ 		nr_pinned_vmids--;
+ 	}
+diff --git a/config.aarch64 b/config.aarch64
+index f5f1f1e01eb7..7271457af5b7 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -711,6 +711,7 @@ CONFIG_HAVE_KVM_IRQ_BYPASS=y
+ CONFIG_HAVE_KVM_VCPU_RUN_PID_CHANGE=y
+ CONFIG_KVM_XFER_TO_GUEST_WORK=y
+ CONFIG_KVM_GENERIC_HARDWARE_ENABLING=y
++CONFIG_HAVE_KVM_PINNED_VMID=y
+ CONFIG_VIRTUALIZATION=y
+ CONFIG_KVM=y
+ # CONFIG_NVHE_EL2_DEBUG is not set
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 2ceb1972cbba..9de0481c7972 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -408,6 +408,7 @@ CONFIG_ARM64_BRBE=y
+ CONFIG_HISI_SOC_CACHE=m
+ CONFIG_HISI_SOC_HHA=m
+ CONFIG_ARM64_NMI=y
++CONFIG_HAVE_KVM_PINNED_VMID=y
+ CONFIG_HARDLOCKUP_DETECTOR_PERF=y
+ CONFIG_ARM64_HAFT=y
+ CONFIG_ARCH_HAS_NONLEAF_PMD_YOUNG=y
+-- 
+2.43.0
+

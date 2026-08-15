@@ -1,0 +1,52 @@
+From 005474ac6f424a754b1fd960c6bc0ff9cd34bb9c Mon Sep 17 00:00:00 2001
+From: Jinjie Ruan <ruanjinjie@huawei.com>
+Date: Fri, 29 Mar 2024 16:44:23 +0800
+Subject: [PATCH 505/960] downstream: arm64: Enable hardware NMI for perf
+ events NMI
+
+Like pseudo NMI, also select HAVE_PERF_EVENTS_NMI for hardware NMI, and
+update the comment for arch_perf_nmi_is_available().
+
+Signed-off-by: Jinjie Ruan <ruanjinjie@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/Kconfig               | 2 +-
+ arch/arm64/kernel/watchdog_hld.c | 7 ++++---
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index b5587cd150fc..2ad93161aa71 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -224,7 +224,7 @@ config ARM64
+ 	select HAVE_MOD_ARCH_SPECIFIC
+ 	select HAVE_NMI
+ 	select HAVE_PERF_EVENTS
+-	select HAVE_PERF_EVENTS_NMI if ARM64_PSEUDO_NMI
++	select HAVE_PERF_EVENTS_NMI if ARM64_PSEUDO_NMI || ARM64_NMI
+ 	select HAVE_PERF_REGS
+ 	select HAVE_PERF_USER_STACK_DUMP
+ 	select HAVE_PREEMPT_DYNAMIC_KEY
+diff --git a/arch/arm64/kernel/watchdog_hld.c b/arch/arm64/kernel/watchdog_hld.c
+index e55548cb26df..ae0da38214fa 100644
+--- a/arch/arm64/kernel/watchdog_hld.c
++++ b/arch/arm64/kernel/watchdog_hld.c
+@@ -28,9 +28,10 @@ u64 hw_nmi_get_sample_period(int watchdog_thresh)
+ bool __init arch_perf_nmi_is_available(void)
+ {
+ 	/*
+-	 * hardlockup_detector_perf_init() will success even if Pseudo-NMI turns off,
+-	 * however, the pmu interrupts will act like a normal interrupt instead of
+-	 * NMI and the hardlockup detector would be broken.
++	 * hardlockup_detector_perf_init() will success even if Pseudo-NMI or
++	 * Hardware NMI turns off. However, the pmu interrupts will act like
++	 * a normal interrupt instead of NMI and the hardlockup detector would
++	 * be broken.
+ 	 */
+ 	return arm_pmu_irq_is_nmi();
+ }
+-- 
+2.43.0
+

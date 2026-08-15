@@ -1,0 +1,101 @@
+From d1782f655bf91d00dd6da56fa6426b339de27798 Mon Sep 17 00:00:00 2001
+From: Jinjiang Tu <tujinjiang@huawei.com>
+Date: Mon, 15 Dec 2025 15:53:34 +0800
+Subject: [PATCH 015/960] downstream: mm: rename part of MAX_ORDER to
+ MAX_PAGE_ORDER
+
+Part of commit 5e0a760b4441 ("mm, treewide: rename MAX_ORDER to
+MAX_PAGE_ORDER"). Rename part of MAX_ORDER to MAX_PAGE_ORDER to
+avoid backport conflicts.
+
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/compaction.c     | 2 +-
+ mm/internal.h       | 2 ++
+ mm/page_alloc.c     | 6 +++---
+ mm/page_isolation.c | 4 ++--
+ 4 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/mm/compaction.c b/mm/compaction.c
+index edffe2aebe06..a980f80f4cf4 100644
+--- a/mm/compaction.c
++++ b/mm/compaction.c
+@@ -1020,7 +1020,7 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
+ 		if (PageCompound(page) && !cc->alloc_contig) {
+ 			const unsigned int order = compound_order(page);
+ 
+-			if (likely(order <= MAX_ORDER)) {
++			if (likely(order <= MAX_PAGE_ORDER)) {
+ 				low_pfn += (1UL << order) - 1;
+ 				nr_scanned += (1UL << order) - 1;
+ 			}
+diff --git a/mm/internal.h b/mm/internal.h
+index 4beda1349c57..56c8d141cbd1 100644
+--- a/mm/internal.h
++++ b/mm/internal.h
+@@ -533,6 +533,8 @@ int split_free_page(struct page *free_page,
+ 
+ #if defined CONFIG_COMPACTION || defined CONFIG_CMA
+ 
++#define MAX_PAGE_ORDER MAX_ORDER
++
+ /*
+  * in mm/compaction.c
+  */
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 8f2d8a26c66d..d24895119e05 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -817,7 +817,7 @@ static inline void __free_one_page(struct page *page,
+ 	VM_BUG_ON_PAGE(pfn & ((1 << order) - 1), page);
+ 	VM_BUG_ON_PAGE(bad_range(zone, page), page);
+ 
+-	while (order < MAX_ORDER) {
++	while (order < MAX_PAGE_ORDER) {
+ 		if (compaction_capture(capc, page, order, migratetype)) {
+ 			__mod_zone_freepage_state(zone, -(1 << order),
+ 								migratetype);
+@@ -2114,7 +2114,7 @@ __rmqueue_fallback(struct zone *zone, int order, int start_migratetype,
+ 	 * This should not happen - we already found a suitable fallback
+ 	 * when looking for the largest page.
+ 	 */
+-	VM_BUG_ON(current_order > MAX_ORDER);
++	VM_BUG_ON(current_order > MAX_PAGE_ORDER);
+ 
+ do_steal:
+ 	page = get_page_from_free_area(area, fallback_mt);
+@@ -6623,7 +6623,7 @@ int alloc_contig_range(unsigned long start, unsigned long end,
+ 	order = 0;
+ 	outer_start = start;
+ 	while (!PageBuddy(pfn_to_page(outer_start))) {
+-		if (++order > MAX_ORDER) {
++		if (++order > MAX_PAGE_ORDER) {
+ 			outer_start = start;
+ 			break;
+ 		}
+diff --git a/mm/page_isolation.c b/mm/page_isolation.c
+index bcf99ba747a0..6cc49b6089f9 100644
+--- a/mm/page_isolation.c
++++ b/mm/page_isolation.c
+@@ -451,7 +451,7 @@ static int isolate_single_pageblock(unsigned long boundary_pfn, int flags,
+ 				 * the free page to the right migratetype list.
+ 				 *
+ 				 * head_pfn is not used here as a hugetlb page order
+-				 * can be bigger than MAX_ORDER, but after it is
++				 * can be bigger than MAX_PAGE_ORDER, but after it is
+ 				 * freed, the free page order is not. Use pfn within
+ 				 * the range to find the head of the free page.
+ 				 */
+@@ -459,7 +459,7 @@ static int isolate_single_pageblock(unsigned long boundary_pfn, int flags,
+ 				outer_pfn = pfn;
+ 				while (!PageBuddy(pfn_to_page(outer_pfn))) {
+ 					/* stop if we cannot find the free page */
+-					if (++order > MAX_ORDER)
++					if (++order > MAX_PAGE_ORDER)
+ 						goto failed;
+ 					outer_pfn &= ~0UL << order;
+ 				}
+-- 
+2.43.0
+

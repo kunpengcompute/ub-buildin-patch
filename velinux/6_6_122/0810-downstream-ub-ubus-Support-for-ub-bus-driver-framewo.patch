@@ -1,0 +1,6110 @@
+From 9d3d960f0770e26ad58717aa1c9b36dace4e239c Mon Sep 17 00:00:00 2001
+From: Junlong Zheng <zhengjunlong@huawei.com>
+Date: Thu, 18 Sep 2025 21:41:32 +0800
+Subject: [PATCH 810/960] downstream: ub: ubus: Support for ub bus driver
+ framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Supports the UB bus driver framework, providing callback interfaces for
+match/probe/remove/uevent/shutdown, and supports device driver registration
+and unregistration interfaces.
+
+ub:ubfi: Support ub firmware interface basic functions
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UnifiedBus firmware interface basic functions,
+set bios mode, get ub root table by dts or acpi,
+handle dts-ubrt or acpi-ubrt
+
+ub:ubus: Support UB Bus Attribute Group
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add support for UB bus attribute groups, including device attribute groups,
+bus attribute groups, and driver attribute groups.
+
+ub:ubfi: ubfi driver parse ubc information from ubrt
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+ubfi driver parse ubc information from ubrt table,
+by acpi upload or dts upload
+
+ub:ubus: add ubus controller framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add ubus controller framework, providing probe and remove controllers
+and find ubus controller by clan network address functions
+
+ub:ubus: Support for ubus messaging communication framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support for ubus messaging communication framework, create message device
+and add device probe and remove messages
+
+ub:ubfi: ubfi driver create ubc device
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+ubfi driver create ubc device, and initialize some ubc
+device resources(irq, mmio,...). Declare these resources
+to the kernel.
+
+ub:ubus: Support for UB Bus DMA Configuration Function
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support for UB bus dma_configure and dma_cleanup callbacks,
+to enable UB bus device DMA data path.
+
+ub:ubus: Add Ubus setting configuration space function
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add Ubus setting configuration space function, including basic function
+
+ub:ubus: Support for UB Bus Port Management Framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Provide basic interface capabilities for UB port application,
+release, initialization, and connection.
+
+ub:ubus: Support Ubus read/write configuration functions
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support Ubus read/write configuration functions,
+read/write by 1, 2, 4 byte.
+
+ub:ubus: Support for UB port sysfs attribute files
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Provide a list of basic sysfs attribute files for UB port,
+including port network address, neighbor information,
+link status, etc.
+
+ub:ubus: Supporting the UB Shared Port Function
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+The UB Bus Controller and IDEV support shared ports, reusing
+port interfaces for external communication.
+
+ub:ubus: Support cc configuration and query
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Provide UB device congestion control switch configuration function.
+Provide the capability to query UB device congestion control functions.
+
+ub:ubus: Add EID allocate and free interfaces by kernel
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add Entity index allocate and free interfaces by kernel.
+
+ub:ubus: Add CNA allocate and free interfaces by kernel
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add Clan network address and free interfaces by kernel.
+
+ub:ubus: Support for UB routing table configuration function
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support for device CNA routing node management and
+routing table configuration.
+
+ub:ubus: Support for UB bus enumeration message initialization
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the UB protocol device enumeration message definition
+and initialize the corresponding message header section.
+
+ub:ubus: Add UBUS resource space framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add basic framework for UBUS resource space,
+including reading/writing functions, and so on.
+
+ub:ubus: Add UBUS resource space basic functions
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add UBUS resource allocate/release and set-up and unset functions.
+
+ub:ubus: Support enumeration topology query commands
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement device topology query message transmission and
+reception, and parse response message information.
+
+ub:ubus: Supports network address configuration and querying
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the functionality for configuring network addresses
+in enumeration messages and for sending and receiving
+network address query messages.
+
+ub:ubus: Support for shortest path routing configuration
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement shortest path calculation using BFS to complete
+the basic routing configuration for the entire network.
+
+ub:ubus: Support for UB Bus Controller Enumeration
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Perform a topological scan of the network using
+breadth-first search, and currently implement enumeration
+of the UB Bus Controller.
+
+ub:ubus: Supports device enumeration.
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Enumerate all devices within the network, enable them,
+and add them to the system.
+
+ub:ubus: Support UB device enabling basic interface
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implementing the basic configuration for entity0 initialization
+and de-initialization.
+
+ub:ubus: Support for multiple mue enablement
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+The UB device supports multiple entity models, and here we
+implement the enable/disable functionality for the mue.
+
+ub:ubus: Support device level and port level reset
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support device level and port level reset.
+
+ub:ubus: Add UBUS capability interfaces
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add some UBUS capability interfaces, including reading, writing,
+setting and clearing configuration space of UBUS capability.
+
+ub:ubus: Support UBUS Interrupt framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS Interrupt framework, add basic data structure of UBUS USI
+and create message signal interrupts domain.
+
+ub:ubus: Add UBUS MSI basic functions
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add UBUS MSI basic functions, including set-up interrupt,
+count interrupt number, write and set msi message and disable
+UBUS interrupts.
+
+ub:ubus: Add MSI capability for UBUS driver
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add MSI capability for UBUS driver, providing type1 and type2
+interrupts. Type1 interrupt is mainly used for ub bus controller,
+and type2 interrupt is used for ub device except ub bus controller.
+Finally, export some interfaces UBUS USI for UB kernel.
+
+ub:ubus: Support for enabling and disabling ue
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement dynamic creation and destruction of ue.
+
+ub:ubus: Support configuration of device information interface
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Provide entity enablement, host information configuration,
+and device stop flow interface.
+
+ub:ubus: Add UBUS RAS framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add UBUS Reliability, Availability and Serviceability
+framework, and add UBUS error handle in Generic
+Hardware Error Source of Linux.
+
+ub:ubus: Enable the ub decoder device support
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Configure the various registers required for the ub decoder
+hardware to function properly.
+
+ub:ubus: Adding a ue Creation Destruction Mechanism
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the ability to trigger the enabling of ue
+through a sysfs entry, adding ue change notification
+mechanism and add interfaces to access the device via
+different keys.
+
+ub:ubus: Creating and deleting ub decoder page table mappings
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Construct address mapping and populate the page table with information
+retrieved from the decoder hardware lookup.
+Clear the established mapping relationships.
+
+ub:ubus: Support UBUS RAS capability
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS Reliability, Availability and Serviceability
+capability, including error report, ras recover and so on.
+
+ub:ubus: Support for UB Character Device Driver
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the character device driver for UB, providing
+an ioctl operation entry for user space.
+
+ub:ubus: Support for Bus EID-UPI Table Configuration
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the initialization and deinitialization of the
+EID-UPI table, as well as the corresponding configuration
+table item interfaces.
+
+ub:ubus: Support for page-range table address mapping and unmapping
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Construct address mapping and populate the page table with information
+retrieved from the decoder hardware lookup.
+Clear the established mapping relationships.
+
+ub:ubus: Support for range table mapping and unmapping functions
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Construct address mapping and populate the range table with information
+retrieved from the decoder hardware lookup.
+Clear the established mapping relationships.
+
+ub:ubus: Support for sending decoder commands
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Provide an interface to support writing commands to the command queue
+for sending to the UB decoder device.
+
+ub:ubus: Supports decoder event processing
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support processing event notifications sent by the UB decoder device.
+
+ub:ubus: Support route modify/delete function
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support update routing table when linked port has been changed.
+When a device is removed, clear all route that pass through the port
+which the device linked to.
+
+ub:ubus: Support enumerate port and route set/clear for port
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support enumerate ports and set/clear route table for the new/deleted
+port.
+
+ub:ubus: Support handle device link up and link down
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support handle device link up and link down.
+
+ub:ubus: Support for bus instance framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the basic framework for a bus instance, while
+initializing and deinitializing a static server-type bus instance.
+
+ub:ubus: Support for dynamic bus instance
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implementing the creation and destruction of dynamically typed
+bus instances, the trigger path can be a user-space ioctl or
+a remote message.
+
+ub:ubus: Support for static cluster bus instance
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the creation and destruction of bus instances of
+the static-cluster type, with the trigger originating from
+remote messages, and add a sysfs interface to view the list
+of bus instances in the system.
+
+ub:ubus: Support device binding and unbinding bus instance
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Initialize the default bus instance of the device and provide
+an interface for dynamically switching bus instances.
+
+ub:ubus: Add UBUS receive message framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add UBUS receive message framework, including message
+header, payload and handler interfaces
+
+ub:ubus: Support for ub device resource space registration
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+register ub device mmio space to ub decoder
+
+ub:ubus: Support UBUS pool devices register
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS pool devices register, and get pool device
+register message, add pool devices and remove response to
+Clan Fabric Manager
+
+ub:ubus: Add new UBUS pool device interfaces
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add new UBUS pool devices interfaces, including
+device release, bus instance create and destroy,
+port reset notify and config cpl notify.When complete,
+send response to FM.
+
+ub:ubus: Add ub service driver framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add ub service bus type and register it to the bus framework. Add
+interfaces to register and unregister ub service driver.
+
+ub:ubus: Add generic ub component driver
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add generic ub component driver to match with ub bus controller and ub
+switch. During device probe, register all capable service devices also.
+
+ub:ubus: Support hotplug service driver
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Register the hotplug service driver to implement basic
+initialization and deinitialization functions for the slot.
+
+ub:ubus: Support for slot register configuration
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement read and write operations for each slot register
+in the device configuration space, providing fundamental
+capabilities for hardware manipulation.
+
+ub:ubus: Support for device enumeration during the hotplug phase
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement device creation and destruction during the hotplug phase,
+while refreshing the routing tables of all devices in the network.
+
+ub:ubus: Support hotplug processing main workflow
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+The main process for implementing hotplug handling is achieved
+through three workers that manage the callback processing for
+buttons, in-place operations, and power. Additionally,
+a user-space sysfs entry is added to trigger notification-based
+hotplug.
+
+ub:ubus: Support processing protocol link messages
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the protocol-defined link up, link down, slot button
+press events, and slot presence detection event messages.
+
+ub:ubus: Add basic System Filesystem attributes
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add some new basic System Filesystem attributes, including reset,
+device_reset, software capability, upi, eid, ummu_map and other
+attributes.
+
+ub:ubus: Add configuration and resource sysfs interfaces
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Add configuration and resource System Filesystem
+interfaces, including creating and moving files.
+
+ub:ubus: Support UBUS driver host probe and remove
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS driver host probe and remove. Add controller
+device enum and cdev and receive message initialize in host
+probe.
+
+ub:hisi-ubus: Add HiSilicon ubus driver framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Add HiSilicon ubus driver framework. And parse hisi private data.
+
+ub:hisi-ubus: Support UBUS vendor defined message framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS vendor defined message framework.Get receive
+messages and handle message header and payload, send response
+when complete.
+
+ub:hisi-ubus: Support UBUS vdm pue/ue register and release
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS vdm physical device and virtual device register
+and release. Send response to MAMI when finished
+
+ub:hisi-ubus: Support UBUS local RAS interfaces
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS local Reliability, Availability and
+Serviceability interfaces.Print, handle
+and recover ubus ras.
+
+ub:hisi-ubus: Support for hisi MSGQ framework
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+The framework for implementing msgq, including initialization
+and deinitialization, provides the foundational pathway for
+subsequent message transmission and reception.
+
+ub:hisi-ubus: Support for MSGQ channel processing in SQ and CQ
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement the SQ message sending functionality of the MSGQ
+queue and the CQ message receiving functionality, enabling
+interaction between the driver and link messages.
+
+ub:hisi-ubus: Provide callback functions for message devices
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement interfaces for sending and receiving protocol
+messages, enumeration messages, vendor messages, and
+private messages.
+
+ub:hisi-ubus: Support for processing CQ request messages
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement two modes of interrupt and timer polling to
+handle request messages in the CQ queue.
+
+ub:hisi-ubus: Support MSGQ queue exception handling
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Implementing timeout message handling by utilizing a timer
+mechanism to address various timeout message scenarios.
+
+ub:hisi-ubus: Support for MSGQ's debugging functionality
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Implementing MSGQ's debugfs, queue pointer status, exception log,
+and other DFX functionalities.
+
+ub:hisi-ubus: Support UBUS vdm entity enable message
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS to send entity enable vendor defined message.
+
+ub:hisi-ubus: Support UBUS configure EID-UPI table
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Support UBUS configure EID-UPI table. Initialize
+and release EID-UPI table, and read/write info
+to EID-UPI table.
+
+ub:ubus: reserve space for ub subsystem related structure
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Reserve space for ub subsystem related structure.
+
+ub:ubus: Bugfix of ubus and ubfi
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+1. Add the CONFIG_UB option to the ub directory in Makefile;
+2. Add static for inner functions;
+3. fix ubfi's ubc_list init bug.
+
+ub:ubus: Add ummu_map attribute in sysfs
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID77OO
+CVE: NA
+
+-----------------------------------------------------------
+
+Add ummu_map attribute in sysfs
+
+ub:ubus: call ub_host_probe inside register_ub_manage_subsystem_ops
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+-----------------------------------------------------------
+
+Call ub_host_probe inside register_ub_manage_subsystem_ops
+so that ub_host_probe can become static function, same to
+ub_host_remove. Query entity and port na first, then do the
+config read in ub_fm_flush_ubc_info because config read will
+check na. Fix some comment description issues.
+
+ub:ubus: Support for UB Memory Decoder general layer implementation
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Supports triggering the memory decoder's flush function via ubus driver
+and implements RAS processing.
+
+ub:hisi-ubus: Support for UB Memory Decoder Initialization
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Initialize the UB memory decoder, and implement the
+corresponding flush trigger, flush status query,
+and address validity verification interfaces.
+
+ub:hisi-ubus: Support for ub memory decoder ras handle
+
+driver inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID34DG
+CVE: NA
+
+-----------------------------------------------------------
+
+Implement RAS exception handling for the ub memory decoder,
+including interrupt callback handling functions,
+error handling interfaces, etc.
+
+ub:hisi-ubus: Adding compatibility Interfaces for ub memory
+
+drivers inclusion
+category: Feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID5ZAI
+CVE: NA
+
+------------------------------------------------------------
+
+Adding southbound and northbound compatibility Interfaces
+for ub memory
+
+ub: hisi-ubus: Fix ub memory decoder create
+
+drivers: inclusion
+category: Bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+------------------------------------------------------------
+
+Fix ub memory decoder create cannot get data
+
+ub:hisi-ubus ub:hisi-ubus: Move the decoder's page table operations to hisi-ubus
+
+drivers inclusion
+category: Bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+------------------------------------------------------------------
+
+Move the decoder's page table operations to hisi-ubus
+
+ub:ubus: fix bug of msg workqueue null
+
+drivers inclusion
+category: Bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+------------------------------------------------------------------
+
+1.fix bug of msg workqueue null
+2.don't cfg ubc0 route table during cluster mode
+
+ub:ubus adapt port local ras
+
+drivers inclusion
+category: Bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+------------------------------------------------------------------
+
+Adapt port local ras, and add port reset function in cluster mode.
+
+ub:ubus: add active_mutex in ub_entity
+
+drivers inclusion
+category: Bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+------------------------------------------------------------
+
+Add mutex to the entity structure.
+
+ub:hisi-ubus: Fix ue reg/unreg without lock bug
+
+drivers inclusion
+category: bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+------------------------------------------------------------
+
+Currently, UE registration and deregistration are not performed
+under the protection of the MUE device lock. When the MUE performs
+a reset, there is a risk of concurrent resource conflicts.
+
+Fixes: 86fec00cb73a ("ub:hisi-ubus: Support UBUS vdm entity enable message")
+
+ub:ubus: Delete ubc cfg0 config during cluster mode
+
+drivers inclusion
+category: bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+-----------------------------------------------------------
+
+In cluster mode, the management authority of UBC is primarily held by UBFM.
+Ubus cannot configure the configuration space of cfg0 except for the vport
+configuration space.
+
+Fixes: 280895301d3b ("ub:ubus: Support Ubus read/write configuration functions")
+
+ub:ubus: Matt and MMIO judgments are not performed in cluster
+
+drivers inclusion
+category: bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+-----------------------------------------------------------
+
+Rollback after setting the decoder register fails.
+Matt and MMIO judgments are not performed in cluster true
+
+Fixes: abc591c50df5 ("ub:ubus: Supports decoder event processing")
+
+ub:ubus: bugfix calltrace of killing qemu when rmmod hisi_ubus
+
+drivers inclusion
+category: Bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+-----------------------------------------------------------
+
+bugfix calltrace of killing qemu when rmmod hisi_ubus
+
+ub:ubus: add hotplug capability check
+
+drivers inclusion
+category: Bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+-----------------------------------------------------------
+
+HotPlug capability check added to determine whether
+power-on and power-off functions are supported.
+
+ub:ubus: bugfix port reset in cluster mode
+
+drivers inclusion
+category: Bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+-----------------------------------------------------------
+
+bugfix port reset in cluster mode.
+
+ub:hisi-ubus: fix MUE unreg msg rsp time
+
+drivers inclusion
+category: bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+-----------------------------------------------------------
+
+1. During MUE deregistration processing, first send a response to the
+control plane, then proceed with the device destruction process.
+2. Add entity number to the uent release log.
+
+Fixes: 86fec00cb73a ("ub:hisi-ubus: Support UBUS vdm entity enable message")
+
+ub:ubus: Change create device irq domain debug info
+
+drivers inclusion
+category: bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/ID700V
+CVE: NA
+
+-----------------------------------------------------------
+
+Change create device irq domain debug info.
+
+Fixes: 81962d0ecc6e ("ub:ubus: Support UBUS Interrupt framework")
+
+ub:ubus: hi_msg_sync_wait first pull cq
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+In cluster mode, ub_get_ue_by_entity_idx should not
+check entity idx.
+Currently hi_msg_sync_wait() first check msg is not timeout,
+then pull the cq, which can be misjudged because of cpu not
+getting dispatch for long time but actually the msg cq
+already arrived. Change the order usingdo {} while() so that
+driver will pull cq at least once.
+
+Fixes: 0f9e2dbe888d ("ub:ubus: Support for enabling and disabling ue")
+
+ub:ubus: Move the decoder's queue operations to hisi-ubus
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+Move the decoder's queue operations to hisi-ubus
+
+Fixes: abc591c50df5 ("ub:ubus: Supports decoder event processing")
+
+ub:ubus: fix ub_get_bus_controller getting null
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+fix ub_get_bus_controller getting null
+
+Fixes: 26a640c9d1b1 ("ub:ubus: add ubus controller framework")
+
+ub:ubus:Fix ubus interrupt release issue
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+Fix ubus interrupt release issue when the resource space is inaccessible.
+
+Fixes: 81962d0ecc6e ("ub:ubus: Support UBUS Interrupt framework")
+
+ub:hisi-ubus:Fix vdm message print error
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+Fix vdm message print error
+
+Fixes: 86fec00cb73a ("ub:hisi-ubus: Support UBUS vdm entity enable message")
+
+ub:hisi-ubus: cq poller maximum handle 64 cqe per time
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+Cq poller maximum handle 64 cqe per time, so that the time stay in irqsave
+state becomes short to prevent cpu hard lockup.
+
+Fixes: d7b599123e51 ("ub:hisi-ubus: Support for processing CQ request messages")
+
+ub:ubus: Fix ubus link message and pool device error
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+1.add flag UB_ENTITY_DISCONNECTED to stop cfg access to device
+when device all down or reset.
+2.bugfix of msgq init, coming link msg.
+3.add ueid check during entity reg.
+4.modify mgmt val when pool device not init.
+5.add pool device guid check with pld.guid.
+
+Fixes: e00041ecb77a ("ub:ubus: Support UBUS pool devices register")
+
+ub:hisi-ubus: Delete validate_pa err print
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+Delete validate_pa err print
+
+Fixes: d392ae30c331 ("ub:hisi-ubus: Support for UB Memory Decoder Initialization")
+
+ub:ubus: Not cfg access during surprise down
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6663
+CVE: NA
+
+-----------------------------------------------------------
+
+Not cfg access during surprise down
+
+Fixes: c21b483526d7 ("ub:ubus: Add UBUS capability interfaces")
+
+ub:hisi-ubus: Add create bus instance ummu bypass
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Add create bus instance ummu bypass
+
+ub:ubus: Delete unused functions
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Delete unused functions
+
+ub:ubus: Add port num check
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Add port num check
+
+ub:ubus: Black Box Development
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Black Box Development
+
+ub:ubus: injected route event
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+injected route event
+
+ub:hisi-ubus: fix bug of security smatch
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+fix bug of security smatch
+
+ub:hisi-ubus: Use GFP_ATOMIC when alloc memory
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+When allocating memory, use GFP_ATOMIC instead of GFP_KERNEL.
+
+ub:ubus: Avoid getting empty uent from ubc
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Avoid getting empty uent from ubc
+
+ub:ubus: protect iterator ue_list and mue_list with ub_bus_sem
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+protect iterator ue_list and mue_list with ub_bus_sem.
+
+ub: ubus: Remove black box header file to include dir
+
+drivers inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/8514
+CVE: NA
+
+-----------------------------------------------------------
+
+Remove black box header file to include directory to support
+other modules to use.
+
+Fixes: ab9a945e6625 ("ub:ubus: Black Box Development")
+
+ub:ubus add some missing code to openeuler
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+add some missing code to openeuler
+
+ub:ubus: alter nl ssu credit ras recover
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+alter nl ssu credit ras recover
+
+ub:ubus: add reset function
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+add reset function
+
+ub:hisi-ubus: Review of Readability Modifications
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Review of Readability Modifications
+
+ub:hisi-ubus: Synchronize the missing code
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+1. Fix the error in parsing messages bypassed by the UMMU.
+2. Bugfix ubus AI reviews of security verification issue.
+3. In a cluster scenario, pool devices are not registered
+in the decoder page table.
+4. When ublc device is down, go to notify share port.
+
+Fixes: 0f9e2dbe888d ("ub:ubus: Support for enabling and disabling ue")
+
+ub:ubus: Fix null message workqueue issue
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Check message workqueue is null or not before queue_work(),
+if the workqueue is empty, the kernel might dereference a
+null pointer, causing a kernel panic.
+
+Fixes: 63179ebb7e8e ("ub:ubus: Add UBUS receive message framework")
+
+ub:ubus: Fix find error ubc_num of local ras
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Fix The port number issue which cause a reset error due to RAS triggering
+
+Fixes: 789e8b975d32 ("ub:hisi-ubus: Support UBUS local RAS interfaces")
+
+ub:hisi-ubus: Adjust the order of the message struct
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+To improve the code readability, keep the message
+struct definition and assignment order consistent
+
+Fixes: 63179ebb7e8e ("ub:ubus: Add UBUS receive message framework")
+
+ub:hisi-ubus: add soft dep of ummu for hisi_ubus
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Regarding the automatic loading feature of the ub driver,
+the loading order of the ummu and ubus drivers is not fixed.
+If ub device drivers plan to use ummu,ummu driver must be
+loaded first. Add soft dep of ummu for hisi_ubus, then the
+loading order can be determined
+
+Fixes: e42bc0097589 ("ub:ubus: Support for ub bus driver framework")
+
+ub:ubus: support getting supported features data
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/9100
+CVE: NA
+
+-----------------------------------------------------------
+
+UBC subtable vendor_info field add Vendor Feature Sets data to describe ub
+controller supported features. Ubus drivers provide api to get value of
+supported features. Add bus attribute ub_feature in user mode so that
+application can know which features are supported in current environment.
+
+ub:ubus: change the condition of io decoder creating page table or not
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Now whether io decoder will create page table is determined by
+ubc->cluster, but ub controller already has one configuration item that
+serves this purpose: CFG1_BASIC.Supported Feature.Decoder MATT
+jurisdiction. Use this config to determine whether io decoder will create
+page table or not.
+
+Fixes: abc591c50df5 ("ub:ubus: Supports decoder event processing")
+
+ub:ubus: Will not enable decoder if matt jurisdiction is UBFM
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Will not enable decoder if matt jurisdiction is UBFM.
+
+Fixes: abc591c50df5 ("ub:ubus: Supports decoder event processing")
+
+ub:ubus: Add KABI_RESERVE to struct ub_decoder and message_device
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Add KABI_RESERVE to struct ub_decoder and message_device.
+
+Fixes: abc591c50df5 ("ub:ubus: Supports decoder event processing")
+
+ub:ubus: Add control software restart features
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/9098
+CVE: NA
+
+-----------------------------------------------------------
+
+The device is running properly. Only when the management
+and control process is restarted,the software table data
+retained in the process is lost. The corresponding backup
+and restoration functions are implemented.
+
+ub:ubus: Bugfix control software restart features
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/9164
+CVE: NA
+
+-----------------------------------------------------------
+
+bugfix control software restart features:
+1.add mgmt state sysfs
+2.Abnormal reference count
+3.modify entity mgmt state maintain, retry mechanism
+
+Fixes: 5b429f1fd821 ("ub:ubus: Add control software restart features")
+
+ub:ubus: Fixing the bug of concurrent hotplug and device reset
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+In hotplug and linkup events, the same device is enumerated only once.
+
+Fixes: 8f4f082b147e ("ub:ubus: Support hotplug service driver")
+
+ub:ubus: bugfix for UE probe without MUE'lock
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+In the VDM code, the UE entity's START and ATTACH functions exist,
+but the MUE device lock is not held. As a result, when users
+concurrently load the ubase driver and register the UE,
+or when the UE retries the ATTACH task, a panic issue occurs.
+
+Fixes: 5b429f1fd821 ("ub:ubus: Add control software restart features")
+
+ub:ubus: bugfix for QEMU'addr 8byte check
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+The address of the task_src variable is 4-byte aligned.
+After the address is forcibly converted to an 8-byte
+address and then transferred to the assign_bit
+interface, the QEMU simulation platform strictly
+verifies the 8-byte alignment. As a result, a panic
+occurs when the ubus driver is loaded.
+
+Fixes: 5b429f1fd821 ("ub:ubus: Add control software restart features")
+
+ub:ubus: add error return when send config message
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+In the interrupt release process,
+the kernel uses spin_lock_irqsave.
+If the message times out while this lock is held,
+the hardware watchdog will be triggered.
+
+Fixes: 81962d0ecc6e ("ub:ubus: Support UBUS Interrupt framework")
+
+ub:ubus: add mutex lock for port local ras
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+In the scenario where the driver is loaded and unloaded
+concurrently, the port handler may be null.
+A mutex lock is added to ensure that the driver
+can run properly in the concurrent scenario.
+
+Fixes: 3764805d000a ("ub:ubus adapt port local ras")
+
+ub:ubus: Optimize error log and add mutex lock for ub memory ras
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+In the scenario where the driver is loaded and unloaded
+concurrently, the mem ras handler may be null.
+A mutex lock is added to ensure that the driver
+can run properly in the concurrent scenario.
+And the error log of memory ras isr is not clear,
+so we optimize error log.
+
+Fixes: 82b774b2b67a ("ub:hisi-ubus: Support for ub memory decoder ras handle")
+
+ub:ubus: optimize error print for ubus and hisi_ubus
+
+driver inclusion
+category: feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+There are many instances of non-standard logging in the
+ubus driver and hisi_ubus driver code, and the use of
+the static modifier is also inaccurate. Therefore,
+we have optimized these issues here. We also set topo buf to
+null after the buf is released.
+
+Fixes: e42bc0097589 ("ub:ubus: Support for ub bus driver framework")
+
+ub:hisi-ubus: modify return value of hi_feature_get() in abnormal branch
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+hi_feature_get() returns 64 bits feature bitmap, each bit represents a
+feature. Bit value 1 means feature enabled, 0 means feature disabled. In
+the case feature_sets data is not initialized, we don't want return all
+0 directly which means no feature is enabled because this changes the
+default behavior(all features are enabled by default). Modify return value
+of hi_feature_get() in abnormal branches to U64_MAX meaning all features
+are supported by default.
+
+Fixes: 6ef245b2a891 ("ub:ubus: support getting supported features data")
+
+ub:ubus: Using activate mutex to prevent reset and activate/deactivate occuring concurrently
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+There may be concurrency issues between activate/deactivate and reset
+process currently. Executing elr under protection of activate mutex can
+prevent this happening. During reset process, call ubc->ops->entity_enable
+whatever UB_ENTITY_ACTIVE flag's value is.
+
+Fixes: 0f9e2dbe888d ("ub:ubus: Support for enabling and disabling ue")
+
+ub:ubus: Fix the calculation of the total_ues for MUE in VDM registration
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+There have miscalculation of total_ues in UBOE.
+The ue map should get the calculation of the total_ues
+for MUE in VDM registration from pue entity idx which is in
+vdm payload instead of getting from ub entity to solve this
+miscaluculation.
+
+Fixes: 50dfaf0810e3 ("ub:hisi-ubus: Support UBUS vdm pue/ue register and release")
+
+ub:ubus: Eliminate some compilation warnings on the code review platform
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Some compilation warnings(no previous prototype) are
+generated for the Ubus code on the code review platform.
+We eliminate these warnings through this commit.
+
+Fixes: e42bc0097589 ("ub:ubus: Support for ub bus driver framework")
+
+ub:ubus: add module_version for udev modules
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+To improve the efficiency of issue identification, the version
+number information of each udev delivery driver is added.
+
+Fixes: e42bc0097589 ("ub:ubus: Support for ub bus driver framework")
+
+ub:ubus: Corrected the English errors of ubus
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+There are some English spelling errors of ubus in the code.
+We corrected it.
+
+Fixes: e42bc0097589 ("ub:ubus: Support for ub bus driver framework")
+
+ub:ubus: ras adapter of the new chips
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Adapt the code to handle RAS reporting for the HIP13A and HIP13B chips.
+Modify the code to replace the original if statements that check for
+various chips with table-driven logic, thereby improving code reusability.
+
+Fixes: 789e8b975d32 ("ub:hisi-ubus: Support UBUS local RAS interfaces")
+
+ub:ubus: Add new chip information into ubus_error_table
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Add new chip information (ZHULONG855_VERSION=0x1,
+ZHULONG855_SOC_ID=0x20, ZHULONG855_UB_MODULE_ID=0x2d)
+into ubus_error_table so that UBUS RAS support matching HIP12/13
+and ASCEND950, and ZHULONG855 chip
+
+Fixes: 789e8b975d32 ("ub:hisi-ubus: Support UBUS local RAS interfaces")
+
+ub:ubus: Resolve the issue of msgq consuming CPU resources
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+The msgq task of the management platform and the ubus task are
+running on the same core. As a result, the management platform
+cannot process messages, and the ubus will times out.
+The sleep time is added to the waiting time to solve the problem
+that the msgq process occupies CPU resources.
+
+Fixes: 3764805d000a ("ub:ubus adapt port local ras")
+
+ub:ubus: modify ub virt notify
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+When the insmod ubase thread is performing UE probe and the retry
+task thread in the VDM is performing MUE probe, the two threads
+are executed concurrently.
+As a result, the ubase null pointer occurs. The ub_virt_notify
+implementation is modified. The return value is checked.
+If the MUE driver is not ready or the notification fails
+during UE probe, the system retries the probe and does
+not continue to execute the subsequent probe process of the UE.
+
+Fixes: 9039065cf6d0 ("ub:ubus: Adding a ue Creation Destruction Mechanism")
+
+ub:ubus: Resolve the link change message is not reported before sending notify message
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+The link change message is used to obtain the corresponding uent
+based on the EID. In the management and control plane scenario,
+the management and control process modifies the eid.
+If the link change message is delivered before the notify message
+is delivered, the uent cannot be obtained based on the EID.
+Therefore, in this scenario, the uent can be directly obtained
+based on the UBC.
+
+Fixes: 95aa040fe0e7 ("ub:ubus: Support handle device link up and link down")
+
+ub:ubus: Optimize the initialization performance of USI INT_TYPE2
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Currently, when initializing interrupt type 2, during the preparation
+of each MSI descriptor, access to the device configuration space is
+initiated to obtain the number of interrupt vectors and the number
+of address tables. This results in repeated accesses many times when
+a large number of vectors are requested, which is a redundant action.
+Now, it has been optimized to read the values once outside the loop
+and then pass them in for direct use.
+
+Fixes: 47b1d5f03a59 ("ub:ubus: Add UBUS MSI basic functions")
+
+ub:ubus: Always invalidate tlb during decoder unmap
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Always invalidate tlb at decoder unmap phase to ensure old entries are
+cleared. Next time if PA is reused, correct entries will be generated
+and loaded into tlb.
+
+Fixes: 7dfab32c64b4 ("ub:ubus: Enable the ub decoder device support")
+
+ub:ubus: Support DKMS
+
+driver inclusion
+category: Feature
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Modify the udev module's built-in and KO parts to make
+the files independent, allowing the KO to be successfully
+compiled out of tree.
+
+ub:ubus: Update ubus documetation to match latest code
+
+driver inclusion
+category: bugfix
+bugzilla: https://atomgit.com/openeuler/kernel/issues/6695
+CVE: NA
+
+-----------------------------------------------------------
+
+Update ubus documetation to match latest code.
+
+Fixes: e42bc0097589 ("ub:ubus: Support for ub bus driver framework")
+
+Signed-off-by: Junlong Zheng <zhengjunlong@huawei.com>
+Signed-off-by: Yuhao Xiang <xiangyuhao2@huawei.com>
+Signed-off-by: Jianquan Lin <linjianquan2@huawei.com>
+Signed-off-by: Yahui Liu <liuyahui6@huawei.com>
+Signed-off-by: Anzhe Li <lianzhe1@huawei.com>
+Signed-off-by: Yiyu Liu <liuyiyu3@huawei.com>
+Signed-off-by: Anzhe Li <lianzhe1@h-partners.com>
+Signed-off-by: Ben Li <liben31@huawei.com>
+Signed-off-by: Yiyu Liu <liuyiyu@huawei.com>
+Signed-off-by: Fengyan Mu <mufengyan@huawei.com>
+Signed-off-by: Jinjie Cui <cuijinjie1@huawei.com>
+Signed-off-by: Shilong Wu <wushilong@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ Documentation/ABI/testing/sysfs-bus-ub  |  438 +++++++++
+ Documentation/ub/ubus/hisi_ubus.rst     |   74 ++
+ Documentation/ub/ubus/ubus-service.rst  |   44 +
+ config.aarch64                          |   12 +
+ config.aarch64-64k                      |   12 +
+ drivers/Kconfig                         |    1 +
+ drivers/Makefile                        |    1 +
+ drivers/acpi/apei/ghes.c                |   19 +-
+ drivers/irqchip/Kconfig                 |    7 +
+ drivers/irqchip/Makefile                |    1 +
+ drivers/irqchip/irq-gic-v3-its-ub-msi.c |  155 +++
+ drivers/ub/Kconfig                      |   17 +
+ drivers/ub/Makefile                     |    1 +
+ drivers/ub/ubus/Kconfig                 |   33 +
+ drivers/ub/ubus/Makefile                |    5 +
+ drivers/ub/ubus/config.c                |  103 ++
+ drivers/ub/ubus/controller.c            |   21 +
+ drivers/ub/ubus/entity.c                |   27 +
+ drivers/ub/ubus/msi/Makefile            |    3 +
+ drivers/ub/ubus/msi/irqdomain.c         |  113 +++
+ drivers/ub/ubus/msi/msi.c               |  552 +++++++++++
+ drivers/ub/ubus/ras.c                   |   30 +
+ drivers/ub/ubus/ub-driver.c             |  233 +++++
+ include/linux/cper.h                    |   18 +
+ include/linux/irqdomain_defs.h          |    1 +
+ include/linux/mod_devicetable.h         |   22 +
+ include/linux/msi.h                     |   42 +
+ include/uapi/ub/ubus/ubus.h             |   78 ++
+ include/uapi/ub/ubus/ubus_regs.h        |  275 ++++++
+ include/ub/ubus/uber.h                  |   24 +
+ include/ub/ubus/ubus.h                  | 1171 +++++++++++++++++++++++
+ include/ub/ubus/ubus_ids.h              |   49 +
+ kernel/irq/msi.c                        |   20 +-
+ scripts/mod/devicetable-offsets.c       |    9 +
+ scripts/mod/file2alias.c                |   44 +
+ 35 files changed, 3648 insertions(+), 7 deletions(-)
+ create mode 100644 Documentation/ABI/testing/sysfs-bus-ub
+ create mode 100644 Documentation/ub/ubus/hisi_ubus.rst
+ create mode 100644 Documentation/ub/ubus/ubus-service.rst
+ create mode 100644 drivers/irqchip/irq-gic-v3-its-ub-msi.c
+ create mode 100644 drivers/ub/Kconfig
+ create mode 100644 drivers/ub/ubus/Kconfig
+ create mode 100644 drivers/ub/ubus/Makefile
+ create mode 100644 drivers/ub/ubus/config.c
+ create mode 100644 drivers/ub/ubus/controller.c
+ create mode 100644 drivers/ub/ubus/entity.c
+ create mode 100644 drivers/ub/ubus/msi/Makefile
+ create mode 100644 drivers/ub/ubus/msi/irqdomain.c
+ create mode 100644 drivers/ub/ubus/msi/msi.c
+ create mode 100644 drivers/ub/ubus/ras.c
+ create mode 100644 drivers/ub/ubus/ub-driver.c
+ create mode 100644 include/uapi/ub/ubus/ubus.h
+ create mode 100644 include/uapi/ub/ubus/ubus_regs.h
+ create mode 100644 include/ub/ubus/uber.h
+ create mode 100644 include/ub/ubus/ubus.h
+ create mode 100644 include/ub/ubus/ubus_ids.h
+
+diff --git a/Documentation/ABI/testing/sysfs-bus-ub b/Documentation/ABI/testing/sysfs-bus-ub
+new file mode 100644
+index 000000000000..ab4d58677d1a
+--- /dev/null
++++ b/Documentation/ABI/testing/sysfs-bus-ub
+@@ -0,0 +1,438 @@
++What:		/sys/bus/ub/cluster
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Indicates the current system operating mode:
++		1 for cluster mode, 0 for Standalone mode.
++
++What:		/sys/bus/ub/instance
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the list of bus instances created in the current system.
++		By default, it starts from the first one. Writing numbers into
++		the file can change the starting position of the output bus
++		instance.
++
++What:		/sys/bus/ub/ub_feature
++Date:		May 2026
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Displays the capabilities of current chip for UB. First line is
++		a 64-bit value displayed in hexadecimal format, where each bit
++		represents one capability: 1 for supported, 0 for unsupported.
++		Following lines show the details of each capability's name and
++		its support status, with the symbol + meaning supported and -
++		meaning unsupported.
++
++What:		/sys/bus/ub/drivers/.../bind
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Writing an entity number to this file will cause the driver
++		to attempt to bind to the entity. This is useful for
++		overriding default bindings. The entity number is
++		the same as found in /sys/bus/ub/devices/.
++		For example::
++
++		  # echo 00002 > /sys/bus/ub/drivers/sample/bind
++
++What:		/sys/bus/ub/drivers/.../unbind
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Writing an entity number to this file will cause the
++		driver to attempt to unbind from the entity. This may be
++		useful when overriding default bindings. The entity
++		number is the same as found in /sys/bus/ub/devices/.
++		For example::
++
++		  # echo 00002 > /sys/bus/ub/drivers/sample/unbind
++
++What:		/sys/bus/ub/drivers/.../new_id
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Writing a device ID to this file will attempt to
++		dynamically add a new device ID to a UB device driver.
++		This may allow the driver to support more hardware than
++		was included in the driver's static device ID support
++		table at compile time.  The format for the device ID is:
++		VVVV DDDD MVVV MMMM CCCC MMMM PPPP. That is Vendor ID,
++		Device ID, Module Vendor ID, Module ID, Class, Class Mask
++		and Private Driver Data. The Vendor ID and Device ID fields
++		are required, the rest are optional. Upon successfully
++		adding an ID, the driver will probe for the device and
++		attempt to bind to it.
++		For example::
++
++		  # echo cc08 a001 > /sys/bus/ub/drivers/sample/new_id
++
++What:		/sys/bus/ub/drivers/.../remove_id
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Writing a device ID to this file will remove an ID
++		that was dynamically added via the new_id sysfs entry.
++		The format for the device ID is:
++		VVVV DDDD MVVV MMMM CCCC MMMM.	That is Vendor ID, Device
++		ID, Module Vendor ID, Module ID, Class and Class Mask.
++		The Vendor ID and Device ID fields are required, the rest
++		are optional. After successfully removing an ID,
++		the driver will no longer support the device.
++		This is useful to ensure auto probing won't
++		match the driver to the device.
++		For example::
++
++		  # echo cc08 a001 > /sys/bus/ub/drivers/sample/remove_id
++
++What:		/sys/bus/ub/devices/.../class_code
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the class code type of the entity.
++
++What:		/sys/bus/ub/devices/.../config
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		A channel is provided for user-mode programs to access the
++		entity configuration space. User programs can open the file
++		using the open system call and then perform read/write
++		operations on the configuration space using the pread/pwrite
++		system calls.
++		For details, please refer to the implementation of ubutils
++		<https://gitee.com/openeuler/ubutils>.
++
++What:		/sys/bus/ub/devices/.../device
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the Device ID of the entity.
++
++What:		/sys/bus/ub/devices/.../device_reset
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Writing 1 to this file can trigger a device-level reset. All
++		entities below it will be reset.
++		Supported only by Entity0.
++
++What:		/sys/bus/ub/devices/.../direct_link
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the link connection relationships and the peer
++		information of the ports connected to this entity.
++
++What:		/sys/bus/ub/devices/.../driver_override
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		This file allows the driver for a device to be specified which
++		will override standard static and dynamic ID matching.  When
++		specified, only a driver with a name matching the value written
++		to driver_override will have an opportunity to bind to the
++		device.  The override is specified by writing a string to the
++		driver_override file (echo sample > driver_override) and
++		may be cleared with an empty string (echo > driver_override).
++		This returns the device to standard matching rules binding.
++		Writing to driver_override does not automatically unbind the
++		device from its current driver or make any attempt to
++		automatically load the specified driver.  If no driver with a
++		matching name is currently loaded in the kernel, the device
++		will not bind to any driver.  This also allows devices to
++		opt-out of driver binding using a driver_override name such as
++		"none".  Only a single driver may be specified in the override,
++		there is no support for parsing delimiters.
++
++What:		/sys/bus/ub/devices/.../eid
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the entity's EID.
++
++What:		/sys/bus/ub/devices/.../entity_idx
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the index of the entity, numbered starting from 0.
++
++What:		/sys/bus/ub/devices/.../guid
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the GUID of the entity.
++
++What:		/sys/bus/ub/devices/.../instance
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the EID of the bus instance bound to the entity.
++
++What:		/sys/bus/ub/devices/.../kref
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the current reference count of the entity.
++
++What:		/sys/bus/ub/devices/.../match_driver
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Indicates whether the current entity is ready for driver
++		matching. Some entities require additional initialization work,
++		so this entry is provided to control the entity separately.
++		In this case, it is necessary to ensure a certain timing
++		sequence; For example, the driver should be loaded only after
++		this status of the entity is set to 1 to ensure that the driver
++		probe is correctly initiated.
++
++What:		/sys/bus/ub/devices/.../numa
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		This file contains the NUMA node to which the UB Entity is
++		attached, or -1 if the node is unknown.  The initial value
++		comes from UBRT table, defined in the UB firmware specification.
++
++What:		/sys/bus/ub/devices/.../primary_cna
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the primary compact network address of the entity.
++
++What:		/sys/bus/ub/devices/.../primary_entity
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the entity number of the entity0 to which this entity
++		belongs.
++
++What:		/sys/bus/ub/devices/.../mue_list
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display a list of all MUEs under this entity, excluding itself.
++		Only Entity0 has this attribute file.
++
++What:		/sys/bus/ub/devices/.../reset
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Writing 1 to this file can trigger an entity-level reset, only
++		reset this entity, it will not affect other entities.
++
++What:		/sys/bus/ub/devices/.../resource
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Information about the resource space of the entity is displayed,
++		with a total of 3 entries, each consisting of the following
++		three components: start_address, end_address, flags.
++		If all values are 0, it indicates that the resource space is
++		not supported.
++
++What:		/sys/bus/ub/devices/.../resource<x>
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Provide attribute files to the user-mode driver. Through the
++		open and mmap system calls, the resource space of an entity can
++		be mapped into the process space for direct access, thereby
++		improving the efficiency of cross-mode resource space access.
++		The memory attribute mapped by this interface is the device
++		attribute.
++
++What:		/sys/bus/ub/devices/.../resource<x>_wc
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Provide attribute files to the user-mode driver. Through the
++		open and mmap system calls, the resource space of an entity can
++		be mapped into the process space for direct access, thereby
++		improving the efficiency of cross-mode resource space access.
++		The memory attribute mapped by this interface is the
++		write-combine attribute.
++
++What:		/sys/bus/ub/devices/.../sw_cap
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display whether forwarding capability is supported.
++		Only UBC supports it.
++
++What:		/sys/bus/ub/devices/.../tid
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the Token ID of the entity. The entity uses this
++		Token ID to access system memory.
++
++What:		/sys/bus/ub/devices/.../type
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the type of the entity. The type is a subdomain segment
++		of GUID.
++
++What:		/sys/bus/ub/devices/.../ubc
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the entity number of the UB controller associated with
++		the entity.
++
++What:		/sys/bus/ub/devices/.../ub_numues
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the number of UEs that have been enabled for this
++		entity. Writing a value to the file enables the UEs. The written
++		value must be within the range of ub_totalues. Writing 0
++		disables all UEs.
++		Only MUE supports this file.
++
++What:		/sys/bus/ub/devices/.../ub_total_entities
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the number of all entities supported by this entity.
++		Only Entity0 supports this file.
++
++What:		/sys/bus/ub/devices/.../ub_totalues
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the number of UEs owned by this entity.
++		Only MUE supports this file.
++
++What:		/sys/bus/ub/devices/.../ue_list
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display a list of all UEs under this entity, excluding itself.
++		Only MUE has this attribute file.
++
++What:		/sys/bus/ub/devices/.../upi
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display UPI of the entity.
++
++What:		/sys/bus/ub/devices/.../vendor
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display Vendor ID of the entity.
++
++What:		/sys/bus/ub/devices/.../msi_irqs/
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		The /sys/bus/ub/devices/.../msi_irqs/ directory contains a
++		variable set of files, with each file being named after a
++		corresponding msi irq vector allocated to that entity.
++
++What:		/sys/bus/ub/devices/.../msi_irqs/<N>
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		This attribute indicates the mode that the irq vector named by
++		the file is in (msi vs. msix)
++
++What:		/sys/bus/ub/devices/.../port<x>/asy_link_width
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Indicates whether the port supports asymmetric link width.
++		Supported only on physical port.
++
++
++What:		/sys/bus/ub/devices/.../port<x>/boundary
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Indicates whether the port is a boundary port.
++
++What:		/sys/bus/ub/devices/.../port<x>/cna
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display the CNA of this port.
++
++What:		/sys/bus/ub/devices/.../port<x>/glb_qdlws
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Write 1 to enable global dynamic lane adjustment,
++		write 0 to disable this function.
++		Supported only on physical port.
++
++What:		/sys/bus/ub/devices/.../port<x>/linkup
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Display whether the port has established a connection.
++
++What:		/sys/bus/ub/devices/.../port<x>/neighbor
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Displays the entity number of the peer entity at the port.
++		If no link is established, it displays "No Neighbor".
++
++What:		/sys/bus/ub/devices/.../port<x>/neighbor_guid
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		If there is a peer entity, display the GUID of the peer entity.
++		Otherwise, display "No Neighbor".
++
++What:		/sys/bus/ub/devices/.../port<x>/neighbor_port_idx
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		If there is a peer entity, the port index of the peer entity is
++		displayed. Otherwise, display "No Neighbor".
++
++What:		/sys/bus/ub/devices/.../port<x>/port_reset
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Supports individual port reset, triggered by writing 1.
++		Supported only on physical port.
++
++What:		/sys/bus/ub/devices/.../port<x>/qdlws_exec_state
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Obtain the hardware execution status of the current dynamically
++		adjustable lane.
++		Supported only on physical port.
++
++What:		/sys/bus/ub/devices/.../port<x>/rx_qdlws
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Enable/Disable dynamic lane adjustment in the RX direction.
++		Supported only on physical port.
++
++What:		/sys/bus/ub/devices/.../port<x>/tx_qdlws
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		Enable/Disable dynamic lane adjustment in the TX direction.
++		Supported only on physical port.
++
++What:		/sys/bus/ub/devices/.../slot<x>/power
++Date:		Oct 2025
++Contact:	Junlong Zheng <zhengjunlong@huawei.com>
++Description:
++		This feature supports hot-plug notification.
++		Display the current slot status, the value can be "on",
++		"poweron", "poweroff", "off" or "unknown state". And can
++		write 1 to enable power on the slot, and write 0 to
++		power it off.
++		This file is supported only by entities that support
++		hot-plug features.
+diff --git a/Documentation/ub/ubus/hisi_ubus.rst b/Documentation/ub/ubus/hisi_ubus.rst
+new file mode 100644
+index 000000000000..ee66e5341794
+--- /dev/null
++++ b/Documentation/ub/ubus/hisi_ubus.rst
+@@ -0,0 +1,74 @@
++.. SPDX-License-Identifier: GPL-2.0
++
++=====================
++Hisilicon UBUS Driver
++=====================
++
++Hisilicon UBUS Driver (abbreviated as Hisi UBUS) is a UnifiedBus (UB)
++specification management subsystem specifically implemented for Hisi chips. It
++provides a subsystem operation interfaces implementation:
++
++.. kernel-doc:: drivers/ub/ubus/ubus.h
++   :functions: ub_manage_subsystem_ops
++
++including probe/remove methods for the UB bus controller and UB RAS handler, as
++well as the VDM delay work method and feature get method. Each specification
++management subsystem has a unique vendor ID to identify the provider. This
++vendor ID is set to the vendor field of ``ub_manage_subsystem_ops``
++implementation. During UB bus controller probe, a ub_bus_controller_ops will be
++set to the UB bus controller, message device and debug file system will be
++initialized. During UB bus controller remove, ops will be unset, message device
++will be removed and debug file system will be deinitialized.
++
++During module init, hisi_ub_manage_subsystem_ops is registered to Ubus driver
++via the ``register_ub_manage_subsystem_ops()`` method provided by Ubus driver::
++
++	int register_ub_manage_subsystem_ops(const struct ub_manage_subsystem_ops *ops)
++
++When module is being unloaded, Ubus driver's
++``unregister_ub_manage_subsystem_ops()`` is called to unregister the subsystem
++operation interfaces::
++
++	void unregister_ub_manage_subsystem_ops(const struct ub_manage_subsystem_ops *ops)
++
++Hisi UBUS Controller Driver
++===========================
++Hisi UBUS provides a ub bus controller operation interfaces implementation:
++
++.. kernel-doc:: drivers/ub/ubus/ubus_controller.h
++   :functions: ub_bus_controller_ops
++
++including init/uninit methods for EID-UPI table, create/remove methods for UB
++memory decoder, register/unregister methods for UB memory decoder interrupts,
++init/uninit methods for decoder queue, create/free methods for decoder table,
++decoder map/unmap methods, decoder event handling method, etc.
++
++UB Message Core Driver
++======================
++Hisi UBUS implements a message device that provides a set of operations:
++
++.. kernel-doc:: drivers/ub/ubus/msg.h
++   :functions: message_ops
++
++including synchronous message sending, synchronous enumeration message sending,
++response message sending, vendor-defined message reception handling, etc. After
++device creation, ``message_device_register()`` method of Ubus driver is called
++to register the device to the Ubus driver message framework::
++
++	int message_device_register(struct message_device *mdev)
++
++This framework provides a unified interface for message transmission and
++reception externally.
++
++Hisi UBUS Local RAS Error Handler
++=================================
++Hisi UBUS provides a local RAS handling module to detect and process errors
++reported on the UB bus. It offers error printing and registry dump, determines
++whether recovery is needed based on error type and severity, and can reset ports
++for port issues in cluster environment.
++
++UB Vendor-Defined Messages Manager
++==================================
++Hisi UBUS defines several vendor-defined messages, implements messages'
++transmission and processing. These private messages are mainly used for managing
++the registration, release, and state control of physical and virtual devices.
+diff --git a/Documentation/ub/ubus/ubus-service.rst b/Documentation/ub/ubus/ubus-service.rst
+new file mode 100644
+index 000000000000..65fe5288a233
+--- /dev/null
++++ b/Documentation/ub/ubus/ubus-service.rst
+@@ -0,0 +1,44 @@
++.. SPDX-License-Identifier: GPL-2.0
++
++===========================================
++UnifiedBus Bus Driver (UBUS Driver) Service
++===========================================
++
++The UnifiedBus (UB) specification describes RAS-related error handling and
++notification-based hot-plug functionalities. The UBUS driver implements these
++two types of functionalities as two independent services in software. This
++article will separately introduce these two services.
++
++UB Device Driver Error Service
++==============================
++The UB specification defines three categories of protocol errors: A, B, and C.
++Among these, A and B category protocol errors are directly handled by the
++UB device driver, and thus will not be further discussed in this document.
++C category protocol errors are reported to the UBUS Driver via the APEI
++mechanism. The UBUS Driver provides a set of mechanisms for handling C category
++protocol errors, which work in conjunction with the UB device driver to
++complete the error handling process.
++
++The UBUS driver provides the ``struct ub_error_handlers`` structure, which
++includes multiple callback functions related to error handling. The UB device
++driver needs to implement these callback functions:
++
++.. kernel-doc:: include/ub/ubus/ubus.h
++   :functions: ub_error_handlers
++
++Hot-Plug Service
++================
++The UB specification defines the hot-plug functionality for devices, which
++requires coordination between software and hardware. The UBUS driver implements
++the hot removal and hot insertion of external devices on a per-slot basis.
++For detailed procedures, please refer to the UB specification document. The main
++functional points implemented by the UBUS driver include:
++
++  - Button event handling, completing the processing of hot-plug and
++       hot-unplug button messages
++  - Indicator control, switching different knowledge points based on the
++       device status
++  - Power control, performing power on/off operations for slots based on the
++       device status
++  - Providing a user-space sysfs interface to simulate button effects
++       according to user commands
+diff --git a/config.aarch64 b/config.aarch64
+index 4b5dcb480c0d..64e8204a0168 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -10988,3 +10988,15 @@ CONFIG_ARCH_USE_MEMTEST=y
+ # end of Rust hacking
+ # end of Kernel hacking
+ CONFIG_VFIO_DEBUGFS=y
++
++#
++# unified bus
++#
++CONFIG_UB=y
++# Basic UB bus code compiled into the kernel
++CONFIG_UB_UBUS=y
++# UB Bus Core Driver
++CONFIG_UB_UBUS_USI=y
++CONFIG_ARM_GIC_V3_ITS_UBUS=y
++
++# end of unified bus
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 14ff133ba879..1a79b63cc441 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -10978,3 +10978,15 @@ CONFIG_ARCH_USE_MEMTEST=y
+ # end of Rust hacking
+ # end of Kernel hacking
+ CONFIG_VFIO_DEBUGFS=y
++
++#
++# unified bus
++#
++CONFIG_UB=y
++# Basic UB bus code compiled into the kernel
++CONFIG_UB_UBUS=y
++# UB Bus Core Driver
++CONFIG_UB_UBUS_USI=y
++CONFIG_ARM_GIC_V3_ITS_UBUS=y
++
++# end of unified bus
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index 34b420bd19fc..c3983a8854e6 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -7,6 +7,7 @@ source "drivers/amba/Kconfig"
+ source "drivers/eisa/Kconfig"
+ source "drivers/pci/Kconfig"
+ source "drivers/cxl/Kconfig"
++source "drivers/ub/Kconfig"
+ source "drivers/pcmcia/Kconfig"
+ source "drivers/rapidio/Kconfig"
+ 
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 3b38b735ac14..77c6ba878f50 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -23,6 +23,7 @@ obj-$(CONFIG_GPIOLIB)		+= gpio/
+ obj-y				+= pwm/
+ 
+ obj-y				+= pci/
++obj-$(CONFIG_UB)		+= ub/
+ 
+ obj-$(CONFIG_PARISC)		+= parisc/
+ obj-$(CONFIG_RAPIDIO)		+= rapidio/
+diff --git a/drivers/acpi/apei/ghes.c b/drivers/acpi/apei/ghes.c
+index 7166dac14731..8a258dafa9de 100644
+--- a/drivers/acpi/apei/ghes.c
++++ b/drivers/acpi/apei/ghes.c
+@@ -42,7 +42,7 @@
+ #include <linux/uuid.h>
+ #include <linux/ras.h>
+ #include <linux/task_work.h>
+-
++#include <ub/ubus/uber.h>
+ #include <acpi/actbl1.h>
+ #include <acpi/ghes.h>
+ #include <acpi/apei.h>
+@@ -650,6 +650,18 @@ static void ghes_handle_aer(struct acpi_hest_generic_data *gdata)
+ #endif
+ }
+ 
++static void ghes_handle_ubus_err(struct acpi_hest_generic_data *gdata)
++{
++	struct cper_sec_ubus *ubus_err = acpi_hest_get_payload(gdata);
++	ub_ras_recover_func_t ras_recover_func;
++
++	ras_recover_func = ub_ras_get_recover_func();
++	if (ras_recover_func)
++		ras_recover_func(ubus_err, gdata->error_severity);
++	else
++		pr_warn(GHES_PFX "UBUS error occurs when the ras driver is not loaded.\n");
++}
++
+ static BLOCKING_NOTIFIER_HEAD(vendor_record_notify_list);
+ 
+ int ghes_register_vendor_record_notifier(struct notifier_block *nb)
+@@ -731,8 +743,9 @@ static void ghes_do_proc(struct ghes *ghes,
+ 		}
+ 		else if (guid_equal(sec_type, &CPER_SEC_PCIE)) {
+ 			ghes_handle_aer(gdata);
+-		}
+-		else if (guid_equal(sec_type, &CPER_SEC_PROC_ARM)) {
++		} else if (guid_equal(sec_type, &CPER_SEC_UBUS)) {
++			ghes_handle_ubus_err(gdata);
++		} else if (guid_equal(sec_type, &CPER_SEC_PROC_ARM)) {
+ 			queued = ghes_handle_arm_hw_error(gdata, sev, sync);
+ 		} else {
+ 			void *err = acpi_hest_get_payload(gdata);
+diff --git a/drivers/irqchip/Kconfig b/drivers/irqchip/Kconfig
+index 4ff91df76947..38b2d78b0b2d 100644
+--- a/drivers/irqchip/Kconfig
++++ b/drivers/irqchip/Kconfig
+@@ -50,6 +50,13 @@ config ARM_GIC_V3_ITS_PCI
+ 	depends on PCI_MSI
+ 	default ARM_GIC_V3_ITS
+ 
++config ARM_GIC_V3_ITS_UBUS
++	bool
++	depends on ARM_GIC_V3_ITS
++	depends on UB_UBUS
++	depends on UB_UBUS_USI
++	default ARM_GIC_V3_ITS
++
+ config ARM_GIC_V3_ITS_FSL_MC
+ 	bool
+ 	depends on ARM_GIC_V3_ITS
+diff --git a/drivers/irqchip/Makefile b/drivers/irqchip/Makefile
+index ffd945fe71aa..84801fd2778c 100644
+--- a/drivers/irqchip/Makefile
++++ b/drivers/irqchip/Makefile
+@@ -33,6 +33,7 @@ obj-$(CONFIG_ARM_GIC_V2M)		+= irq-gic-v2m.o
+ obj-$(CONFIG_ARM_GIC_V3)		+= irq-gic-v3.o irq-gic-v3-mbi.o irq-gic-common.o
+ obj-$(CONFIG_ARM_GIC_V3_ITS)		+= irq-gic-v3-its.o irq-gic-v3-its-platform-msi.o irq-gic-v4.o
+ obj-$(CONFIG_ARM_GIC_V3_ITS_PCI)	+= irq-gic-v3-its-pci-msi.o
++obj-$(CONFIG_ARM_GIC_V3_ITS_UBUS)	+= irq-gic-v3-its-ub-msi.o
+ obj-$(CONFIG_ARM_GIC_V3_ITS_FSL_MC)	+= irq-gic-v3-its-fsl-mc-msi.o
+ obj-$(CONFIG_PARTITION_PERCPU)		+= irq-partition-percpu.o
+ obj-$(CONFIG_HISILICON_IRQ_MBIGEN)	+= irq-mbigen.o
+diff --git a/drivers/irqchip/irq-gic-v3-its-ub-msi.c b/drivers/irqchip/irq-gic-v3-its-ub-msi.c
+new file mode 100644
+index 000000000000..924b9566b091
+--- /dev/null
++++ b/drivers/irqchip/irq-gic-v3-its-ub-msi.c
+@@ -0,0 +1,155 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#include <linux/acpi_iort.h>
++#include <linux/idr.h>
++#include <linux/msi.h>
++#include <linux/irq.h>
++#include <linux/spinlock_types.h>
++#include <linux/compiler_types.h>
++#include <linux/irqdomain.h>
++#include <ub/ubus/ubus.h>
++
++static void its_mask_msi_irq(struct irq_data *d)
++{
++	ub_msi_mask_irq(d);
++	irq_chip_mask_parent(d);
++}
++
++static void its_unmask_msi_irq(struct irq_data *d)
++{
++	ub_msi_unmask_irq(d);
++	irq_chip_unmask_parent(d);
++}
++
++static struct irq_chip its_msi_irq_chip = {
++	.name = "ITS-MSI",
++	.irq_unmask = its_unmask_msi_irq,
++	.irq_mask = its_mask_msi_irq,
++	.irq_eoi = irq_chip_eoi_parent,
++};
++
++static int its_ub_msi_prepare(struct irq_domain *domain, struct device *dev,
++			      int nvec, msi_alloc_info_t *info)
++{
++	struct msi_domain_info *msi_info;
++	int alias_count = 0, minnvec = 1;
++	struct ub_entity *uent = to_ub_entity(dev);
++	int cnt, ret;
++
++	msi_info = msi_get_domain_info(domain->parent);
++
++	ret = ub_interrupt_id_alloc(uent);
++	if (ret) {
++		dev_err(&uent->dev, "device id alloc failed, ret = %d.\n", ret);
++		return ret;
++	}
++
++	info->scratchpad[0].ul = uent->intr_device_id;
++	dev_info(&uent->dev, "device id alloc success, id: %u.\n", uent->intr_device_id);
++	ub_write_interruptid(uent);
++
++	cnt = max(nvec, alias_count);
++	cnt = max_t(int, minnvec, roundup_pow_of_two((u32)cnt));
++
++	return msi_info->ops->msi_prepare(domain->parent, dev, cnt, info);
++}
++
++static struct msi_domain_ops its_ub_msi_ops = {
++	.msi_prepare = its_ub_msi_prepare,
++};
++
++static struct msi_domain_info its_ub_msi_domain_info = {
++	.flags = (MSI_FLAG_USE_DEF_DOM_OPS | MSI_FLAG_USE_DEF_CHIP_OPS |
++		  MSI_FLAG_UB_INTR),
++	.ops = &its_ub_msi_ops,
++	.chip = &its_msi_irq_chip,
++};
++
++static int its_ub_msi_init_one(struct fwnode_handle *handle,
++			       const char *name)
++{
++	struct irq_domain *parent;
++
++	parent = irq_find_matching_fwnode(handle, DOMAIN_BUS_NEXUS);
++	if (!parent || !msi_get_domain_info(parent)) {
++		pr_err("%s: Unable to locate ITS domain\n", name);
++		return -ENXIO;
++	}
++
++	if (!ub_msi_create_irq_domain(handle, &its_ub_msi_domain_info, parent)) {
++		pr_err("%s: Unable to create UB domain\n", name);
++		return -ENOMEM;
++	}
++
++	return 0;
++}
++
++static int its_ub_msi_parse_madt(union acpi_subtable_headers *header,
++				 const unsigned long end)
++{
++	struct acpi_madt_generic_translator *its_entry;
++	struct fwnode_handle *dom_handle;
++	char *node_name;
++	int err = -ENXIO;
++
++	its_entry = (struct acpi_madt_generic_translator *)header;
++	node_name = kasprintf(GFP_KERNEL, "ITS@0x%lx",
++			      (long)its_entry->base_address);
++
++	dom_handle = iort_find_domain_token(its_entry->translation_id);
++	if (!dom_handle) {
++		pr_err("%s: Unable to locate ITS domain handle\n", node_name);
++		goto out;
++	}
++
++	err = its_ub_msi_init_one(dom_handle, (const char *)node_name);
++	if (!err)
++		pr_info("UB/USI: %s domain created\n", node_name);
++out:
++	kfree(node_name);
++	return err;
++}
++
++static int its_ub_acpi_msi_init(void)
++{
++	acpi_table_parse_madt(ACPI_MADT_TYPE_GENERIC_TRANSLATOR,
++			      its_ub_msi_parse_madt, 0);
++	return 0;
++}
++
++static const struct of_device_id its_device_id[] = {
++	{	.compatible	= "arm,gic-v3-its",	},
++	{},
++};
++
++static int its_ub_of_msi_init(void)
++{
++	struct device_node *np;
++
++	for (np = of_find_matching_node(NULL, its_device_id); np;
++	     np = of_find_matching_node(np, its_device_id)) {
++		if (!of_device_is_available(np))
++			continue;
++		if (!of_property_read_bool(np, "msi-controller"))
++			continue;
++
++		if (its_ub_msi_init_one(of_node_to_fwnode(np), np->full_name))
++			continue;
++
++		pr_info("UB/USI: %pOF domain created\n", np);
++	}
++
++	return 0;
++}
++
++static int __init its_ub_msi_init(void)
++{
++	its_ub_of_msi_init();
++	its_ub_acpi_msi_init();
++
++	return 0;
++}
++early_initcall(its_ub_msi_init);
+diff --git a/drivers/ub/Kconfig b/drivers/ub/Kconfig
+new file mode 100644
+index 000000000000..fc591be43597
+--- /dev/null
++++ b/drivers/ub/Kconfig
+@@ -0,0 +1,17 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# UnifiedBus configuration
++#
++
++menuconfig UB
++       bool "UB (UnifiedBus) support"
++       depends on ARM64
++       default n
++       help
++         Support for UB.
++         If you have a hardware that support UB protocol,
++         Say y here. By Default this option is closed.
++
++if UB
++source "drivers/ub/ubus/Kconfig"
++endif # UB
+diff --git a/drivers/ub/Makefile b/drivers/ub/Makefile
+index 7e219469dd02..854276d7e5c5 100644
+--- a/drivers/ub/Makefile
++++ b/drivers/ub/Makefile
+@@ -1,3 +1,4 @@
+ # SPDX-License-Identifier: GPL-2.0+
+ 
+ obj-y += ubfi/
++obj-y += ubus/
+diff --git a/drivers/ub/ubus/Kconfig b/drivers/ub/ubus/Kconfig
+new file mode 100644
+index 000000000000..8db0d44ee3d3
+--- /dev/null
++++ b/drivers/ub/ubus/Kconfig
+@@ -0,0 +1,33 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# UB bus driver configuration
++#
++
++menuconfig UB_UBUS
++	default n
++	bool "UBUS support"
++	depends on UB
++	help
++	  This option enables support for UB bus device management
++	  functionality, providing fundamental capabilities such as
++	  UB bus registration, device registration, and driver registration.
++	  It configures and enables devices, offering device capabilities
++	  to the upper layers.
++	  Say 'Y' here unless you know what you are doing.
++
++if UB_UBUS
++
++config UB_UBUS_USI
++	default n
++	bool "UBUS Message Signaled Interrupts (USI)"
++	depends on UB_UBUS
++	select GENERIC_MSI_IRQ
++	help
++		This allows device drivers to enable MSI (Message Signaled
++		Interrupts).  Message Signaled Interrupts enable a device to
++		generate an interrupt using an inbound Memory Write on its
++		UnifiedBus instead of asserting a device IRQ pin.If you
++		don't know what to do here, say Y.
++
++
++endif
+diff --git a/drivers/ub/ubus/Makefile b/drivers/ub/ubus/Makefile
+new file mode 100644
+index 000000000000..a73666e14f70
+--- /dev/null
++++ b/drivers/ub/ubus/Makefile
+@@ -0,0 +1,5 @@
++# SPDX-License-Identifier: GPL-2.0+
++
++obj-$(CONFIG_UB_UBUS) += ub-driver.o controller.o config.o entity.o ras.o
++obj-$(CONFIG_UB_UBUS) += msi/
++
+diff --git a/drivers/ub/ubus/config.c b/drivers/ub/ubus/config.c
+new file mode 100644
+index 000000000000..defcc6be6f7f
+--- /dev/null
++++ b/drivers/ub/ubus/config.c
+@@ -0,0 +1,103 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#include <ub/ubus/ubus.h>
++
++static const struct cfg_ops {
++	read_byte_f cfg_read_byte;
++	read_word_f cfg_read_word;
++	read_dword_f cfg_read_dword;
++	write_byte_f cfg_write_byte;
++	write_word_f cfg_write_word;
++	write_dword_f cfg_write_dword;
++} cfg_ops_t;
++
++static struct cfg_ops ub_cfg_ops = {};
++
++int register_ub_cfg_read_ops(read_byte_f rb, read_word_f rw, read_dword_f rdw)
++{
++	if (rb && rw && rdw) {
++		ub_cfg_ops.cfg_read_byte = rb;
++		ub_cfg_ops.cfg_read_word = rw;
++		ub_cfg_ops.cfg_read_dword = rdw;
++		return 0;
++	}
++
++	return -EINVAL;
++}
++EXPORT_SYMBOL_GPL(register_ub_cfg_read_ops);
++
++int register_ub_cfg_write_ops(write_byte_f wb, write_word_f ww, write_dword_f wdw)
++{
++	if (wb && ww && wdw) {
++		ub_cfg_ops.cfg_write_byte = wb;
++		ub_cfg_ops.cfg_write_word = ww;
++		ub_cfg_ops.cfg_write_dword = wdw;
++		return 0;
++	}
++
++	return -EINVAL;
++}
++EXPORT_SYMBOL_GPL(register_ub_cfg_write_ops);
++
++void unregister_ub_cfg_ops(void)
++{
++	memset(&ub_cfg_ops, 0, sizeof(struct cfg_ops));
++}
++EXPORT_SYMBOL_GPL(unregister_ub_cfg_ops);
++
++int ub_cfg_read_byte(struct ub_entity *uent, u64 pos, u8 *val)
++{
++	if (!ub_cfg_ops.cfg_read_byte)
++		return -ENODEV;
++
++	return ub_cfg_ops.cfg_read_byte(uent, pos, val);
++}
++EXPORT_SYMBOL_GPL(ub_cfg_read_byte);
++
++int ub_cfg_read_word(struct ub_entity *uent, u64 pos, u16 *val)
++{
++	if (!ub_cfg_ops.cfg_read_word)
++		return -ENODEV;
++
++	return ub_cfg_ops.cfg_read_word(uent, pos, val);
++}
++EXPORT_SYMBOL_GPL(ub_cfg_read_word);
++
++int ub_cfg_read_dword(struct ub_entity *uent, u64 pos, u32 *val)
++{
++	if (!ub_cfg_ops.cfg_read_dword)
++		return -ENODEV;
++
++	return ub_cfg_ops.cfg_read_dword(uent, pos, val);
++}
++EXPORT_SYMBOL_GPL(ub_cfg_read_dword);
++
++int ub_cfg_write_byte(struct ub_entity *uent, u64 pos, u8 val)
++{
++	if (!ub_cfg_ops.cfg_write_byte)
++		return -ENODEV;
++
++	return ub_cfg_ops.cfg_write_byte(uent, pos, val);
++}
++EXPORT_SYMBOL_GPL(ub_cfg_write_byte);
++
++int ub_cfg_write_word(struct ub_entity *uent, u64 pos, u16 val)
++{
++	if (!ub_cfg_ops.cfg_write_word)
++		return -ENODEV;
++
++	return ub_cfg_ops.cfg_write_word(uent, pos, val);
++}
++EXPORT_SYMBOL_GPL(ub_cfg_write_word);
++
++int ub_cfg_write_dword(struct ub_entity *uent, u64 pos, u32 val)
++{
++	if (!ub_cfg_ops.cfg_write_dword)
++		return -ENODEV;
++
++	return ub_cfg_ops.cfg_write_dword(uent, pos, val);
++}
++EXPORT_SYMBOL_GPL(ub_cfg_write_dword);
+diff --git a/drivers/ub/ubus/controller.c b/drivers/ub/ubus/controller.c
+new file mode 100644
+index 000000000000..3824fc6aa25e
+--- /dev/null
++++ b/drivers/ub/ubus/controller.c
+@@ -0,0 +1,21 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#include <ub/ubus/ubus.h>
++
++struct ub_bus_controller *ub_ubc_get(struct ub_bus_controller *ubc)
++{
++	if (ubc)
++		get_device(&ubc->dev);
++	return ubc;
++}
++EXPORT_SYMBOL_GPL(ub_ubc_get);
++
++void ub_ubc_put(struct ub_bus_controller *ubc)
++{
++	if (ubc)
++		put_device(&ubc->dev);
++}
++EXPORT_SYMBOL_GPL(ub_ubc_put);
+diff --git a/drivers/ub/ubus/entity.c b/drivers/ub/ubus/entity.c
+new file mode 100644
+index 000000000000..ad6a91953680
+--- /dev/null
++++ b/drivers/ub/ubus/entity.c
+@@ -0,0 +1,27 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#include <ub/ubus/ubus.h>
++
++int ub_get_dst_eid(struct ub_entity *dev)
++{
++	struct ub_bus_controller *ubc;
++	u32 eid;
++
++	if (!dev)
++		return -EINVAL;
++
++	ubc = dev->ubc;
++
++	if (!ubc)
++		return -ENODEV;
++
++	eid = ubc->uent->eid;
++	if (dev->bi)
++		eid = dev->bi->info.eid;
++
++	return eid;
++}
++EXPORT_SYMBOL_GPL(ub_get_dst_eid);
+diff --git a/drivers/ub/ubus/msi/Makefile b/drivers/ub/ubus/msi/Makefile
+new file mode 100644
+index 000000000000..9fb340462fc6
+--- /dev/null
++++ b/drivers/ub/ubus/msi/Makefile
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0+
++
++obj-$(CONFIG_UB_UBUS_USI)			+= irqdomain.o msi.o
+diff --git a/drivers/ub/ubus/msi/irqdomain.c b/drivers/ub/ubus/msi/irqdomain.c
+new file mode 100644
+index 000000000000..b1c65338c969
+--- /dev/null
++++ b/drivers/ub/ubus/msi/irqdomain.c
+@@ -0,0 +1,113 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#include <linux/msi.h>
++#include <ub/ubus/ubus.h>
++#include <linux/fwnode.h>
++#include <linux/irqdomain.h>
++
++static irq_hw_number_t ub_msi_domain_calc_hwirq(struct msi_desc *desc)
++{
++	struct ub_entity *uent = msi_desc_to_ub_entity(desc);
++
++	return (irq_hw_number_t)(desc->msi_index | (uent->intr_device_id << 11));
++}
++
++static void ub_msi_domain_set_desc(msi_alloc_info_t *arg, struct msi_desc *desc)
++{
++	arg->desc = desc;
++	arg->hwirq = ub_msi_domain_calc_hwirq(desc);
++}
++
++static struct msi_domain_ops ub_msi_domain_ops_default = {
++	.set_desc = ub_msi_domain_set_desc,
++};
++
++static void ub_msi_domain_update_dom_ops(struct msi_domain_info *info)
++{
++	struct msi_domain_ops *ops = info->ops;
++
++	if (ops == NULL)
++		info->ops = &ub_msi_domain_ops_default;
++	else if (!ops->set_desc)
++		ops->set_desc = ub_msi_domain_set_desc;
++}
++
++static void ub_msi_domain_write_msg(struct irq_data *irq_data, struct msi_msg *msg)
++{
++	struct msi_desc *desc = irq_data_get_msi_desc(irq_data);
++
++	if (desc->irq == irq_data->irq)
++		__ub_write_msi_msg(desc, msg);
++}
++
++static void ub_msi_domain_update_chip_ops(struct msi_domain_info *info)
++{
++	struct irq_chip *chip = info->chip;
++
++	WARN_ON_ONCE(!chip);
++	chip->irq_write_msi_msg = chip->irq_write_msi_msg ?
++					  chip->irq_write_msi_msg :
++					  ub_msi_domain_write_msg;
++	chip->irq_mask = chip->irq_mask ? chip->irq_mask : ub_msi_mask_irq;
++	chip->irq_unmask = chip->irq_unmask ? chip->irq_unmask :
++					      ub_msi_unmask_irq;
++}
++
++struct irq_domain *ub_msi_create_irq_domain(struct fwnode_handle *fwnode,
++					    struct msi_domain_info *info,
++					    struct irq_domain *parent)
++{
++	struct irq_domain *domain;
++
++	if (info->flags & MSI_FLAG_USE_DEF_DOM_OPS)
++		ub_msi_domain_update_dom_ops(info);
++	if (info->flags & MSI_FLAG_USE_DEF_CHIP_OPS)
++		ub_msi_domain_update_chip_ops(info);
++	if (WARN_ON(info->flags & MSI_FLAG_LEVEL_CAPABLE))
++		info->flags &= ~MSI_FLAG_LEVEL_CAPABLE;
++
++	info->flags |= MSI_FLAG_FREE_MSI_DESCS | MSI_FLAG_ACTIVATE_EARLY |
++		       MSI_FLAG_DEV_SYSFS;
++
++	if (IS_ENABLED(CONFIG_GENERIC_IRQ_RESERVATION_MODE))
++		info->flags |= MSI_FLAG_MUST_REACTIVATE;
++
++	info->chip->flags |= IRQCHIP_ONESHOT_SAFE;
++	info->bus_token = DOMAIN_BUS_UB_MSI;
++
++	domain = msi_create_irq_domain(fwnode, info, parent);
++
++	return domain;
++}
++EXPORT_SYMBOL_GPL(ub_msi_create_irq_domain);
++
++static bool ub_create_device_domain(struct ub_entity *uent,
++				    const struct msi_domain_template *tmpl,
++				    unsigned int hwsize)
++{
++	struct irq_domain *domain = dev_get_msi_domain(&uent->dev);
++
++	if (!domain || !irq_domain_is_msi_parent(domain))
++		return true;
++
++	if (WARN_ON_ONCE(1))
++		pr_err("Create device irq domain failed.\n");
++
++	return false;
++}
++
++bool ub_setup_usi_device_domain(struct ub_entity *uent, unsigned int hwsize)
++{
++	if (WARN_ON_ONCE(uent->intr_enabled))
++		return false;
++
++	if (msi_match_device_irq_domain(&uent->dev, MSI_DEFAULT_DOMAIN,
++					DOMAIN_BUS_UB_MSI))
++		return true;
++
++	return ub_create_device_domain(uent, NULL, hwsize);
++}
++EXPORT_SYMBOL_GPL(ub_setup_usi_device_domain);
+diff --git a/drivers/ub/ubus/msi/msi.c b/drivers/ub/ubus/msi/msi.c
+new file mode 100644
+index 000000000000..dc31c8cc9a20
+--- /dev/null
++++ b/drivers/ub/ubus/msi/msi.c
+@@ -0,0 +1,552 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Only support for irqdomain.c.
++ */
++
++#include <linux/msi.h>
++#include <ub/ubus/ubus.h>
++#include <uapi/ub/ubus/ubus_regs.h>
++#include <linux/irqdomain.h>
++#include <linux/interrupt.h>
++
++unsigned int ub_irq_calc_affinity_vectors(unsigned int minvec,
++					  unsigned int maxvec,
++					  const struct irq_affinity *affd)
++{
++	return irq_calc_affinity_vectors(minvec, maxvec, affd);
++}
++EXPORT_SYMBOL_GPL(ub_irq_calc_affinity_vectors);
++
++struct ub_device_id_manager {
++	struct idr device_id_idr;
++	spinlock_t lock;
++};
++
++static struct ub_device_id_manager ub_entity_idm = {
++	.device_id_idr = IDR_INIT(ub_entity_idm.device_id_idr),
++	.lock = __SPIN_LOCK_UNLOCKED(ub_entity_idm.lock),
++};
++
++int ub_interrupt_id_alloc(struct ub_entity *uent)
++{
++	int id;
++
++	idr_preload(GFP_KERNEL);
++	spin_lock(&ub_entity_idm.lock);
++	id = idr_alloc(&ub_entity_idm.device_id_idr, uent,
++		       uent->ubc->attr.int_id_start, uent->ubc->attr.int_id_end,
++		       GFP_NOWAIT);
++	spin_unlock(&ub_entity_idm.lock);
++	idr_preload_end();
++
++	if (id < 0)
++		return id;
++	uent->intr_device_id = id;
++
++	return 0;
++}
++
++void ub_interrupt_id_free(struct ub_entity *uent)
++{
++	spin_lock(&ub_entity_idm.lock);
++	idr_remove(&ub_entity_idm.device_id_idr, uent->intr_device_id);
++	spin_unlock(&ub_entity_idm.lock);
++}
++EXPORT_SYMBOL_GPL(ub_interrupt_id_free);
++
++struct ub_entity *msi_desc_to_ub_entity(struct msi_desc *desc)
++{
++	return to_ub_entity(desc->dev);
++}
++
++void __iomem *ub_vector_desc_addr(struct msi_desc *desc)
++{
++	return desc->ub_intr.vector_base + (desc->ub_intr.intr_attrib.entry_nr *
++					    UB_INTR_VECTOR_ENTRY_SIZE);
++}
++
++static void __iomem *ub_addr_desc_base_addr(struct msi_desc *desc)
++{
++	return desc->ub_intr.addr_base;
++}
++
++static void ub_int_type1_update_mask(struct msi_desc *desc, u32 clear, u32 set)
++{
++	raw_spinlock_t *lock = &msi_desc_to_ub_entity(desc)->usi_lock;
++	unsigned long flags;
++
++	raw_spin_lock_irqsave(lock, flags);
++	desc->ub_intr.intr_attrib.mask &= ~clear;
++	desc->ub_intr.intr_attrib.mask |= set;
++	ub_cfg_write_dword(msi_desc_to_ub_entity(desc), UB_INT_TYPE1_INT_MASK,
++			   desc->ub_intr.intr_attrib.mask);
++	raw_spin_unlock_irqrestore(lock, flags);
++}
++
++static void ub_int_type1_mask(struct msi_desc *desc, u32 mask)
++{
++	ub_int_type1_update_mask(desc, 0, mask);
++}
++
++static void ub_int_type2_mask(struct msi_desc *desc)
++{
++	void __iomem *addr = ub_vector_desc_addr(desc);
++	u16 addr_index;
++	u32 reg_val;
++
++	desc->ub_intr.intr_attrib.mask = 1;
++	addr_index = desc->ub_intr.intr_attrib.addr_index;
++	reg_val = UB_INTR_VECTOR_MASK_MASK | (u32)addr_index;
++
++	writel(reg_val, addr + UB_INTR_VECTOR_ADDR_INDEX);
++}
++
++static void ub_usi_desc_mask(struct msi_desc *desc, u32 nr)
++{
++	if (desc->ub_intr.intr_attrib.is_type1)
++		ub_int_type1_mask(desc, nr);
++	else
++		ub_int_type2_mask(desc);
++}
++
++void ub_msi_mask_irq(struct irq_data *data)
++{
++	struct msi_desc *desc = irq_data_get_msi_desc(data);
++
++	ub_usi_desc_mask(desc, (u32)BIT(data->irq - desc->irq));
++}
++
++static void ub_int_type1_unmask_irq(struct msi_desc *desc, u32 mask)
++{
++	ub_int_type1_update_mask(desc, mask, 0);
++}
++
++static void ub_int_type2_unmask_irq(struct msi_desc *desc)
++{
++	void __iomem *addr = ub_vector_desc_addr(desc);
++	u16 addr_index;
++
++	desc->ub_intr.intr_attrib.mask = 0;
++	addr_index = desc->ub_intr.intr_attrib.addr_index;
++	writel((u32)addr_index, addr + UB_INTR_VECTOR_ADDR_INDEX);
++}
++
++static void ub_usi_desc_unmask(struct msi_desc *desc, u32 nr)
++{
++	if (desc->ub_intr.intr_attrib.is_type1)
++		ub_int_type1_unmask_irq(desc, nr);
++	else
++		ub_int_type2_unmask_irq(desc);
++}
++
++void ub_msi_unmask_irq(struct irq_data *data)
++{
++	struct msi_desc *desc = irq_data_get_msi_desc(data);
++
++	ub_usi_desc_unmask(desc, (u32)BIT(data->irq - desc->irq));
++}
++
++static void __iomem *ub_intr_find_one_addr(struct msi_msg *msg,
++					   struct msi_desc *entry,
++					   u8 *is_new)
++{
++	void __iomem *first_unused_base = NULL;
++	void __iomem *base;
++	u32 addr_l, addr_h, valid, i;
++	u16 first_unused_id;
++	u32 addr_cnt = entry->ub_intr.addr_num + 1;
++
++	base = ub_addr_desc_base_addr(entry);
++
++	for (i = 0; i < addr_cnt; i++, base += UB_INTR_ADDR_ENTRY_SIZE) {
++		valid = readl(base + UB_INTR_ADDR_TOKENID) & UB_INTR_ADDR_VALID_MASK;
++		if (!valid) {
++			if (!first_unused_base) {
++				first_unused_base = base;
++				first_unused_id = i;
++			}
++			continue;
++		}
++		addr_l = readl(base + UB_INTR_ADDR_ADDR_L);
++		addr_h = readl(base + UB_INTR_ADDR_ADDR_H);
++		if (msg->address_lo == addr_l && msg->address_hi == addr_h) {
++			entry->ub_intr.intr_attrib.addr_index = i;
++			*is_new = 0;
++			return base;
++		}
++	}
++
++	if (!first_unused_base)
++		return NULL;
++	*is_new = 1;
++
++	entry->ub_intr.intr_attrib.addr_index = first_unused_id;
++
++	return first_unused_base;
++}
++
++static void ub_int_type1_clear_msg(struct msi_desc *entry, struct msi_msg *msg)
++{
++	struct ub_entity *uent = msi_desc_to_ub_entity(entry);
++	int ret;
++
++	/*
++	 * In the interrupt release process,
++	 * the kernel uses spin_lock_irqsave.
++	 * If the message times out while this lock is held,
++	 * the hardware watchdog will be triggered.
++	 */
++	ret = ub_cfg_write_byte(uent, UB_INT_TYPE1_ENABLE, 0);
++	if (ret == -ETIMEDOUT) {
++		pr_err("ub int type1 clear UB_INT_TYPE1_ENABLE failed\n");
++		return;
++	}
++
++	ret = ub_cfg_write_dword(uent, UB_INT_TYPE1_EN_INT_NUM, 0);
++	if (ret == -ETIMEDOUT) {
++		pr_err("ub int type1 clear UB_INT_TYPE1_EN_INT_NUM failed\n");
++		return;
++	}
++
++	ret = ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_DATA, 0);
++	if (ret == -ETIMEDOUT) {
++		pr_err("ub int type1 clear UB_INT_TYPE1_INT_DATA failed\n");
++		return;
++	}
++
++	ret = ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ADDR_L, 0);
++	if (ret == -ETIMEDOUT) {
++		pr_err("ub int type1 clear UB_INT_TYPE1_INT_ADDR_L failed\n");
++		return;
++	}
++
++	ret = ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ADDR_H, 0);
++	if (ret == -ETIMEDOUT) {
++		pr_err("ub int type1 clear UB_INT_TYPE1_INT_ADDR_H failed\n");
++		return;
++	}
++}
++
++static void ub_int_type2_clear_msg(struct msi_desc *entry, struct msi_msg *msg)
++{
++	void __iomem *vector_base;
++
++	vector_base = ub_vector_desc_addr(entry);
++	if (!vector_base) {
++		WARN_ON(1);
++		return;
++	}
++
++	writel(0, vector_base + UB_INTR_VECTOR_ID);
++	/* clear interrupt index(bit 0~15), keep mask(bit 16) */
++	writel(UB_INTR_VECTOR_MASK_MASK,
++	       vector_base + UB_INTR_VECTOR_ADDR_INDEX);
++}
++
++static void __ub_clear_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
++{
++	if (entry->ub_intr.intr_attrib.is_type1)
++		ub_int_type1_clear_msg(entry, msg);
++	else
++		ub_int_type2_clear_msg(entry, msg);
++}
++
++static void ub_int_type1_set_msg(struct msi_desc *entry, struct msi_msg *msg)
++{
++	struct ub_entity *uent = msi_desc_to_ub_entity(entry);
++
++	ub_cfg_write_byte(uent, UB_INT_TYPE1_ENABLE, 1);
++	ub_cfg_write_dword(uent, UB_INT_TYPE1_EN_INT_NUM,
++			   (u32)ilog2(__roundup_pow_of_two(entry->nvec_used)));
++	ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_DATA, msg->data);
++	ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ADDR_L, msg->address_lo);
++	ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ADDR_H, msg->address_hi);
++}
++
++static void ub_int_type2_set_msg(struct msi_desc *entry, struct msi_msg *msg)
++{
++	struct ub_entity *uent = msi_desc_to_ub_entity(entry);
++	void __iomem *vector_base, *addr_base;
++	unsigned long val;
++	u32 reg_val;
++	u8 is_new;
++
++	vector_base = ub_vector_desc_addr(entry);
++	if (!vector_base) {
++		WARN_ON(1);
++		return;
++	}
++
++	addr_base = ub_intr_find_one_addr(msg, entry, &is_new);
++	if (addr_base) {
++		writel(msg->data, vector_base + UB_INTR_VECTOR_ID);
++		reg_val = readl(vector_base + UB_INTR_VECTOR_ADDR_INDEX) &
++			  ~UB_INTR_VECTOR_ADDR_INDEX_MASK;
++		reg_val |= entry->ub_intr.intr_attrib.addr_index;
++		writel(reg_val, vector_base + UB_INTR_VECTOR_ADDR_INDEX);
++		if (is_new) {
++			writel(msg->address_lo, addr_base + UB_INTR_ADDR_ADDR_L);
++			writel(msg->address_hi, addr_base + UB_INTR_ADDR_ADDR_H);
++			writel(ub_get_dst_eid(uent), addr_base + UB_INTR_ADDR_DSTEID_0);
++			val = uent->tid & UB_INTR_ADDR_TOKENID_MASK;
++			writel(val, addr_base + UB_INTR_ADDR_TOKENID);
++			/* valid bit must be placed at the end. */
++			set_bit(UB_INTR_ADDR_VALID_BIT, &val);
++			writel(val, addr_base + UB_INTR_ADDR_TOKENID);
++		}
++	} else {
++		WARN_ON(1);
++	}
++}
++
++static void __ub_set_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
++{
++	if (entry->ub_intr.intr_attrib.is_type1)
++		ub_int_type1_set_msg(entry, msg);
++	else
++		ub_int_type2_set_msg(entry, msg);
++}
++
++void ub_write_interruptid(struct ub_entity *uent)
++{
++	if (!uent->intr_type1)
++		ub_cfg_write_dword(uent, UB_INT_ID, uent->intr_device_id);
++	else
++		ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ID, uent->intr_device_id);
++}
++
++void __ub_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
++{
++	bool unmasked = false;
++
++	if (!entry->ub_intr.intr_attrib.is_type1)
++		unmasked = !(entry->ub_intr.intr_attrib.mask);
++
++	if (unmasked)
++		ub_usi_desc_mask(entry, 0);
++
++	if (msg->address_lo == 0 && msg->address_hi == 0)
++		__ub_clear_msi_msg(entry, msg);
++	else
++		__ub_set_msi_msg(entry, msg);
++
++	if (unmasked)
++		ub_usi_desc_unmask(entry, 0);
++
++	entry->msg = *msg;
++	if (entry->write_msi_msg)
++		entry->write_msi_msg(entry, entry->write_msi_msg_data);
++}
++
++u32 ub_intr_addr_count(struct ub_entity *uent)
++{
++	u32 addr_num = 0;
++	int ret;
++
++	ret = ub_cfg_read_word(uent, UB_NUM_OF_INTR_ADDR_TBL, (u16 *)&addr_num);
++	if (ret)
++		return 0;
++	/*
++	 * The value of this field is N, indicating that the interrupt address table
++	 * supported by the function entity supports N+1 interrupt address.
++	 */
++	addr_num += 1;
++
++	return addr_num;
++}
++EXPORT_SYMBOL_GPL(ub_intr_addr_count);
++
++u32 ub_intr_vec_count(struct ub_entity *uent)
++{
++	u32 vector_num = 0;
++	int ret;
++
++	ret = ub_cfg_read_word(uent, UB_NUM_OF_INTR_VECTOR_TBL, (u16 *)&vector_num);
++	if (ret)
++		return 0;
++	/*
++	 * The value of this field is N, indicating that the interrupt vector table
++	 * supported by the function entity supports N+1 interrupt vectors.
++	 */
++	vector_num += 1;
++
++	return vector_num;
++}
++EXPORT_SYMBOL_GPL(ub_intr_vec_count);
++
++static int ub_prepare_msi_desc(struct ub_entity *uent, struct msi_desc *desc, u32 num)
++{
++	void __iomem *vec_desc_addr;
++
++	desc->nvec_used = 1;
++	desc->ub_intr.intr_attrib.is_type1 = 0;
++	desc->ub_intr.addr_base = uent->intr_addr_base;
++	desc->ub_intr.vector_base = uent->intr_vector_base;
++	desc->ub_intr.addr_num = num >> 16;
++	desc->ub_intr.vec_num = num & 0xffff;
++
++	vec_desc_addr = ub_vector_desc_addr(desc);
++	desc->ub_intr.intr_attrib.mask = !!(readl(vec_desc_addr + UB_INTR_VECTOR_ADDR_INDEX) &
++					 UB_INTR_VECTOR_MASK_MASK);
++
++	return 0;
++}
++
++static int ub_setup_msi_descs(struct ub_entity *uent,
++			      struct ub_usi_entry *entries, int nvec,
++			      struct irq_affinity_desc *masks)
++{
++	struct irq_affinity_desc *curmsk;
++	struct msi_desc desc;
++	int ret = 0, i;
++	u32 num;
++
++	memset(&desc, 0, sizeof(desc));
++
++	if (uent->intr_type1) {
++		desc.ub_intr.intr_attrib.is_type1 = 1;
++		desc.nvec_used = nvec;
++		desc.affinity = masks;
++		ret = ub_cfg_read_dword(uent, UB_INT_TYPE1_INT_MASK,
++					&desc.ub_intr.intr_attrib.mask);
++		if (ret)
++			return ret;
++
++		return msi_insert_msi_desc(&uent->dev, &desc);
++	}
++
++	/* INT_TYPE2 setup */
++	ret = ub_cfg_read_dword(uent, UB_NUM_OF_INTR_VECTOR_TBL, &num);
++	if (ret)
++		return -EINVAL;
++
++	for (i = 0, curmsk = masks; i < nvec; i++, curmsk++) {
++		desc.msi_index = entries ? entries[i].entry : i;
++		desc.ub_intr.intr_attrib.entry_nr = desc.msi_index;
++		desc.affinity = masks ? curmsk : NULL;
++		ret = ub_prepare_msi_desc(uent, &desc, num);
++		if (ret)
++			break;
++		ret = msi_insert_msi_desc(&uent->dev, &desc);
++		if (ret)
++			break;
++	}
++	return ret;
++}
++
++static int ub_setup_intr_irqs(struct ub_entity *uent, int nvec)
++{
++	struct irq_domain *domain;
++
++	domain = dev_get_msi_domain(&uent->dev);
++	if (domain && irq_domain_is_hierarchy(domain))
++		return msi_domain_alloc_irqs_all_locked(&uent->dev, 0, nvec);
++
++	pr_info("default irq alloc to be done...\n");
++
++	return -ENOSPC;
++}
++
++static void ub_update_entries(struct ub_entity *uent, struct ub_usi_entry *entries)
++{
++	struct msi_desc *desc;
++
++	if (entries) {
++		msi_for_each_desc(desc, &uent->dev, MSI_DESC_ALL) {
++			entries->vector = desc->irq;
++			entries++;
++		}
++	}
++}
++
++static void ub_msi_teardown_msi_irqs(struct ub_entity *uent)
++{
++	struct irq_domain *domain;
++
++	domain = dev_get_msi_domain(&uent->dev);
++	if (domain && irq_domain_is_hierarchy(domain))
++		msi_domain_free_irqs_all_locked(&uent->dev, 0);
++	else
++		pr_info("default irq free to be done.\n");
++}
++
++static void free_msi_irqs(struct ub_entity *uent)
++{
++	ub_msi_teardown_msi_irqs(uent);
++
++	if (uent->intr_addr_base) {
++		iounmap(uent->intr_addr_base);
++		uent->intr_addr_base = NULL;
++	}
++	if (uent->intr_vector_base) {
++		iounmap(uent->intr_vector_base);
++		uent->intr_vector_base = NULL;
++	}
++}
++
++int usi_setup_interrupts(struct ub_entity *uent, struct ub_usi_entry *entries,
++			 int nvec, struct irq_affinity *affd)
++{
++	struct irq_affinity_desc *masks = NULL;
++	int ret;
++
++	if (affd)
++		masks = irq_create_affinity_masks(nvec, affd);
++
++	msi_lock_descs(&uent->dev);
++	ret = ub_setup_msi_descs(uent, entries, nvec, masks);
++	if (ret)
++		goto out_free;
++
++	ret = ub_setup_intr_irqs(uent, nvec);
++	if (ret)
++		goto out_free;
++
++	ub_update_entries(uent, entries);
++	goto out_unlock;
++
++out_free:
++	free_msi_irqs(uent);
++out_unlock:
++	msi_unlock_descs(&uent->dev);
++	kfree(masks);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(usi_setup_interrupts);
++
++void ub_disable_intr(struct ub_entity *uent)
++{
++	u32 i, addr_num;
++	void *intr_addr;
++
++	if (!uent || !uent->intr_enabled)
++		return;
++
++	if (uent->intr_type1) {
++		ub_cfg_write_byte(uent, UB_INT_TYPE1_ENABLE, 0);
++		ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_MASK, GENMASK(31, 0));
++	} else {
++		addr_num = ub_intr_addr_count(uent);
++		for (i = 0; i < addr_num; i++) {
++			intr_addr = uent->intr_addr_base + i * UB_INTR_ADDR_ENTRY_SIZE;
++			writel(0, intr_addr + UB_INTR_ADDR_TOKENID);
++			writel(0, intr_addr + UB_INTR_ADDR_DSTEID_0);
++			writel(0, intr_addr + UB_INTR_ADDR_ADDR_L);
++			writel(0, intr_addr + UB_INTR_ADDR_ADDR_H);
++		}
++
++		ub_cfg_write_byte(uent, UB_INT_MASK, 1);
++		ub_cfg_write_byte(uent, UB_INT_EN, 0);
++	}
++
++	uent->intr_enabled = 0;
++	ub_interrupt_id_free(uent);
++	free_msi_irqs(uent);
++}
++EXPORT_SYMBOL_GPL(ub_disable_intr);
++
++int ub_setup_msi_context(struct ub_entity *uent)
++{
++	return msi_setup_device_data(&uent->dev);
++}
++EXPORT_SYMBOL_GPL(ub_setup_msi_context);
+diff --git a/drivers/ub/ubus/ras.c b/drivers/ub/ubus/ras.c
+new file mode 100644
+index 000000000000..f27ae6760dce
+--- /dev/null
++++ b/drivers/ub/ubus/ras.c
+@@ -0,0 +1,30 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#include <ub/ubus/ubus.h>
++#include <ub/ubus/uber.h>
++
++static ub_ras_recover_func_t ub_ras_recover_func;
++static DEFINE_SPINLOCK(ubus_ghes_lock);
++
++void ub_ras_register_recover_func(ub_ras_recover_func_t func)
++{
++	spin_lock(&ubus_ghes_lock);
++	ub_ras_recover_func = func;
++	spin_unlock(&ubus_ghes_lock);
++}
++EXPORT_SYMBOL_GPL(ub_ras_register_recover_func);
++
++ub_ras_recover_func_t ub_ras_get_recover_func(void)
++{
++	ub_ras_recover_func_t tmp_func;
++
++	spin_lock(&ubus_ghes_lock);
++	tmp_func = ub_ras_recover_func;
++	spin_unlock(&ubus_ghes_lock);
++
++	return tmp_func;
++}
++EXPORT_SYMBOL_GPL(ub_ras_get_recover_func);
+diff --git a/drivers/ub/ubus/ub-driver.c b/drivers/ub/ubus/ub-driver.c
+new file mode 100644
+index 000000000000..debe4b8578d1
+--- /dev/null
++++ b/drivers/ub/ubus/ub-driver.c
+@@ -0,0 +1,233 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#include <linux/device.h>
++#include <linux/dma-mapping.h>
++#include <linux/dma-map-ops.h>
++#include <linux/iommu.h>
++#include <linux/property.h>
++#include <ub/ubus/ubus.h>
++
++static const struct iommu_ops *ub_bus_type_iommu_ops;
++void ub_bus_type_iommu_ops_set(const struct iommu_ops *ops)
++{
++	ub_bus_type_iommu_ops = ops;
++}
++EXPORT_SYMBOL_GPL(ub_bus_type_iommu_ops_set);
++
++const struct iommu_ops *ub_bus_type_iommu_ops_get(void)
++{
++	return ub_bus_type_iommu_ops;
++}
++EXPORT_SYMBOL_GPL(ub_bus_type_iommu_ops_get);
++
++static void ubct_dma_setup(struct device *dev)
++{
++	struct ub_entity *uent = to_ub_entity(dev);
++	u64 end, mask, size;
++	u8 addr_limit;
++
++	addr_limit = uent->ubc->attr.mem_size_limit;
++	if (!addr_limit) {
++		pr_warn(FW_BUG "ub bus controller missing memory address limit\n");
++		return;
++	}
++
++	size = (addr_limit >= SZ_64) ? U64_MAX : (1ULL << addr_limit);
++	end = size - 1;
++	mask = DMA_BIT_MASK(ilog2(end) + 1);
++	dev->bus_dma_limit = end;
++	dev->coherent_dma_mask = min(dev->coherent_dma_mask, mask);
++	*dev->dma_mask = min(*dev->dma_mask, mask);
++}
++
++static inline const struct iommu_ops *ubct_iommu_fwspec_ops(struct device *dev)
++{
++	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
++
++	return fwspec ? fwspec->ops : NULL;
++}
++
++static int ubct_iommu_fwspec_init(struct device *dev, u32 id,
++				  struct fwnode_handle *fwnode,
++				  const struct iommu_ops *ops)
++{
++	int ret = iommu_fwspec_init(dev, fwnode, ops);
++
++	if (ret)
++		return ret;
++
++	return iommu_fwspec_add_ids(dev, &id, 1);
++}
++
++static int ubct_iommu_configure(struct device *dev)
++{
++	if (!ub_bus_type_iommu_ops) {
++		dev_err(dev, "ubus's iommu_ops not ready\n");
++		return -ENODEV;
++	}
++
++	/* input id is 0, fwnode is NULL, ummu not care */
++	return ubct_iommu_fwspec_init(dev, 0, NULL, ub_bus_type_iommu_ops);
++}
++
++static const struct iommu_ops *handle_iommu_configure_error(struct device *dev, int err)
++{
++	if (err == -EPROBE_DEFER)
++		return ERR_PTR(-EPROBE_DEFER);
++
++	dev_warn(dev, "Adding to IOMMU failed: %d\n", err);
++	return NULL;
++}
++
++static const struct iommu_ops *ub_hybrid_iommu_configure(struct device *dev)
++{
++	const struct iommu_ops *ops;
++	int err;
++
++	ops = ubct_iommu_fwspec_ops(dev);
++	if (ops)
++		return ops;
++
++	err = ubct_iommu_configure(dev);
++	if (err) {
++		if (err != -EPROBE_DEFER)
++			dev_err(dev, "viot iommu configure: %d\n", err);
++
++		return handle_iommu_configure_error(dev, err);
++	}
++
++	if (dev->bus && !device_iommu_mapped(dev)) {
++		err = iommu_probe_device(dev);
++		if (err)
++			return handle_iommu_configure_error(dev, err);
++	}
++
++	return ubct_iommu_fwspec_ops(dev);
++}
++
++static int ub_hybrid_dma_configure(struct device *dev, enum dev_dma_attr attr)
++{
++	const struct iommu_ops *iommu;
++
++	if (attr == DEV_DMA_NOT_SUPPORTED) {
++		set_dma_ops(dev, &dma_dummy_ops);
++		return 0;
++	}
++
++	ubct_dma_setup(dev);
++
++	iommu = ub_hybrid_iommu_configure(dev);
++	if (PTR_ERR(iommu) == -EPROBE_DEFER)
++		return -EPROBE_DEFER;
++
++	arch_setup_dma_ops(dev, 0, U64_MAX, attr == DEV_DMA_COHERENT);
++
++	return 0;
++}
++
++/* Translate from FW */
++static enum dev_dma_attr ub_dma_attr_trans(u16 dma_attr)
++{
++	switch (dma_attr) {
++	case 0:
++		return DEV_DMA_NON_COHERENT;
++	case 1:
++		return DEV_DMA_COHERENT;
++	default:
++		return DEV_DMA_NOT_SUPPORTED;
++	}
++}
++
++static int ub_dma_configure(struct device *dev)
++{
++	struct ub_driver *udrv = to_ub_driver(dev->driver);
++	struct ub_entity *uent = to_ub_entity(dev);
++	struct ub_bus_controller *ubc;
++	int ret;
++
++	ubc = ub_ubc_get(uent->ubc);
++
++	ret = ub_hybrid_dma_configure(dev,
++				      ub_dma_attr_trans(ubc->attr.dma_cca));
++	if (!ret && !udrv->driver_managed_dma) {
++		ret = iommu_device_use_default_domain(dev);
++		if (ret)
++			arch_teardown_dma_ops(dev);
++	}
++
++	ub_ubc_put(ubc);
++	dev_info(dev, "dma_configure ret = %d\n", ret);
++	return ret;
++}
++
++static void ub_dma_cleanup(struct device *dev)
++{
++	struct ub_driver *driver = to_ub_driver(dev->driver);
++
++	if (!driver->driver_managed_dma)
++		iommu_device_unuse_default_domain(dev);
++
++	dev_dbg(dev, "dma_cleanup\n");
++}
++
++struct bus_type ub_bus_type = {
++	.name = "ub",
++	.dma_configure = ub_dma_configure,
++	.dma_cleanup = ub_dma_cleanup,
++};
++EXPORT_SYMBOL_GPL(ub_bus_type);
++
++struct ub_dynid {
++	struct list_head node;
++	struct ub_device_id id;
++};
++
++static void ub_free_dynids(struct ub_driver *drv)
++{
++	struct ub_dynid *dynid, *n;
++
++	spin_lock(&drv->dynids.lock);
++	list_for_each_entry_safe(dynid, n, &drv->dynids.list, node) {
++		list_del(&dynid->node);
++		kfree(dynid);
++	}
++	spin_unlock(&drv->dynids.lock);
++}
++
++int __ub_register_driver(struct ub_driver *drv, struct module *owner,
++			 const char *mod_name)
++{
++	if (!drv)
++		return -EINVAL;
++
++	drv->driver.name = drv->name;
++	drv->driver.bus = &ub_bus_type;
++	drv->driver.owner = owner;
++	drv->driver.mod_name = mod_name;
++	drv->driver.groups = drv->groups;
++
++	spin_lock_init(&drv->dynids.lock);
++	INIT_LIST_HEAD(&drv->dynids.list);
++
++	return driver_register(&drv->driver);
++}
++EXPORT_SYMBOL_GPL(__ub_register_driver);
++
++void ub_unregister_driver(struct ub_driver *drv)
++{
++	if (!drv)
++		return;
++
++	driver_unregister(&drv->driver);
++	ub_free_dynids(drv);
++}
++EXPORT_SYMBOL_GPL(ub_unregister_driver);
++
++static int __init ub_driver_init(void)
++{
++	return bus_register(&ub_bus_type);
++}
++postcore_initcall(ub_driver_init);
+diff --git a/include/linux/cper.h b/include/linux/cper.h
+index ad1ed2473091..49a074f5db1c 100644
+--- a/include/linux/cper.h
++++ b/include/linux/cper.h
+@@ -197,6 +197,10 @@ enum {
+ #define CPER_SEC_DMAR_IOMMU						\
+ 	GUID_INIT(0x036F84E1, 0x7F37, 0x428c, 0xA7, 0x9E, 0x57, 0x5F,	\
+ 		  0xDF, 0xAA, 0x84, 0xEC)
++/* UBUS */
++#define CPER_SEC_UBUS							\
++	GUID_INIT(0x74D255B0, 0x73E8, 0x488A, 0xB8, 0x67, 0x90, 0x65,	\
++		  0x4A, 0x35, 0x86, 0x5E)
+ 
+ #define CPER_PROC_VALID_TYPE			0x0001
+ #define CPER_PROC_VALID_ISA			0x0002
+@@ -541,6 +545,20 @@ struct cper_sec_pcie {
+ 	u8	aer_info[96];
+ };
+ 
++struct cper_sec_ubus {
++	u64	validation_bits;
++	u32	eid;
++	u32	cna;
++	u32	port;
++	u32	vendor;
++	u16	device;
++	u16	type;
++	u16	class_code;
++	u16	reserved;
++	u32	overflow_flag;
++	u32	err_info[72];
++};
++
+ /* Firmware Error Record Reference, UEFI v2.7 sec N.2.10  */
+ struct cper_sec_fw_err_rec_ref {
+ 	u8 record_type;
+diff --git a/include/linux/irqdomain_defs.h b/include/linux/irqdomain_defs.h
+index c29921fd8cd1..11d0253294df 100644
+--- a/include/linux/irqdomain_defs.h
++++ b/include/linux/irqdomain_defs.h
+@@ -26,6 +26,7 @@ enum irq_domain_bus_token {
+ 	DOMAIN_BUS_DMAR,
+ 	DOMAIN_BUS_AMDVI,
+ 	DOMAIN_BUS_PCI_DEVICE_IMS,
++	DOMAIN_BUS_UB_MSI
+ };
+ 
+ #endif /* _LINUX_IRQDOMAIN_DEFS_H */
+diff --git a/include/linux/mod_devicetable.h b/include/linux/mod_devicetable.h
+index 0f51bc24ae59..de678c6b4348 100644
+--- a/include/linux/mod_devicetable.h
++++ b/include/linux/mod_devicetable.h
+@@ -948,4 +948,26 @@ struct cdx_device_id {
+ 	__u32 override_only;
+ };
+ 
++#define UB_ANY_ID (~0)
++
++/**
++ * struct ub_device_id - UB device identifier
++ * @vendor:		Vendor ID
++ * @device:		Device ID
++ * @mod_vendor:		Module Vendor ID
++ * @module:		Module ID
++ * @class_code:		Device class base code and sub code to match. See
++ *			include/ub/ubus/ubus_ids.h for a full list of classes.
++ * @class_mask:		Limit which sub-fields of the class code field are
++ *			compared.
++ * @override_only:	Match only when dev->driver_override is this driver.
++ */
++struct ub_device_id {
++	__u32 vendor, device;		/* Vendor and device ID or UB_ANY_ID*/
++	__u32 mod_vendor, module;	/* Module ID's or UB_ANY_ID */
++	__u16 class_code, class_mask;	/* Base code and sub code */
++	unsigned long driver_data;	/* Data private to the driver */
++	__u32 override_only;
++};
++
+ #endif /* LINUX_MOD_DEVICETABLE_H */
+diff --git a/include/linux/msi.h b/include/linux/msi.h
+index 2de6f1c5910b..dea0d3e1b6ea 100644
+--- a/include/linux/msi.h
++++ b/include/linux/msi.h
+@@ -164,6 +164,19 @@ struct msi_desc_data {
+ 
+ #define MSI_MAX_INDEX		((unsigned int)USHRT_MAX)
+ 
++struct ub_intr_desc {
++	struct {
++		u32 mask;
++		u8 is_type1 : 1;
++		u16 entry_nr;
++		u16 addr_index;
++	} intr_attrib;
++	u16 addr_num;
++	u16 vec_num;
++	void __iomem *vector_base;
++	void __iomem *addr_base;
++};
++
+ /**
+  * struct msi_desc - Descriptor structure for MSI based interrupts
+  * @irq:	The base interrupt number
+@@ -207,6 +220,7 @@ struct msi_desc {
+ 	union {
+ 		struct pci_msi_desc	pci;
+ 		struct msi_desc_data	data;
++		struct ub_intr_desc	ub_intr;
+ 	};
+ };
+ 
+@@ -557,6 +571,7 @@ enum {
+ 	MSI_FLAG_PCI_MSIX_ALLOC_DYN	= (1 << 20),
+ 	/* Support for PCI/IMS */
+ 	MSI_FLAG_PCI_IMS		= (1 << 21),
++	MSI_FLAG_UB_INTR = (1 << 22)
+ };
+ 
+ /**
+@@ -688,4 +703,31 @@ static inline struct irq_domain *pci_msi_get_device_domain(struct pci_dev *pdev)
+ static inline void pci_write_msi_msg(unsigned int irq, struct msi_msg *msg) { }
+ #endif /* !CONFIG_PCI_MSI */
+ 
++struct ub_usi_entry {
++	u32 vector; /* Kernel uses to write allocated vector */
++	u16 entry; /* Driver uses to specify entry, OS writes */
++};
++struct ub_entity;
++struct irq_affinity;
++#ifdef CONFIG_UB_UBUS_USI
++struct ub_entity *msi_desc_to_ub_entity(struct msi_desc *desc);
++void ub_msi_mask_irq(struct irq_data *data);
++void ub_msi_unmask_irq(struct irq_data *data);
++void ub_write_interruptid(struct ub_entity *uent);
++struct irq_domain *ub_msi_create_irq_domain(struct fwnode_handle *fwnode,
++					    struct msi_domain_info *info,
++					    struct irq_domain *parent);
++void __ub_write_msi_msg(struct msi_desc *entry, struct msi_msg *msg);
++int ub_interrupt_id_alloc(struct ub_entity *uent);
++void ub_interrupt_id_free(struct ub_entity *uent);
++bool ub_setup_usi_device_domain(struct ub_entity *uent, unsigned int hwsize);
++void __iomem *ub_vector_desc_addr(struct msi_desc *desc);
++u32 ub_intr_addr_count(struct ub_entity *uent);
++u32 ub_intr_vec_count(struct ub_entity *uent);
++int usi_setup_interrupts(struct ub_entity *uent,
++			 struct ub_usi_entry *entries, int nvec,
++			 struct irq_affinity *affd);
++int ub_setup_msi_context(struct ub_entity *uent);
++#endif /* CONFIG_UB_UBUS_USI */
++
+ #endif /* LINUX_MSI_H */
+diff --git a/include/uapi/ub/ubus/ubus.h b/include/uapi/ub/ubus/ubus.h
+new file mode 100644
+index 000000000000..388a4cf043ce
+--- /dev/null
++++ b/include/uapi/ub/ubus/ubus.h
+@@ -0,0 +1,78 @@
++/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#ifndef _UAPI_UB_UBUS_UBUS_H_
++#define _UAPI_UB_UBUS_UBUS_H_
++
++#include <linux/types.h>
++#include <linux/ioctl.h>
++
++#define UBUS_API_VERSION 0
++
++/* Kernel & User level defines for UBUS IOCTLs. */
++
++#define UBUS_TYPE ('U')
++
++/* -------- IOCTLs for UBUS file descriptor (/dev/unified_bus) -------- */
++
++/**
++ * UBUS_GET_API_VERSION - _IO(UBUS_TYPE, 0)
++ *
++ * Report the version of the UBUS API.  This allows us to bump the entire
++ * API version should we later need to add or change features in incompatible
++ * ways.
++ * Return: UBUS_API_VERSION
++ * Availability: Always
++ */
++#define UBUS_IOCTL_GET_API_VERSION _IO(UBUS_TYPE, 0)
++
++#define GUID_SIZE 16
++
++struct ubus_cmd_bi_create {
++#define UBUS_INSTANCE_DYNAMIC_SERVER 2
++#define UBUS_INSTANCE_DYNAMIC_CLUSTER 3
++	__u8 type;
++	__u16 upi;
++	__u32 eid;
++	__u8 guid[GUID_SIZE];
++};
++
++struct ubus_cmd_bi_destroy {
++	__u8 guid[GUID_SIZE];
++};
++
++struct ubus_cmd_bi_bind {
++	__u8 instance_guid[GUID_SIZE];
++	__u8 dev_guid[GUID_SIZE];
++};
++
++struct ubus_cmd_bi_unbind {
++	__u8 instance_guid[GUID_SIZE];
++	__u8 dev_guid[GUID_SIZE];
++};
++
++#define UBUS_IOCTL_HEADER_SIZE 8
++
++enum ubus_bi_cmd {
++	UBUS_CMD_BI_CREATE = 0,
++	UBUS_CMD_BI_DESTROY,
++	UBUS_CMD_BI_BIND,
++	UBUS_CMD_BI_UNBIND,
++	UBUS_CMD_BI_NUM
++};
++
++struct ubus_ioctl_bus_instance {
++	__u32 argsz; /* size of *union*->structure */
++	__u32 sub_cmd;
++	union {
++		struct ubus_cmd_bi_create create;
++		struct ubus_cmd_bi_destroy destroy;
++		struct ubus_cmd_bi_bind bind;
++		struct ubus_cmd_bi_unbind unbind;
++	};
++};
++#define UBUS_IOCTL_BUS_INSTANCE _IOWR(UBUS_TYPE, 1, struct ubus_ioctl_bus_instance)
++
++#endif /* _UAPI_UB_UBUS_UBUS_H_ */
+diff --git a/include/uapi/ub/ubus/ubus_regs.h b/include/uapi/ub/ubus/ubus_regs.h
+new file mode 100644
+index 000000000000..f8a16e7e1c1f
+--- /dev/null
++++ b/include/uapi/ub/ubus/ubus_regs.h
+@@ -0,0 +1,275 @@
++/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#ifndef _UAPI_UB_UBUS_UBUS_REGS_H_
++#define _UAPI_UB_UBUS_UBUS_REGS_H_
++
++enum ub_cfg_cap_id {
++	UB_CFG0_BASIC_CAP = 0x000,
++	UB_SHP_CAP = 0x002,
++	UB_ERR_RECORD_CAP = 0x003,
++	UB_ERR_INFO_CAP = 0x004,
++	UB_EMQ_CAP = 0x005,
++	UB_CFG1_BASIC_CAP = 0x100,
++	UB_DECODER_CAP = 0x101,
++	UB_JETTY_CAP = 0x102,
++	UB_INT_TYPE1_CAP = 0x103,
++	UB_INT_TYPE2_CAP = 0x104,
++	UB_MEM_CAP = 0x106,
++};
++
++enum ub_port_cap_id {
++	UB_PORT_CAP15_QDLWS = 15,
++};
++
++#define UB_SLICE_SZ 0x00000400
++#define UB_CFG_BITMAP_SIZE 32
++#define UB_ROUTE_TABLE_SZ 0x40000000
++#define UB_CFG0_SUPPORT_FEATURE_SIZE 16
++#define UB_GUID_SIZE 16
++#define UB_EID_SIZE 16
++#define UB_FM_EID_SIZE 16
++#define UB_CFG1_SUPPORT_FEATURE_SIZE 16
++#define UB_PORT_SLICE_START 0x00080000
++#define UB_ROUTE_TABLE_SLICE_START 0x3c0000000
++#define UB_CFG_SPACE_SLICE_END 0x400000000
++#define UB_ADDR_TO_POS(a) ((a) << 2)
++#define UB_PORT_SLICE_SIZE UB_ADDR_TO_POS(0x10000)
++
++/* CFG0 BASIC */
++#define UB_CFG0_BASIC_SLICE 0x0 /* 0x0 */
++#define UB_TOTAL_NUMBER_PORT 0x4 /* 0x1 */
++#define UB_TOTAL_NUMBER_ENTITIES 0x6
++#define UB_CFG0_CAP_BITMAP 0x8 /* 0x2 */
++#define UB_FEATURE_SUPPORT_0 0x28 /* 0xA */
++#define  UB_SW_SUPPORT BIT(7)
++#define  UB_CC_SUPPORT BIT(9)
++#define UB_GUID 0x38 /* 0xE */
++#define UB_EID_0 0x48 /* 0x12 */
++#define UB_EID_3 0x54 /* 0x15 */
++#define UB_FM_EID_0 0x58 /* 0x16 */
++#define UB_PRIMARY_CNA 0x68 /* 0x1A */
++#define  UB_PRIMARY_CNA_MASK GENMASK(23, 0)
++#define UB_UPI 0x7c /* 0x1f */
++#define UB_MODULE 0x80 /* 0x20 */
++#define  UB_MODULE_ID_MASK GENMASK(15, 0)
++#define UB_ENTITY_RST 0x84 /* 0x21 */
++#define  UB_ENTITY_RST_BIT 0x1
++#define UB_MTU_CFG 0x8c /* 0x23 */
++#define  UB_MTU_CFG_BITS 0x7
++#define UB_CC_EN 0x90 /* 0x24 */
++#define  UB_CC_EN_BIT 0x1
++#define UB_TH_EN 0x94 /* 0x25 */
++#define  UB_TH_EN_BIT 0x1
++#define UB_FM_CNA 0x98 /* 0x26 */
++#define  UB_FM_CNA_MASK GENMASK(23, 0)
++#define UB_UEID_0 0x9c /* 0x27 */
++#define UB_UEID_1 0xa0 /* 0x28 */
++#define UB_UEID_2 0xa4 /* 0x29 */
++#define UB_UEID_3 0xa8 /* 0x2A */
++#define UB_UCNA 0xac /* 0x2B */
++#define  UB_UCNA_MASK GENMASK(23, 0)
++
++/* SHP CAP */
++#define UB_SLOT_START UB_ADDR_TO_POS(0x200)
++#define UB_SLOT_POS UB_ADDR_TO_POS(0x10)
++#define UB_SLOT_NUM UB_ADDR_TO_POS(0x1)
++#define UB_SLOT_CAP UB_ADDR_TO_POS(0x2)
++#define  UB_SLOT_PPS 0x1
++#define  UB_SLOT_WLPS 0x2
++#define  UB_SLOT_PLPS 0x4
++#define  UB_SLOT_PDSS 0x8
++#define  UB_SLOT_PWCS 0x10
++#define UB_SLOT_PORT UB_ADDR_TO_POS(0x3)
++#define  UB_SLOT_START_PORT 0x0000ffff
++#define UB_SLOT_PP_CTRL UB_ADDR_TO_POS(0x4)
++#define  UB_SLOT_PP_CTRL_MASK BIT(0)
++#define UB_SLOT_WL_CTRL UB_ADDR_TO_POS(0x5)
++#define  UB_SLOT_WL_CTRL_MASK GENMASK(1, 0)
++#define UB_SLOT_PL_CTRL UB_ADDR_TO_POS(0x6)
++#define  UB_SLOT_PL_CTRL_MASK GENMASK(1, 0)
++#define UB_SLOT_MS_CTRL UB_ADDR_TO_POS(0x7)
++#define  UB_SLOT_MS_CTRL_MASK BIT(0)
++#define UB_SLOT_PD_CTRL UB_ADDR_TO_POS(0x8)
++#define  UB_SLOT_PD_CTRL_MASK BIT(0)
++#define UB_SLOT_PDS_CTRL UB_ADDR_TO_POS(0x9)
++#define  UB_SLOT_PDS_CTRL_MASK BIT(0)
++#define UB_SLOT_PW_CTRL UB_ADDR_TO_POS(0xA)
++#define UB_SLOT_PP_STA UB_ADDR_TO_POS(0xB)
++#define  UB_SLOT_PP_STA_MASK BIT(0)
++#define UB_SLOT_PD_STA UB_ADDR_TO_POS(0xC)
++#define  UB_SLOT_PD_STA_MASK BIT(0)
++#define UB_SLOT_PDSC_STA UB_ADDR_TO_POS(0xD)
++#define  UB_SLOT_PDSC_STA_MASK BIT(0)
++
++/* CFG1 BASIC */
++#define UB_CFG1_BASIC 0x40000
++#define UB_CFG1_BASIC_SLICE (0x0 + UB_CFG1_BASIC) /* 0x0 */
++#define UB_CFG1_CAP_BITMAP (0x4 + UB_CFG1_BASIC) /* 0x1 */
++#define  UB_DECODER_CAP_BIT 0x2
++#define  UB_JETTY_CAP_BIT 0x4
++#define  UB_INT_TYPE1_CAP_BIT 0x8
++#define  UB_INT_TYPE2_CAP_BIT 0x10
++#define  UB_MEM_CAP_BIT 0x40
++#define UB_CFG1_SUPPORT_FEATURE_L (0x24 + UB_CFG1_BASIC) /* 0x9 */
++#define  UB_VDBS_SUPPORT 0x1
++#define  UB_VDSS_SUPPORT 0x2
++#define  UB_MGS_SUPPORT 0x4
++#define  UB_UBBAS_SUPPORT 0x20
++#define  UB_ERS0S_SUPPORT 0x40
++#define  UB_ERS1S_SUPPORT 0x80
++#define  UB_ERS2S_SUPPORT 0x100
++#define  UB_CDMAS_SUPPORT 0x200
++#define  UB_DECODER_JURIS 0x400
++#define UB_ERS0_SS (0x34 + UB_CFG1_BASIC) /* 0xD */
++#define UB_ERS1_SS (0x38 + UB_CFG1_BASIC) /* 0xE */
++#define UB_ERS2_SS (0x3c + UB_CFG1_BASIC) /* 0xF */
++#define UB_ERS0_SA_L (0x40 + UB_CFG1_BASIC) /* 0x10 */
++#define UB_ERS0_SA_H (0x44 + UB_CFG1_BASIC) /* 0x11 */
++#define UB_ERS1_SA_L (0x48 + UB_CFG1_BASIC) /* 0x12 */
++#define UB_ERS1_SA_H (0x4c + UB_CFG1_BASIC) /* 0x13 */
++#define UB_ERS2_SA_L (0x50 + UB_CFG1_BASIC) /* 0x14 */
++#define UB_ERS2_SA_H (0x54 + UB_CFG1_BASIC) /* 0x15 */
++#define UB_ERS0_UBBA_L (0x58 + UB_CFG1_BASIC) /* 0x16 */
++#define UB_ERS0_UBBA_H (0x5c + UB_CFG1_BASIC) /* 0x17 */
++#define UB_ERS1_UBBA_L (0x60 + UB_CFG1_BASIC) /* 0x18 */
++#define UB_ERS1_UBBA_H (0x64 + UB_CFG1_BASIC) /* 0x19 */
++#define UB_ERS2_UBBA_L (0x68 + UB_CFG1_BASIC) /* 0x1A */
++#define UB_ERS2_UBBA_H (0x6c + UB_CFG1_BASIC) /* 0x1B */
++#define UB_ELR (0x70 + UB_CFG1_BASIC) /* 0x1C */
++#define  UB_ELR_BIT 0x1
++#define UB_ELR_DONE (0x74 + UB_CFG1_BASIC) /* 0x1D */
++#define  UB_ELR_DONE_BIT 0x1
++#define UB_SYS_PGS (0x84 + UB_CFG1_BASIC) /* 0x21 */
++#define  UB_SYS_PGS_SIZE 0x1
++#define UB_EU_TBA_L (0x88 + UB_CFG1_BASIC) /* 0x22 */
++#define UB_EU_TBA_H (0x8c + UB_CFG1_BASIC) /* 0x23 */
++#define UB_EU_TEN (0x90 + UB_CFG1_BASIC) /* 0x24 */
++#define UB_CLASS_CODE (0xa4 + UB_CFG1_BASIC) /* 0x29 */
++#define  UB_BASE_CODE_MASK GENMASK(7, 0)
++#define  UB_SUB_CODE_MASK GENMASK(15, 8)
++#define UB_ENTITY_TOKEN_ID (0xb4 + UB_CFG1_BASIC) /* 0x2D */
++#define  UB_TOKEN_ID_MASK GENMASK(19, 0)
++#define UB_BUS_ACCESS_EN (0xb8 + UB_CFG1_BASIC) /* 0x2E */
++#define  UB_BUS_ACCESS_EN_BIT 0x1
++#define UB_ENTITY_RS_ACCESS_EN (0xbc + UB_CFG1_BASIC) /* 0x2F */
++#define  UB_ENTITY_RS_ACCESS_EN_BIT 0x1
++
++/* DECODER CAP */
++#define DECODER_CAP_START 0x00040400
++#define DECODER_POS(pos) (DECODER_CAP_START + ((pos) << 2))
++#define DECODER_CAP DECODER_POS(0x1)
++#define DECODER_CTRL DECODER_POS(0x2)
++#define DECODER_MATT_BA0 DECODER_POS(0x3)
++#define DECODER_MATT_BA1 DECODER_POS(0x4)
++#define DECODER_MMIO_BA0 DECODER_POS(0x5)
++#define DECODER_MMIO_BA1 DECODER_POS(0x6)
++#define DECODER_USI_IDX DECODER_POS(0x7)
++#define DECODER_CMDQ_CFG DECODER_POS(0x10)
++#define DECODER_CMDQ_PROD DECODER_POS(0x11)
++#define DECODER_CMDQ_CONS DECODER_POS(0x12)
++#define DECODER_CMDQ_BASE_ADDR0 DECODER_POS(0x13)
++#define DECODER_CMDQ_BASE_ADDR1 DECODER_POS(0x14)
++#define DECODER_EVENTQ_CFG DECODER_POS(0x20)
++#define DECODER_EVENTQ_PROD DECODER_POS(0x21)
++#define DECODER_EVENTQ_CONS DECODER_POS(0x22)
++#define DECODER_EVENTQ_BASE_ADDR0 DECODER_POS(0x23)
++#define DECODER_EVENTQ_BASE_ADDR1 DECODER_POS(0x24)
++
++/* INT_TYPE1_CAP */
++#define UB_CFG1_INT_TYPE1_CAP 0x40c00
++#define UB_INT_TYPE1_ENABLE (0x4 + UB_CFG1_INT_TYPE1_CAP) /* 0x1 */
++#define UB_INT_TYPE1_SUP_INT_NUM (0x8 + UB_CFG1_INT_TYPE1_CAP) /* 0x2 */
++#define UB_INT_TYPE1_EN_INT_NUM (0xC + UB_CFG1_INT_TYPE1_CAP) /* 0x3 */
++#define UB_INT_TYPE1_INT_DATA (0x10 + UB_CFG1_INT_TYPE1_CAP) /* 0x4 */
++#define UB_INT_TYPE1_INT_ADDR_L (0x14 + UB_CFG1_INT_TYPE1_CAP) /* 0x5 */
++#define UB_INT_TYPE1_INT_ADDR_H (0x18 + UB_CFG1_INT_TYPE1_CAP) /* 0x6 */
++#define UB_INT_TYPE1_INT_ID (0x1c + UB_CFG1_INT_TYPE1_CAP) /* 0x7 */
++#define UB_INT_TYPE1_INT_MASK (0x20 + UB_CFG1_INT_TYPE1_CAP) /* 0x8 */
++#define UB_INT_TYPE1_INT_PENDING (0x24 + UB_CFG1_INT_TYPE1_CAP) /* 0x9 */
++
++/* INT_TYPE2_CAP */
++#define UB_CFG1_CAP_INT_CAP 0x41000
++#define UB_INT_CAP_SLICE (0x0 + UB_CFG1_CAP_INT_CAP) /* 0x0 */
++#define UB_INT_INFO (0x4 + UB_CFG1_CAP_INT_CAP) /* 0x1 */
++#define  UB_NUM_OF_INTR_VECTOR_TBL (0x4 + UB_CFG1_CAP_INT_CAP)
++#define  UB_NUM_OF_INTR_ADDR_TBL (0x6 + UB_CFG1_CAP_INT_CAP)
++#define UB_INT_VECTOR_TBL_SA_L (0x8 + UB_CFG1_CAP_INT_CAP) /* 0x2 */
++#define UB_INT_VECTOR_TBL_SA_H (0xc + UB_CFG1_CAP_INT_CAP) /* 0x3 */
++#define UB_INT_ADDR_TBL_SA_L (0x10 + UB_CFG1_CAP_INT_CAP) /* 0x4 */
++#define UB_INT_ADDR_TBL_SA_H (0x14 + UB_CFG1_CAP_INT_CAP) /* 0x5 */
++#define UB_INT_PENDING_TBL_SA_L (0x18 + UB_CFG1_CAP_INT_CAP) /* 0x6 */
++#define UB_INT_PENDING_TBL_SA_H (0x1c + UB_CFG1_CAP_INT_CAP) /* 0x7 */
++#define UB_INT_ID (0x20 + UB_CFG1_CAP_INT_CAP) /* 0x8 */
++#define  UB_FUN_EN_BIT 0
++#define  UB_FUN_MASK_BIT 1
++#define UB_INT_MASK (0x24 + UB_CFG1_CAP_INT_CAP) /* 0x9 */
++#define  UB_INT_MASK_BIT 0x1
++#define UB_INT_EN (0x28 + UB_CFG1_CAP_INT_CAP) /* 0xA */
++#define  UB_INT_EN_BIT 0x1
++
++/* UB_MEM_CAP */
++#define UB_CFG1_CAP_UB_MEM 0x41800
++#define UB_MEM_USI_IDX (0x4 + UB_CFG1_CAP_UB_MEM)
++
++/* ub interrupt vector entry format */
++#define UB_INTR_VECTOR_ENTRY_SIZE 0x8
++#define UB_INTR_VECTOR_ID 0x0
++#define UB_INTR_VECTOR_ADDR_INDEX 0x4
++#define  UB_INTR_VECTOR_ADDR_INDEX_MASK GENMASK(15, 0)
++#define  UB_INTR_VECTOR_MASK_MASK BIT(16)
++/* ub interrupt addr entry format */
++#define UB_INTR_ADDR_ENTRY_SIZE 0x20
++#define UB_INTR_ADDR_ADDR_L 0x0
++#define UB_INTR_ADDR_ADDR_H 0x4
++#define UB_INTR_ADDR_TOKENID 0x8
++#define  UB_INTR_ADDR_TOKENID_MASK GENMASK(19, 0)
++#define  UB_INTR_ADDR_VALID_BIT 20
++#define  UB_INTR_ADDR_VALID_MASK BIT(20)
++#define UB_INTR_ADDR_DSTEID_0 0xc
++#define UB_INTR_ADDR_DSTEID_1 0x10
++#define UB_INTR_ADDR_DSTEID_2 0x14
++#define UB_INTR_ADDR_DSTEID_3 0x18
++
++/* PORT BASIC */
++#define UB_CFG0_PORT_SLICE 0x0
++#define UB_CFG0_PORT_BITMAP 0x4 /* 0x1 */
++#define UB_PORT_INFO 0x24 /* 0x9 */
++#define UB_PORT_TYPE 0x26 /* 0x9 */
++#define  UB_PORT_TYPE_MASK BIT(0)
++#define UB_NEIGHBOR_PORT_INFO 0x28 /* 0xA */
++#define UB_UB_NEIGHBOR_PORT_INFO_SIZE 0x14
++#define UB_PORT_NET_ADDR 0x3c /* 0xF */
++#define  UB_PORT_NET_ADDR_MASK GENMASK(23, 0)
++#define UB_PORT_RST 0x40 /* 0x10 */
++#define  UB_PORT_RST_BIT 0x1
++
++/* PORT CAP1 LINK */
++/* Physical Port Link Status */
++#define UB_PORT_PHYSICAL_PORT_LINK_STATUS (0x1c0 << 2)
++#define  UB_PORT_LINK_STATE 0x1
++
++/* PORT CAP15 QDLWS */
++#define PORT_CAP15_QDLWS_CAP (0xf01 << 2)
++#define PORT_CAP15_QDLWS_CTRL (0xf02 << 2)
++#define PORT_CAP15_QDLWS_STATE (0xf03 << 2)
++#define ASY_LINK_WIDTH_MASK BIT(0)
++#define GLB_QDLWS_MASK BIT(0)
++#define GLB_QDLWS_ENABLE_MASK BIT(0)
++#define GLB_QDLWS_DISABLE_MASK GENMASK(31, 1)
++#define TX_QDLWS_MASK BIT(1)
++#define TX_QDLWS_ENABLE_MASK BIT(1)
++#define TX_QDLWS_DISABLE_MASK 0xFFFFFFFD
++#define RX_QDLWS_MASK BIT(2)
++#define RX_QDLWS_ENABLE_MASK BIT(2)
++#define RX_QDLWS_DISABLE_MASK 0xFFFFFFFB
++#define TX_WIDTH_MASK GENMASK(21, 16)
++#define TX_WIDTH_OFFSET 16
++#define RX_WIDTH_MASK GENMASK(29, 24)
++#define RX_WIDTH_OFFSET 24
++#define QDLWS_EXEC_STATUS_MASK GENMASK(2, 0)
++#define QDLWS_EXEC_STATUS_MAX 4
++
++#endif /* _UAPI_UB_UBUS_UBUS_REGS_H_ */
+diff --git a/include/ub/ubus/uber.h b/include/ub/ubus/uber.h
+new file mode 100644
+index 000000000000..306f6a03fe7d
+--- /dev/null
++++ b/include/ub/ubus/uber.h
+@@ -0,0 +1,24 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#ifndef _UB_UBUS_UBER_H_
++#define _UB_UBUS_UBER_H_
++
++#include <linux/cper.h>
++
++typedef void (*ub_ras_recover_func_t)(struct cper_sec_ubus *err, int severity);
++
++#ifdef CONFIG_UB_UBUS
++void ub_ras_register_recover_func(ub_ras_recover_func_t func);
++ub_ras_recover_func_t ub_ras_get_recover_func(void);
++#else
++static inline void ub_ras_register_recover_func(ub_ras_recover_func_t func) {}
++static inline ub_ras_recover_func_t ub_ras_get_recover_func(void)
++{
++	return NULL;
++}
++#endif /* CONFIG_UB_UBUS */
++
++#endif /* _UB_UBUS_UBER_H_ */
+diff --git a/include/ub/ubus/ubus.h b/include/ub/ubus/ubus.h
+new file mode 100644
+index 000000000000..bb713749ef28
+--- /dev/null
++++ b/include/ub/ubus/ubus.h
+@@ -0,0 +1,1171 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++
++#ifndef _UB_UBUS_UBUS_H_
++#define _UB_UBUS_UBUS_H_
++
++#include <linux/device.h>
++#include <linux/init.h>
++#include <linux/iommu.h>
++#include <linux/ioport.h>
++#include <linux/types.h>
++#include <uapi/ub/ubus/ubus.h>
++#include <uapi/ub/ubus/ubus_regs.h>
++#include <ub/ubus/ubus_ids.h>
++#include <linux/mod_devicetable.h>
++
++#define UB_ENTITY(v, d) \
++	.vendor = (v), .device = (d), \
++	.mod_vendor = (u32)UB_ANY_ID, .module = (u32)UB_ANY_ID
++
++#define UB_ENTITY_MODULE(v, d, m_v, m) \
++	.vendor = (v), .device = (d), \
++	.mod_vendor = (m_v), .module = (m)
++
++#define UB_ENTITY_CLASS(dev_class, dev_class_mask) \
++	.vendor = (u32)UB_ANY_ID, .device = (u32)UB_ANY_ID, \
++	.mod_vendor = (u32)UB_ANY_ID, .module = (u32)UB_ANY_ID, \
++	.class_code = (dev_class), .class_mask = (dev_class_mask)
++
++#define ub_resource_start(dev, resno)	((dev)->zone[(resno)].res.start)
++#define ub_resource_end(dev, resno)	((dev)->zone[(resno)].res.end)
++#define ub_resource_flags(dev, resno)	((dev)->zone[(resno)].res.flags)
++#define ub_resource_len(dev, resno) \
++	((ub_resource_start((dev), (resno)) == 0 &&	\
++	  ub_resource_end((dev), (resno)) ==		\
++	  ub_resource_start((dev), (resno))) ? 0 :	\
++	(ub_resource_end((dev), (resno)) -		\
++	ub_resource_start((dev), (resno)) + 1))
++
++typedef unsigned int __bitwise ub_channel_state_t;
++enum {
++	ub_channel_io_normal = (__force ub_channel_state_t) 1,
++	ub_channel_io_frozen = (__force ub_channel_state_t) 2,
++	ub_channel_io_perm_failure = (__force ub_channel_state_t) 3,
++};
++
++typedef unsigned int __bitwise ub_ers_result_t;
++enum ub_ers_result {
++	UB_ERS_RESULT_NONE = (__force ub_ers_result_t) 1,
++	UB_ERS_RESULT_CAN_RECOVER = (__force ub_ers_result_t) 2,
++	UB_ERS_RESULT_NEED_RESET = (__force ub_ers_result_t) 3,
++	UB_ERS_RESULT_DISCONNECT = (__force ub_ers_result_t) 4,
++	UB_ERS_RESULT_RECOVERED = (__force ub_ers_result_t) 5,
++	UB_ERS_RESULT_NO_ERR_DRIVER = (__force ub_ers_result_t) 6,
++};
++
++#define UB_GUID_DW_NUM SZ_4
++
++struct ub_bus_region {
++	unsigned long start;
++	unsigned long size;
++};
++
++struct mmio_zone {
++	struct resource res;
++	struct ub_bus_region region;
++	u8 ubba_used;
++	u8 sa_used;
++	u8 init_succ;
++	u8 decoder_mapped;
++};
++
++struct ub_guid {
++	union {
++		struct {
++			unsigned long long seq_num;
++			unsigned int reserved : 24;
++			unsigned int type : 4;
++			unsigned int version : 4;
++			unsigned int device : 16;
++			unsigned int vendor : 16;
++		} bits;
++
++		guid_t id;
++
++		unsigned int dw[UB_GUID_DW_NUM];
++	};
++};
++
++#define uent_vendor(uent) ((uent)->guid.bits.vendor)
++#define uent_type(uent) ((uent)->guid.bits.type)
++#define uent_version(uent) ((uent)->guid.bits.version)
++#define uent_device(uent) ((uent)->guid.bits.device)
++#define uent_class(uent) ((uent)->class_code)
++#define uent_base_code(uent) ((uent)->class_code & UB_BASE_CODE_MASK)
++#define uent_seq(uent) ((uent)->guid.bits.seq_num)
++
++enum ub_type {
++	UB_TYPE_BUS_INSTANCE = 0,
++	UB_TYPE_CONTROLLER = 1,
++	UB_TYPE_ICONTROLLER = 2,
++	UB_TYPE_SWITCH = 3,
++	UB_TYPE_ISWITCH = 4
++};
++
++static inline int ub_show_guid(struct ub_guid *guid, char *buf)
++{
++	return sprintf(buf, "%04x-%04x-%01x-%01x-%06x-%016llx",
++		       guid->bits.vendor, guid->bits.device,
++		       guid->bits.version, guid->bits.type,
++		       guid->bits.reserved, guid->bits.seq_num);
++}
++
++#define MAX_UB_RES_NUM 3
++
++enum ub_port_type {
++	PHYSICAL,
++	VIRTUAL,
++};
++
++#define UB_MAX_CNA_NUM SZ_64K
++#define UB_PORT_CAP_NUM SZ_256
++
++enum ub_link_state {
++	LINK_STATE_NORMAL = 0,
++	LINK_STATE_RESETTING = 1,
++	LINK_STATE_DONE = 2,
++};
++
++struct ub_port {
++	struct ub_entity *uent;
++	u16 index;
++	enum ub_port_type type;
++	u8 domain_boundary;
++	bool shareable;
++	u32 cna;
++	struct ub_entity *r_uent; /* If valid, also represent link up */
++	u16 r_index;
++	guid_t r_guid;
++	struct kobject kobj;
++	DECLARE_BITMAP(cna_maps, UB_MAX_CNA_NUM);
++	/* hotplug info */
++	struct ub_slot *slot;
++	/* cap cache */
++	DECLARE_BITMAP(cap_map, UB_PORT_CAP_NUM);
++
++	struct work_struct link_work;
++	enum ub_link_state link_state;
++	u8 link_event;
++
++	union {
++		struct {
++			atomic_t port_mgmt_state;
++		};
++		u64 reserved1;
++	};
++
++	struct mutex *port_lock;
++};
++
++struct ue_map {
++	u16 start_entity_idx;
++	u16 end_entity_idx;
++};
++
++struct ub_entity {
++	/* Driver framework base info */
++	struct device dev;
++	struct ub_driver *driver;
++	bool match_driver; /* Skip attaching driver before dev ready */
++	const char *driver_override; /* Driver name to force a match */
++	unsigned long priv_flags; /* Private flags for the UB driver */
++
++	/* entity base info */
++	bool pool;
++	int ent_type;
++	struct ub_guid guid;
++	u16 class_code;
++	u16 mod_vendor; /* entity's module vendor and module id */
++	u16 module;
++	unsigned int cna;
++	unsigned int eid;
++	unsigned short entity_idx;
++	u32 uent_num; /* ub dev number */
++	u32 fm_cna;
++	struct mmio_zone zone[MAX_UB_RES_NUM];
++	unsigned int total_funcs;
++	u32 token_id;
++	u32 token_value;
++
++	/* MUE & UE info */
++	u8 is_mue;
++	u16 total_ues;
++	u16 num_ues;
++	struct ue_map uem;
++	struct list_head mue_list; /* management ub entity list */
++	struct list_head ue_list; /* entity list in management ub entity */
++	u8 is_vdm_idev;
++
++	/* entity topology info */
++	struct list_head node;
++	struct ub_bus_controller *ubc;
++	struct ub_entity *pue; /* UE/MUE connected to their MUE */
++	int topo_rank; /* The levels of Breadth-First Search */
++
++	/* entity port info */
++	u16 port_nums;
++	struct ub_port *ports;
++
++	/* entity capability info */
++	unsigned int cfg0_bitmap[8];
++	unsigned int cfg1_bitmap[8];
++
++	unsigned int state_saved : 1;
++
++	/* entity DMA info */
++	u64 dma_mask;
++	struct device_dma_parameters dma_parms;
++
++	/* entity user interface */
++	struct bin_attribute *res_attr[MAX_UB_RES_NUM]; /* sysfs file for resources */
++	/* sysfs file for WC mapping of resources */
++	struct bin_attribute *res_attr_wc[MAX_UB_RES_NUM];
++
++	/* UB interrupt info */
++	raw_spinlock_t usi_lock;
++	unsigned int no_intr : 1;
++	unsigned int intr_enabled : 1;
++	unsigned int intr_type1 : 1;
++	void __iomem *intr_addr_base;
++	void __iomem *intr_vector_base;
++	u32 intr_device_id;
++	const struct attribute_group **msi_irq_groups;
++
++	/* UB reset info */
++	unsigned int reset_fn : 1;
++
++	/* entity route info */
++	struct list_head cna_list; /* store distance for cna in route table */
++
++	/* entity slot info */
++	struct list_head slot_list; /* store slots under this dev */
++
++	struct dev_message *message;
++
++	/* UB entity TID */
++	u32 tid;
++
++	bool sw_cap;
++
++	/* UB saved config space */
++	u32 saved_config_space[24]; /* Config space saved at reset time */
++
++	/* entity bus instance info */
++	struct mutex instance_lock;
++	struct list_head instance_node;
++	struct ub_bus_instance *bi;
++	u32 user_eid;
++	struct ub_eu_table *eu_table;
++
++	struct mutex active_mutex;
++
++	u32 support_feature;
++
++	u16 upi;
++
++	union {
++		struct {
++			atomic_t ent_mgmt_state;
++			u32 task_src;
++		};
++		u64 reserved1;
++	};
++};
++
++/**
++ * struct ub_error_handlers - UB device error handling callback functions
++ * @ub_reset_prepare:	Called before Entity Level Reset (ELR) to notify the
++ *			device driver to prepare for the reset. Deprecated, use
++ *			@ub_reset_prepare_return instead.
++ * @ub_reset_done:	Called after ELR to notify the device driver that the
++ *			reset has completed and services can be resumed.
++ *			Deprecated, use @ub_reset_done_with_pret instead.
++ * @ub_error_detected:	Called when the UB bus driver detects an error,
++ *			notifying the UB device driver of the error occurrence.
++ *			Returns ub_ers_result_t indicating the required recovery
++ *			action.
++ * @ub_resource_enabled: Called after the UB bus driver has completed error
++ *			handling, notifying the UB device driver that error
++ *			recovery has finished. Returns ub_ers_result_t.
++ * @ub_reset_prepare_return: Called before ELR to notify the device driver to
++ *			prepare for the reset. Returns 0 on success or a
++ *			negative error code on failure. Replaces the deprecated
++ *			@ub_reset_prepare.
++ * @ub_reset_done_with_pret: Called after ELR to notify the device driver that
++ *			the reset has completed. The @pret parameter carries the
++ *			result of the ELR operation. Returns 0 on success or a
++ *			negative error code on failure. Replaces the deprecated
++ *			@ub_reset_done.
++ */
++struct ub_error_handlers {
++	void (*ub_reset_prepare)(struct ub_entity *uent);
++	void (*ub_reset_done)(struct ub_entity *uent);
++	ub_ers_result_t (*ub_error_detected)(struct ub_entity *uent, ub_channel_state_t state);
++	ub_ers_result_t (*ub_resource_enabled)(struct ub_entity *uent);
++
++	int (*ub_reset_prepare_return)(struct ub_entity *uent);
++	int (*ub_reset_done_with_pret)(struct ub_entity *uent, int pret);
++};
++
++struct ub_dynids {
++	spinlock_t lock; /* Protects list, index */
++	struct list_head list; /* For IDs added at runtime */
++};
++
++#define to_ub_entity(n) container_of(n, struct ub_entity, dev)
++
++/**
++ * struct ub_driver - UB driver structure
++ * @node:	List of driver structures.
++ * @name:	Driver name.
++ * @id_table:	Pointer to table of device IDs the driver is
++ *		interested in.  Most drivers should export this
++ *		table using MODULE_DEVICE_TABLE(ub,...).
++ * @probe:	This probing function gets called (during execution
++ *		of ub_register_driver() for already existing
++ *		entities or later if a new entity gets inserted) for
++ *		all UB entities which match the ID table and are not
++ *		"owned" by the other drivers yet. This function gets
++ *		passed a "struct ub_entity *" for each entity whose
++ *		entry in the ID table matches the entity. The probe
++ *		function returns zero when the driver chooses to
++ *		take "ownership" of the entity or an error code
++ *		(negative number) otherwise.
++ *		The probe function always gets called from process
++ *		context, so it can sleep.
++ * @remove:	The remove() function gets called whenever an entity
++ *		being handled by this driver is removed (either during
++ *		deregistration of the driver or when it's manually
++ *		removed from a hot-pluggable slot).
++ *		The remove function always gets called from process
++ *		context, so it can sleep.
++ * @shutdown:	Hook into reboot_notifier_list (kernel/sys.c).
++ *		Intended to stop any idling operations.
++ * @virt_configure: Optional driver callback to allow configuration of
++ *		UEs. This function is called to enable or disable UEs.
++ * @virt_notify: Optional driver callback to notify the driver about
++ *		changes in UE status. This function is called
++ *		when the status of a UE changes.
++ * @activate:	Activate a specific entity. This function is called to
++ *		activate an entity by its index.
++ * @deactivate:	Deactivate a specific entity. This function is called to
++ *		deactivate an entity by its index.
++ * @err_handler: Error handling callbacks.
++ * @groups:	Sysfs attribute groups.
++ * @dev_groups: Attributes attached to the device that will be
++ *		created once it is bound to the driver.
++ * @driver:	Driver model structure.
++ * @dynids:	List of dynamically added device IDs.
++ * @driver_managed_dma: Device driver doesn't use kernel DMA API for DMA.
++ *		For most device drivers, no need to care about this flag
++ *		as long as all DMAs are handled through the kernel DMA API.
++ *		For some special ones, for example VFIO drivers, they know
++ *		how to manage the DMA themselves and set this flag so that
++ *		the IOMMU layer will allow them to setup and manage their
++ *		own I/O address space.
++ */
++struct ub_driver {
++	struct list_head node;
++	const char *name;
++	const struct ub_device_id *id_table; /* Must be non-NULL for probe to be called */
++	/* New entity inserted */
++	int (*probe)(struct ub_entity *uent, const struct ub_device_id *id);
++	/* entity removed (NULL if not a hot-plug capable driver) */
++	void (*remove)(struct ub_entity *uent);
++	void (*shutdown)(struct ub_entity *uent);
++	int (*virt_configure)(struct ub_entity *uent, int entity_idx, bool is_en);
++	int (*virt_notify)(struct ub_entity *uent, int entity_idx, bool is_en);
++	int (*activate)(struct ub_entity *uent, u32 entity_idx);
++	int (*deactivate)(struct ub_entity *uent, u32 entity_idx);
++	const struct ub_error_handlers *err_handler;
++	const struct attribute_group **groups;
++	const struct attribute_group **dev_groups;
++	struct device_driver driver;
++	struct ub_dynids dynids;
++	bool driver_managed_dma;
++
++	int (*reinit)(struct ub_entity *uent);
++};
++
++struct ubc_common_attr {
++	u32 int_id_start;
++	u32 int_id_end;
++	u64 hpa_base;
++	u64 hpa_size;
++	u8 mem_size_limit;
++	u8 dma_cca;
++	u16 ummu_map;
++	u16 proximity_domain;
++	u64 queue_addr;
++	u64 queue_size;
++	u16 queue_depth;
++	u16 msg_int;
++	u8 msg_int_attr;
++	u64 ubc_guid_low;
++	u64 ubc_guid_high;
++};
++
++struct ub_bus_controller {
++	struct device dev;
++	struct ub_entity *uent;
++	struct ubc_common_attr attr;
++	u32 queue_virq;
++	char name[16];
++
++	u32 ctl_no;
++	struct message_device *mdev;
++	struct ub_decoder *decoder;
++	struct list_head resources;
++	struct list_head node;
++	struct list_head devs;
++	struct ub_bus_controller_ops *ops;
++	bool cluster;
++	struct ub_bus_instance *bi;
++	struct ub_bus_instance *cluster_bi;
++
++	/* ub memory decoder */
++	struct ub_mem_device *mem_device;
++
++	void *data;
++	struct dentry *debug_root;
++
++};
++
++struct ub_bus_instance_info {
++	u8 type;
++	u16 upi;
++	u32 eid : 20;
++	struct ub_guid guid;
++};
++
++struct ub_bus_instance {
++	bool registered;
++	bool destroy;
++	struct list_head node;
++	struct kref kref;
++
++	struct ub_bus_instance_info info;
++
++	struct ub_bus_controller *major;
++
++	struct list_head uents;
++	struct mutex lock;
++
++};
++
++#define ub_bi_is_dynamic(bi) ((bi)->info.type == UBUS_INSTANCE_DYNAMIC_SERVER \
++		|| (bi)->info.type == UBUS_INSTANCE_DYNAMIC_CLUSTER)
++
++static inline struct ub_driver *to_ub_driver(struct device_driver *drv)
++{
++	return drv ? container_of(drv, struct ub_driver, driver) : NULL;
++}
++
++#define ub_err(pue, fmt, arg...)	dev_err(&(pue)->dev, fmt, ##arg)
++#define ub_info(pue, fmt, arg...)	dev_info(&(pue)->dev, fmt, ##arg)
++#define ub_warn(pue, fmt, arg...)	dev_warn(&(pue)->dev, fmt, ##arg)
++#define ub_dbg(pue, fmt, arg...)	dev_dbg(&(pue)->dev, fmt, ##arg)
++
++static inline const char *ub_name(const struct ub_entity *pue)
++{
++	return dev_name(&pue->dev);
++}
++
++/* interfaces for shareable port */
++enum ub_port_event {
++	UB_PORT_EVENT_LINK_DOWN,
++	UB_PORT_EVENT_LINK_UP,
++	UB_PORT_EVENT_RESET_PREPARE,
++#ifndef __GENKSYMS__
++	UB_PORT_EVENT_RESET_DONE,
++	UB_PORT_EVENT_RESET_FAILED
++#else
++	UB_PORT_EVENT_RESET_DONE
++#endif
++};
++
++struct ub_share_port_ops {
++	void (*reset_prepare)(struct ub_entity *uent, u16 port_id);
++	void (*reset_done)(struct ub_entity *uent, u16 port_id);
++	void (*event_notify)(struct ub_entity *uent, u16 port_id, int event);
++
++};
++
++struct ub_vdm_pld {
++	void *req_pld;
++	u16 req_pld_len;
++	void *rsp_pld;
++	u16 rsp_pld_len;
++	u16 rsp_buf_len;
++	u8 sub_msg_code;
++};
++
++/* feature bitmap */
++#define UB_MEM_BORROW_NC BIT(0)
++#define UB_MEM_BORROW_CC BIT(1)
++#define UB_MEM_SHARE_NC BIT(2)
++#define UB_MEM_SHARE_CC BIT(3)
++#define UB_URMA_RTP_ROI BIT(16)
++#define UB_URMA_RTP_ROT BIT(17)
++#define UB_URMA_RTP_ROL BIT(18)
++#define UB_URMA_CTP_ROI BIT(19)
++#define UB_URMA_CTP_ROT BIT(20)
++#define UB_URMA_CTP_ROL BIT(21)
++#define UB_URMA_CTP_UNO BIT(22)
++#define UB_URMA_UTP_UNO BIT(23)
++
++typedef int (*read_byte_f)(struct ub_entity *uent, u64 pos, u8 *val);
++typedef int (*read_word_f)(struct ub_entity *uent, u64 pos, u16 *val);
++typedef int (*read_dword_f)(struct ub_entity *uent, u64 pos, u32 *val);
++typedef int (*write_byte_f)(struct ub_entity *uent, u64 pos, u8 val);
++typedef int (*write_word_f)(struct ub_entity *uent, u64 pos, u16 val);
++typedef int (*write_dword_f)(struct ub_entity *uent, u64 pos, u32 val);
++
++#ifdef CONFIG_UB_UBUS
++extern struct bus_type ub_bus_type;
++#define dev_is_ub(d) ((d)->bus == &ub_bus_type)
++
++void ub_bus_type_iommu_ops_set(const struct iommu_ops *ops);
++const struct iommu_ops *ub_bus_type_iommu_ops_get(void);
++
++/**
++ * ub_get_ent_by_eid() - Searching for UB entity by EID.
++ * @eid: entity EID.
++ *
++ * Traverse the UB bus device linked list and search for the device with
++ * the target EID. You need to call ub_entity_put() after using it.
++ *
++ * Context: Any context.
++ * Return: The entity found, or NULL if not found.
++ */
++struct ub_entity *ub_get_ent_by_eid(unsigned int eid);
++
++/**
++ * ub_get_ent_by_uent_num() - Searching for UB entities by entity Num.
++ * @uent_num: entity Num.
++ *
++ * Traverse the UB bus device linked list and search for the entity with
++ * the target entity Num. You need to call ub_entity_put() after using it.
++ *
++ * Context: Any context.
++ * Return: The entity found, or NULL if not found.
++ */
++struct ub_entity *ub_get_ent_by_uent_num(unsigned int uent_num);
++
++/**
++ * ub_get_ent_by_guid() - Searching for UB entities by GUID.
++ * @guid: GUID.
++ *
++ * Traverse the UB bus entity linked list and search for the entity with
++ * the target GUID. You need to call ub_entity_put() after using it.
++ *
++ * Context: Any context.
++ * Return: The entity found, or NULL if not found.
++ */
++struct ub_entity *ub_get_ent_by_guid(const struct ub_guid *guid);
++
++/**
++ * ub_entity_enable() - Enable or disable ub entity
++ * @uent: UB entity.
++ * @enable: Enable or disable.
++ *
++ * Deprecated: This function is going to be removed in future version.
++ * Please use ub_entity_enable_return() instead, which provides more complete
++ * return value processing.
++ *
++ * Enable or disable the communication channel between entity and user host.
++ *
++ * Context: Any context, it will take mutex_lock()/mutex_unlock().
++ */
++void ub_entity_enable(struct ub_entity *uent, u8 enable);
++
++int ub_entity_enable_return(struct ub_entity *uent, u8 enable);
++
++/**
++ * ub_set_user_info() - Initialize host information for the entity.
++ * @uent: UB entity.
++ *
++ * Initialize necessary host information for the entity for communication
++ * purposes, such as the host EID, CNA, and token ID.
++ *
++ * Context: Any context.
++ */
++int ub_set_user_info(struct ub_entity *uent);
++
++/**
++ * ub_unset_user_info() - Deinitialize host information for the entity.
++ * @uent: UB entity.
++ *
++ * Clearing the host information of an entity.
++ *
++ * Context: Any context.
++ */
++void ub_unset_user_info(struct ub_entity *uent);
++
++/**
++ * ub_disable_entities() - Disable UEs of MUE in batches.
++ * @pue: UB MUE.
++ *
++ * Remove all enabled UEs under the MUE from the system.
++ *
++ * Context: Any context.
++ */
++void ub_disable_entities(struct ub_entity *pue);
++
++/**
++ * ub_enable_ue() - Enable a single ue.
++ * @pue: UB MUE.
++ * @entity_idx: Number of the entity to be enabled.
++ *
++ * Create a specified UE under MUE, initialize the ue,
++ * and add it to the system.
++ *
++ * Context: Any context.
++ * Return: 0 if success, or %-EINVAL if @pue type is not MUE or @entity_idx
++ * is no longer in the UE range of MUE, or %-EEXIST if entity has been
++ * enabled, or other failed negative values.
++ */
++int ub_enable_ue(struct ub_entity *pue, int entity_idx);
++
++/**
++ * ub_disable_ue() - Disable a single ue.
++ * @pue: UB MUE.
++ * @entity_idx: Number of the entity to be disabled.
++ *
++ * Remove a specified UE.
++ *
++ * Context: Any context.
++ * Return: 0 if success, or %-EINVAL if @pue type is not MUE or @entity_idx
++ * is no longer in the UE range of MUE, or %-ENODEV if entity hasn't
++ * been enabled.
++ */
++int ub_disable_ue(struct ub_entity *pue, int entity_idx);
++
++/**
++ * ub_get_dst_eid() - Obtain the Dest EID of the entity.
++ * @uent: UB entity.
++ *
++ * Return the EID of bus instance if the entity has already been bound,
++ * otherwise return controller's EID.
++ *
++ * Context: Any context.
++ * Return: positive number if success, or %-EINVAL if @dev is %NULL,
++ * or %-ENODEV if entity's controller %NULL, or 0 if entity hasn't been
++ * initialized.
++ */
++int ub_get_dst_eid(struct ub_entity *uent);
++
++/**
++ * ub_iomap() - Map the resource space of the entity.
++ * @uent: UB entity.
++ * @resno: Resource Number.
++ * @maxlen: Map size.
++ *
++ * Invoke ioremap() to map the entity resource space, if maxlen is 0, then map
++ * size is ub_resource_len(), else map size is min(maxlen, ub_resource_len()).
++ *
++ * Context: Any context.
++ * Return: The return value is the same as that of ioremap().
++ */
++void __iomem *ub_iomap(struct ub_entity *uent, int resno, unsigned long maxlen);
++
++/**
++ * ub_iomap_wc() - Map the resource space of the entity.
++ * @uent: UB entity.
++ * @resno: Resource Number.
++ * @maxlen: Map size.
++ *
++ * Invoke ioremap_wc() to map the entity resource space, if maxlen is 0,
++ * then map size is ub_resource_len(), else map size is
++ * min(maxlen, ub_resource_len()).
++ *
++ * Context: Any context.
++ * Return: The return value is the same as that of ioremap_wc().
++ */
++void __iomem *ub_iomap_wc(struct ub_entity *uent, int resno, unsigned long maxlen);
++
++/**
++ * ub_iounmap() - Unmap the resource space of the entity.
++ * @addr: Target resource address.
++ *
++ * Invoke iounmap() to unmap the entity resource space.
++ *
++ * Context: Any context.
++ */
++void ub_iounmap(void __iomem *addr);
++
++/**
++ * ub_register_share_port() - Register a share port.
++ * @uent: UB entity.
++ * @port_id: UB Bus Controller port id.
++ * @ops: UB share port ops.
++ *
++ * The IDEV reuses the physical port of the ub bus controller. Record the
++ * callback function.
++ *
++ * Context: Any context
++ * Return: 0 if success, or %-ENOMEM if system out of memory,
++ * or %-EINVAL if parameters invalid.
++ */
++int ub_register_share_port(struct ub_entity *uent, u16 port_id,
++			   struct ub_share_port_ops *ops);
++
++/**
++ * ub_unregister_share_port() - Unregister a share port.
++ * @uent: UB entity.
++ * @port_id: UB Bus Controller port id.
++ * @ops: UB share port ops.
++ *
++ * Clear the callback function.
++ *
++ * Context: Any context
++ */
++void ub_unregister_share_port(struct ub_entity *uent, u16 port_id,
++			      struct ub_share_port_ops *ops);
++
++/**
++ * ub_reset_entity() - Function entity level reset.
++ * @ent: UB entity.
++ *
++ * Reset a single entity without affecting other entities. If you want to reuse
++ * the entity after reset, you need to re-initialize it.
++ *
++ * Context: Any context
++ * Return: 0 if success, or %-EINVAL if entity not support elr,
++ * or %-ENOTTY if entity can't be reset safely,
++ * or -EBUSY if can't get device_trylock(), or other failed negative values.
++ */
++int ub_reset_entity(struct ub_entity *ent);
++
++/**
++ * ub_device_reset() - Device level reset.
++ * @ent: UB entity.
++ *
++ * Reset device, including all entities under the device. If you want to reuse
++ * the device after reset, you need to re-initialize it.
++ *
++ * Context: Any context
++ * Return: 0 if success, or %-EINVAL if parameters invalid,
++ * or %-EIO if device can't reset now, can try later.
++ */
++int ub_device_reset(struct ub_entity *ent);
++
++/**
++ * ub_vdm_message() - Send vendor private message.
++ * @uent: UB entity.
++ * @vdm_pld: Vendor private message payload context.
++ *
++ * Send a vendor private message to the entity. Response will be put in
++ * vdm_pld->rsp_pld, and response length is stored in vdm->rsp_pld_len.
++ *
++ * Context: Any context, it will take spin_lock_irqsave()/spin_unlock_restore()
++ * Return: 0 if success, or %-EINVAL if parameters invalid,
++ * or %-ENOMEM if system out of memory, or other failed negative values.
++ */
++int ub_vdm_message(struct ub_entity *uent, struct ub_vdm_pld *vdm_pld);
++
++/**
++ * ub_feature_get() - Get UB controller feature sets.
++ *
++ * Query the vendor-specific feature capabilities of the UB controller
++ * through vendor manage subsystem ops callback.
++ *
++ * Context: Any context.
++ * Return: Feature bitmap (u64) on success,
++ *	   or U64_MAX if vendor manage subsystem ops not registered or
++ *	   feature_get callback not implemented.
++ */
++unsigned long long ub_feature_get(void);
++
++/* Only for ubus module */
++unsigned int ub_irq_calc_affinity_vectors(unsigned int minvec,
++					  unsigned int maxvec,
++					  const struct irq_affinity *affd);
++
++/**
++ * ub_disable_intr() - Free entity interrupt vectors.
++ * @uent: UB entity.
++ *
++ * Free interrupt vectors of the device.
++ *
++ * Context: Any context.
++ */
++void ub_disable_intr(struct ub_entity *uent);
++
++/**
++ * ub_intr_vec_count() - Interrupt Vectors Supported by an entity.
++ * @uent: UB entity.
++ *
++ * Querying the Number of Interrupt Vectors Supported by an entity.
++ * For interrupt type 2.
++ *
++ * Context: Any context.
++ * Return: Number of Interrupts Supported if success, or 0 if failed.
++ */
++u32 ub_intr_vec_count(struct ub_entity *uent);
++
++/**
++ * ub_int_type1_vec_count() - Interrupt Vectors Supported by an entity.
++ * @uent: UB entity.
++ *
++ * Querying the Number of Interrupt Vectors Supported by an entity.
++ * For interrupt type 1.
++ *
++ * Context: Any context.
++ * Return: Number of Interrupts Supported if success, or 0 if failed.
++ */
++u32 ub_int_type1_vec_count(struct ub_entity *uent);
++
++#define UB_IRQ_AFFINITY (1 << 0) /* Auto-assign affinity */
++/**
++ * ub_alloc_irq_vectors_affinity() - Allocate multiple entity interrupt vectors.
++ * @uent: UB entity.
++ * @min_vecs: minimum required number of vectors (must be >= 1).
++ * @max_vecs: maximum desired number of vectors.
++ *
++ * @flags: allocation flags(can be 0):
++ *
++ *         * %UB_IRQ_AFFINITY  Auto-manage IRQs affinity by spreading
++ *           the vectors around available CPUs
++ *
++ * @affd: affinity requirements (can be %NULL).
++ *
++ * Allocate interrupt vectors for the entity and set the affinity.
++ *
++ * Context: Any context.
++ * Return: the number of vectors allocated (which might be smaller than
++ * @max_vecs) if success, or a negative error code on error. If less than
++ * @min_vecs interrupt vectors are available for @uent the function will
++ * fail with -ENOSPC
++ */
++int ub_alloc_irq_vectors_affinity(struct ub_entity *uent, unsigned int min_vecs,
++				  unsigned int max_vecs, unsigned int flags,
++				  struct irq_affinity *affd);
++static inline int ub_alloc_irq_vectors(struct ub_entity *uent,
++				       unsigned int min_vecs,
++				       unsigned int max_vecs)
++{
++	return ub_alloc_irq_vectors_affinity(uent, min_vecs, max_vecs, 0, NULL);
++}
++
++/**
++ * ub_irq_vector() - Obtaining the Linux IRQ number.
++ * @uent: UB entity.
++ * @nr: Interrupt vector.
++ *
++ * Translate from Interrupt Vectors to Linux IRQ number.
++ *
++ * Context: Any context.
++ * Return: IRQ number if success, or %-EINVAL if failed.
++ */
++int ub_irq_vector(struct ub_entity *uent, unsigned int nr);
++
++/**
++ * ub_irq_get_affinity() - Get an entity interrupt vector affinity
++ * @uent: the UB entity to operate on
++ * @nr:  entity-relative interrupt vector index (0-based); has different
++ *       meanings, depending on interrupt mode:
++ *
++ *         * INTR_TYPE2     the index in the USI vector table
++ *         * INTR_TYPE1     the index of the enabled USI vectors
++ *
++ * Return: USI vector affinity, NULL if @nr is out of range or if
++ * the USI vector was allocated without explicit affinity
++ * requirements (e.g., by ub_alloc_irq_vectors(), or
++ * ub_alloc_irq_vectors_affinity() without the %UB_IRQ_AFFINITY flag).
++ */
++const struct cpumask *ub_irq_get_affinity(struct ub_entity *uent, int nr);
++
++/**
++ * ub_activate_entity() - Activate entity.
++ * @uent: UB entity.
++ * @entity_idx: Number of the entity to be activated.
++ *
++ * Context: Any context, it will take mutex_lock()/mutex_unlock()
++ * Return: 0 if success, or %-EINVAL if the device doesn't match the driver,
++ * or other failed negative values.
++ */
++int ub_activate_entity(struct ub_entity *uent, u32 entity_idx);
++
++/**
++ * ub_deactivate_entity() - Deactivate entity.
++ * @uent: UB entity.
++ * @entity_idx: Number of the entity to be deactivated.
++ *
++ * Context: Any context, it will take mutex_lock()/mutex_unlock()
++ * Return: 0 if success, or %-EINVAL if the entity doesn't match the driver,
++ * or other failed negative values.
++ */
++int ub_deactivate_entity(struct ub_entity *uent, u32 entity_idx);
++
++/**
++ * ub_cfg_read_byte() - 1 byte configuration access read.
++ * @uent: UB entity.
++ * @pos: Config space address.
++ * @val: Output buffer.
++ *
++ * Initiate configuration access to the specified address of the entity
++ * configuration space and read 1 byte.
++ *
++ * Context: Any context, it will take spin_lock_irqsave()/spin_unlock_restore()
++ * Return: 0 if success, or negative value if failed.
++ */
++int ub_cfg_read_byte(struct ub_entity *uent, u64 pos, u8 *val);
++int ub_cfg_read_word(struct ub_entity *uent, u64 pos, u16 *val);
++int ub_cfg_read_dword(struct ub_entity *uent, u64 pos, u32 *val);
++/**
++ * ub_cfg_write_byte() - 1 byte configuration access write.
++ * @uent: UB entity.
++ * @pos: Config space address.
++ * @val: Data.
++ *
++ * Initiate configuration access to the specified address of the entity
++ * configuration space and write 1 byte.
++ *
++ * Context: Any context, it will take spin_lock_irqsave()/spin_unlock_restore()
++ * Return: 0 if success, or negative value if failed.
++ */
++int ub_cfg_write_byte(struct ub_entity *uent, u64 pos, u8 val);
++int ub_cfg_write_word(struct ub_entity *uent, u64 pos, u16 val);
++int ub_cfg_write_dword(struct ub_entity *uent, u64 pos, u32 val);
++
++/**
++ * ub_entity_get() - Atomically increment the reference count for the entity.
++ * @uent: UB entity pointer.
++ *
++ * Context: Any context.
++ * Return: @uent itself, or NULL if @uent is NULL.
++ */
++struct ub_entity *ub_entity_get(struct ub_entity *uent);
++
++/**
++ * ub_entity_put() - decrement the reference count for the entity.
++ * @uent: UB entity pointer.
++ *
++ * Context: Any context.
++ */
++void ub_entity_put(struct ub_entity *uent);
++
++/**
++ * ub_get_bus_controller() - Obtains the ub bus controller entity list.
++ * @uents: Output buffer for the UBC entities list.
++ * @max_num: Buffer size.
++ * @real_num: Real entities num.
++ *
++ * All ub bus controllers in the system are collected in @uents. Increase the
++ * reference counting of all entities by 1. Remember to call
++ * ub_put_bus_controller() after using it.
++ *
++ * Context: Any context.
++ * Return: 0 if success, or %-EINVAL if input parameter is NULL,
++ * or %-ENOMEM if buffer is too small.
++ */
++int ub_get_bus_controller(struct ub_entity *uents[], unsigned int max_num,
++			  unsigned int *real_num);
++
++/**
++ * ub_put_bus_controller() - Free the ub bus controller device list.
++ * @uents: UBC entities list
++ * @num: entities num
++ *
++ * Decrement the reference counting of all entities by 1.
++ *
++ * Context: Any context.
++ */
++void ub_put_bus_controller(struct ub_entity *uents[], unsigned int num);
++
++/**
++ * ub_cc_supported() - Congestion control capability query.
++ * @uent: UB entity.
++ *
++ * Context: Any context.
++ * Return: %true if the entity supports congestion control, %false otherwise.
++ */
++bool ub_cc_supported(struct ub_entity *uent);
++
++/**
++ * ub_cc_enable() - Enable the congestion control capability of the entity.
++ * @uent: UB entity.
++ *
++ * Context: Any context.
++ * Return: 0 if success, or %-EINVAL if input parameters are invalid, or
++ * %-EPERM if the entity does not support congestion control, or other
++ * failed negative values.
++ */
++int ub_cc_enable(struct ub_entity *uent);
++
++/**
++ * ub_cc_disable() - Disable the congestion control capability of the entity.
++ * @uent: UB entity.
++ *
++ * Context: Any context.
++ * Return: 0 if success, or %-EINVAL if input parameters are invalid, or
++ * %-EPERM if the entity does not support congestion control, or other
++ * failed negative values.
++ */
++int ub_cc_disable(struct ub_entity *uent);
++
++/* Proper probing supporting hot-pluggable entities */
++int __ub_register_driver(struct ub_driver *drv, struct module *owner,
++			 const char *mod_name);
++/* ub_register_driver() must be a macro so KBUILD_MODNAME can be expanded */
++#define ub_register_driver(driver) \
++	__ub_register_driver(driver, THIS_MODULE, KBUILD_MODNAME)
++void ub_unregister_driver(struct ub_driver *drv);
++
++/**
++ * ub_stop_ent() - Stop the entity.
++ * @uent: UB entity.
++ *
++ * Call device_release_driver(), user can't use it again. If it's a MUE,
++ * will stop all UEs under it. If it's entity0, will stop all entities under it.
++ *
++ * Context: Any context.
++ */
++void ub_stop_ent(struct ub_entity *uent);
++
++/**
++ * ub_stop_and_remove_ent() - Stop and remove the entity from system.
++ * @uent: UB entity.
++ *
++ * Call device_release_driver() and device_unregister(). If it's a MUE,
++ * will remove all UEs under it. If it's entity0, will remove all entities
++ * under it.
++ *
++ * Context: Any context.
++ */
++void ub_stop_and_remove_ent(struct ub_entity *uent);
++
++int register_ub_cfg_read_ops(read_byte_f rb, read_word_f rw, read_dword_f rdw);
++int register_ub_cfg_write_ops(write_byte_f wb, write_word_f ww, write_dword_f wdw);
++void unregister_ub_cfg_ops(void);
++struct ub_bus_controller *ub_ubc_get(struct ub_bus_controller *ubc);
++void ub_ubc_put(struct ub_bus_controller *ubc);
++
++#else /* CONFIG_UB_UBUS is not enabled */
++#define dev_is_ub(d) (false)
++static inline struct ub_entity *ub_get_ent_by_eid(unsigned int eid)
++{ return NULL; }
++static inline struct ub_entity *ub_get_ent_by_uent_num(unsigned int uent_num)
++{ return NULL; }
++static inline struct ub_entity *ub_get_ent_by_guid(const struct ub_guid *guid)
++{ return NULL; }
++static inline struct ub_entity *ub_entity_get(struct ub_entity *uent)
++{ return NULL; }
++static inline void ub_entity_put(struct ub_entity *uent) {}
++static inline void ub_entity_enable(struct ub_entity *uent, u8 enable) {}
++static inline int ub_entity_enable_return(struct ub_entity *uent, u8 enable)
++{ return -ENODEV; }
++static inline int ub_set_user_info(struct ub_entity *uent)
++{ return -ENODEV; }
++static inline void ub_unset_user_info(struct ub_entity *uent) {}
++static inline void ub_disable_entities(struct ub_entity *pue) {}
++static inline int ub_enable_ue(struct ub_entity *pue, int entity_idx)
++{ return -ENODEV; }
++static inline int ub_disable_ue(struct ub_entity *pue, int entity_idx)
++{ return -ENODEV; }
++static inline int ub_get_dst_eid(struct ub_entity *uent)
++{ return -ENODEV; }
++static inline void __iomem *
++ub_iomap(struct ub_entity *uent, int resno, unsigned long maxlen)
++{ return NULL; }
++static inline void __iomem *
++ub_iomap_wc(struct ub_entity *uent, int resno, unsigned long maxlen)
++{ return NULL; }
++static inline void ub_iounmap(void __iomem *addr) {}
++static inline bool ub_cc_supported(struct ub_entity *uent)
++{ return false; }
++static inline int ub_cc_enable(struct ub_entity *uent)
++{ return -ENODEV; }
++static inline int ub_cc_disable(struct ub_entity *uent)
++{ return -ENODEV; }
++static inline int ub_cfg_read_byte(struct ub_entity *uent, u64 pos, u8 *val)
++{ return -ENODEV; }
++static inline int ub_cfg_read_word(struct ub_entity *uent, u64 pos, u16 *val)
++{ return -ENODEV; }
++static inline int ub_cfg_read_dword(struct ub_entity *uent, u64 pos, u32 *val)
++{ return -ENODEV; }
++static inline int ub_cfg_write_byte(struct ub_entity *uent, u64 pos, u8 val)
++{ return -ENODEV; }
++static inline int ub_cfg_write_word(struct ub_entity *uent, u64 pos, u16 val)
++{ return -ENODEV; }
++static inline int ub_cfg_write_dword(struct ub_entity *uent, u64 pos, u32 val)
++{ return -ENODEV; }
++static inline int ub_get_bus_controller(struct ub_entity *uents[],
++				    unsigned int max_num,
++				    unsigned int *real_num)
++{ return -ENODEV; }
++static inline void
++ub_put_bus_controller(struct ub_entity *uents[], unsigned int num) {}
++static inline void ub_bus_type_iommu_ops_set(const struct iommu_ops *ops) {}
++static inline const struct iommu_ops *ub_bus_type_iommu_ops_get(void)
++{ return NULL; }
++static inline int ub_register_share_port(struct ub_entity *uent, u16 port_id,
++					 struct ub_share_port_ops *ops)
++{ return -ENODEV; }
++static inline void ub_unregister_share_port(struct ub_entity *uent, u16 port_id,
++					    struct ub_share_port_ops *ops) {}
++static inline int ub_reset_entity(struct ub_entity *uent)
++{ return -ENODEV; }
++static inline int ub_device_reset(struct ub_entity *uent)
++{ return -ENODEV; }
++static inline int ub_vdm_message(struct ub_entity *uent,
++				 struct ub_vdm_pld *vdm_pld)
++{ return -ENODEV; }
++static inline unsigned long long ub_feature_get(void)
++{
++	return U64_MAX;
++}
++static inline unsigned int
++ub_irq_calc_affinity_vectors(unsigned int minvec, unsigned int maxvec,
++			     const struct irq_affinity *affd)
++{
++	return maxvec;
++}
++static inline void ub_disable_intr(struct ub_entity *uent) {}
++static inline u32 ub_intr_vec_count(struct ub_entity *uent)
++{ return 0; }
++static inline u32 ub_int_type1_vec_count(struct ub_entity *uent)
++{ return 0; }
++static inline int
++ub_alloc_irq_vectors_affinity(struct ub_entity *uent, unsigned int min_vecs,
++			      unsigned int max_vecs, unsigned int flags,
++			      struct irq_affinity *affd)
++{ return -ENODEV; }
++static inline int ub_alloc_irq_vectors(struct ub_entity *uent,
++				       unsigned int min_vecs,
++				       unsigned int max_vecs)
++{ return -ENODEV; }
++static inline int ub_irq_vector(struct ub_entity *uent, unsigned int nr)
++{ return -EINVAL; }
++static inline const struct cpumask *
++ub_irq_get_affinity(struct ub_entity *uent, int nr) { return cpu_possible_mask; }
++static inline int ub_activate_entity(struct ub_entity *uent, u32 entity_idx)
++{ return -ENODEV; }
++static inline int ub_deactivate_entity(struct ub_entity *uent, u32 entity_idx)
++{ return -ENODEV; }
++static inline int
++__ub_register_driver(struct ub_driver *drv, struct module *owner,
++		     const char *mod_name)
++{ return 0; }
++static inline int ub_register_driver(struct ub_driver *drv)
++{ return 0; }
++static inline void ub_unregister_driver(struct ub_driver *drv) {}
++static inline void ub_stop_ent(struct ub_entity *uent) {}
++static inline void ub_stop_and_remove_ent(struct ub_entity *uent) {}
++static inline int
++register_ub_cfg_read_ops(read_byte_f rb, read_word_f rw, read_dword_f rdw)
++{ return -EINVAL; }
++static inline int
++register_ub_cfg_write_ops(write_byte_f wb, write_word_f ww, write_dword_f wdw)
++{ return -EINVAL; }
++static inline void unregister_ub_cfg_ops(void) {}
++static inline struct ub_bus_controller *
++ub_ubc_get(struct ub_bus_controller *ubc) { return NULL; }
++static inline void ub_ubc_put(struct ub_bus_controller *ubc) {}
++#endif /* CONFIG_UB_UBUS */
++
++#endif /* _UB_UBUS_UBUS_H_ */
+diff --git a/include/ub/ubus/ubus_ids.h b/include/ub/ubus/ubus_ids.h
+new file mode 100644
+index 000000000000..5e5158ba5527
+--- /dev/null
++++ b/include/ub/ubus/ubus_ids.h
+@@ -0,0 +1,49 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
++ */
++#ifndef _UB_UBUS_UBUS_IDS_H_
++#define _UB_UBUS_UBUS_IDS_H_
++
++/*
++ * Device Class base code and sub code
++ * +----------+-----------+
++ * | sub code | base code |
++ * |  [15:8]  |   [7:0]   |
++ * +----------+-----------+
++ */
++
++#define UB_BASE_CODE_BUS_CONTROLLER	0x00
++#define UB_CLASS_BUS_CONTROLLER		0x0000
++
++#define UB_BASE_CODE_STORAGE		0x01
++#define UB_CLASS_STORAGE_LPC		0x0001
++#define UB_CLASS_STORAGE_LBC		0x0101
++#define UB_CLASS_STORAGE_RAID		0x0201
++
++#define UB_BASE_CODE_NETWORK		0x02
++#define UB_CLASS_NETWORK_UB		0x0002
++#define UB_CLASS_NETWORK_ETH		0x0102
++
++#define UB_BASE_CODE_DISPLAY		0x03
++
++#define UB_BASE_CODE_SWITCH		0x04
++#define UB_CLASS_SWITCH_UB		0x0004
++
++#define UB_BASE_CODE_VIRTIO		0x05
++#define UB_CLASS_LEGACY_VIRTIO_NETWORK	0x0005
++#define UB_CLASS_LEGACY_VIRTIO_BLOCK	0x0105
++#define UB_CLASS_LEGACY_VIRTIO_SCSI	0x0205
++#define UB_CLASS_LEGACY_VIRTIO_GRAPHIC	0x0305
++#define UB_CLASS_LEGACY_VIRTIO_SOCKET	0x0405
++#define UB_CLASS_LEGACY_VIRTIO_FS	0x0505
++
++#define UB_BASE_CODE_VIRTUAL		0x06
++
++#define UB_BASE_CODE_NPU		0x07
++#define UB_CLASS_NPU_UB			0x0007
++
++#define UB_BASE_CODE_UNKNOWN		0xFF
++#define UB_CLASS_UNKNOWN		0x00FF
++
++#endif /* _UB_UBUS_UBUS_IDS_H_ */
+diff --git a/kernel/irq/msi.c b/kernel/irq/msi.c
+index 79b4a58ba9c3..b58d2bcc551d 100644
+--- a/kernel/irq/msi.c
++++ b/kernel/irq/msi.c
+@@ -16,6 +16,9 @@
+ #include <linux/slab.h>
+ #include <linux/sysfs.h>
+ #include <linux/pci.h>
++#ifdef CONFIG_UB_UBUS
++#include <ub/ubus/ubus.h>
++#endif
+ 
+ #include "internals.h"
+ 
+@@ -143,6 +146,10 @@ int msi_domain_insert_msi_desc(struct device *dev, unsigned int domid,
+ 	/* Copy type specific data to the new descriptor. */
+ 	desc->pci = init_desc->pci;
+ 
++#ifdef CONFIG_UB_UBUS
++	desc->ub_intr = init_desc->ub_intr;
++#endif
++
+ 	return msi_insert_desc(dev, desc, domid, init_desc->msi_index);
+ }
+ 
+@@ -432,7 +439,7 @@ unsigned int msi_domain_get_virq(struct device *dev, unsigned int domid, unsigne
+ {
+ 	struct msi_desc *desc;
+ 	unsigned int ret = 0;
+-	bool pcimsi = false;
++	bool devmsi = false;
+ 	struct xarray *xa;
+ 
+ 	if (!dev->msi.data)
+@@ -443,18 +450,23 @@ unsigned int msi_domain_get_virq(struct device *dev, unsigned int domid, unsigne
+ 
+ 	/* This check is only valid for the PCI default MSI domain */
+ 	if (dev_is_pci(dev) && domid == MSI_DEFAULT_DOMAIN)
+-		pcimsi = to_pci_dev(dev)->msi_enabled;
++		devmsi = to_pci_dev(dev)->msi_enabled;
++#ifdef CONFIG_UB_UBUS
++	/* This check is only valid for the UBUS default MSI domain */
++	if (dev_is_ub(dev) && domid == MSI_DEFAULT_DOMAIN)
++		devmsi = to_ub_entity(dev)->intr_type1;
++#endif
+ 
+ 	msi_lock_descs(dev);
+ 	xa = &dev->msi.data->__domains[domid].store;
+-	desc = xa_load(xa, pcimsi ? 0 : index);
++	desc = xa_load(xa, devmsi ? 0 : index);
+ 	if (desc && desc->irq) {
+ 		/*
+ 		 * PCI-MSI has only one descriptor for multiple interrupts.
+ 		 * PCI-MSIX and platform MSI use a descriptor per
+ 		 * interrupt.
+ 		 */
+-		if (pcimsi) {
++		if (devmsi) {
+ 			if (index < desc->nvec_used)
+ 				ret = desc->irq + index;
+ 		} else {
+diff --git a/scripts/mod/devicetable-offsets.c b/scripts/mod/devicetable-offsets.c
+index abe65f8968dd..3bf2df76f644 100644
+--- a/scripts/mod/devicetable-offsets.c
++++ b/scripts/mod/devicetable-offsets.c
+@@ -267,5 +267,14 @@ int main(void)
+ 	DEVID_FIELD(cdx_device_id, device);
+ 	DEVID_FIELD(cdx_device_id, override_only);
+ 
++	DEVID(ub_device_id);
++	DEVID_FIELD(ub_device_id, vendor);
++	DEVID_FIELD(ub_device_id, device);
++	DEVID_FIELD(ub_device_id, mod_vendor);
++	DEVID_FIELD(ub_device_id, module);
++	DEVID_FIELD(ub_device_id, class_code);
++	DEVID_FIELD(ub_device_id, class_mask);
++	DEVID_FIELD(ub_device_id, override_only);
++
+ 	return 0;
+ }
+diff --git a/scripts/mod/file2alias.c b/scripts/mod/file2alias.c
+index ea498eff1f2a..84b6cad4693c 100644
+--- a/scripts/mod/file2alias.c
++++ b/scripts/mod/file2alias.c
+@@ -1475,6 +1475,49 @@ static int do_cdx_entry(const char *filename, void *symval,
+ 	return 1;
+ }
+ 
++/* Looks like: ub:vNdNmvNmNcN. */
++static int do_ub_entry(const char *filename, void *symval, char *alias)
++{
++	/* Class code field can be divided into these two. */
++	unsigned char basecode_mask, subcode_mask;
++
++	DEF_FIELD(symval, ub_device_id, vendor);
++	DEF_FIELD(symval, ub_device_id, device);
++	DEF_FIELD(symval, ub_device_id, mod_vendor);
++	DEF_FIELD(symval, ub_device_id, module);
++	DEF_FIELD(symval, ub_device_id, class_code);
++	DEF_FIELD(symval, ub_device_id, class_mask);
++	DEF_FIELD(symval, ub_device_id, override_only);
++
++	switch (override_only) {
++	case 0:
++		strcpy(alias, "ub:");
++		break;
++	default:
++		warn("Unknown UB driver_override alias %08X\n",
++		     override_only);
++		return 0;
++	}
++
++	ADD(alias, "v", vendor != UB_ANY_ID, (__u16)vendor);
++	ADD(alias, "d", device != UB_ANY_ID, (__u16)device);
++	ADD(alias, "mv", mod_vendor != UB_ANY_ID, (__u16)mod_vendor);
++	ADD(alias, "m", module != UB_ANY_ID, (__u16)module);
++
++	basecode_mask = class_mask;
++	subcode_mask = (class_mask) >> 8;
++
++	if ((basecode_mask != 0 && basecode_mask != 0xFF)
++	    || (subcode_mask != 0 && subcode_mask != 0xFF)) {
++		warn("Can't handle masks in %s:%04X\n",
++		     filename, class_mask);
++		return 0;
++	}
++
++	ADD(alias, "c", subcode_mask == 0xFF && basecode_mask == 0xFF, class_code);
++	return 1;
++}
++
+ /* Does namelen bytes of name exactly match the symbol? */
+ static bool sym_is(const char *name, unsigned namelen, const char *symbol)
+ {
+@@ -1555,6 +1598,7 @@ static const struct devtable devtable[] = {
+ 	{"dfl", SIZE_dfl_device_id, do_dfl_entry},
+ 	{"ishtp", SIZE_ishtp_device_id, do_ishtp_entry},
+ 	{"cdx", SIZE_cdx_device_id, do_cdx_entry},
++	{"ub", SIZE_ub_device_id, do_ub_entry},
+ };
+ 
+ /* Create MODULE_ALIAS() statements.
+-- 
+2.43.0
+

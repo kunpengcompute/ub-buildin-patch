@@ -1,0 +1,52 @@
+From 0f26bc32bb9b18b07de61f35ad03412402883e93 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:11 +0800
+Subject: [PATCH 586/960] downstream: KVM: arm64: vgic-v3: Handle traps of
+ ICV_NMIAR1_EL1
+
+Even if we do not plan to deal with the GICv3.3 NMI feature in our
+in-kernel emulation of the CPU interface for terminally broken
+systems, the actual system register may still exist and raise
+its ugly head.
+
+Hit it with an UNDEF-sized hammer.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hyp/vgic-v3-sr.c | 3 +++
+ arch/arm64/kvm/sys_regs.c       | 1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/arch/arm64/kvm/hyp/vgic-v3-sr.c b/arch/arm64/kvm/hyp/vgic-v3-sr.c
+index 05955e369c51..7a9e132f68db 100644
+--- a/arch/arm64/kvm/hyp/vgic-v3-sr.c
++++ b/arch/arm64/kvm/hyp/vgic-v3-sr.c
+@@ -1048,6 +1048,9 @@ int __vgic_v3_perform_cpuif_access(struct kvm_vcpu *vcpu)
+ 			return 0;
+ 		fn = __vgic_v3_read_iar;
+ 		break;
++	case SYS_ICC_NMIAR1_EL1:
++		/* Here's an UNDEF for you */
++		return 0;
+ 	case SYS_ICC_EOIR0_EL1:
+ 	case SYS_ICC_EOIR1_EL1:
+ 		if (unlikely(is_read))
+diff --git a/arch/arm64/kvm/sys_regs.c b/arch/arm64/kvm/sys_regs.c
+index f1cfe4004881..54f2889f1f7b 100644
+--- a/arch/arm64/kvm/sys_regs.c
++++ b/arch/arm64/kvm/sys_regs.c
+@@ -2278,6 +2278,7 @@ static const struct sys_reg_desc sys_reg_descs[] = {
+ 	{ SYS_DESC(SYS_ICC_IAR0_EL1), write_to_read_only },
+ 	{ SYS_DESC(SYS_ICC_EOIR0_EL1), read_from_write_only },
+ 	{ SYS_DESC(SYS_ICC_HPPIR0_EL1), write_to_read_only },
++	{ SYS_DESC(SYS_ICC_NMIAR1_EL1), undef_access },
+ 	{ SYS_DESC(SYS_ICC_DIR_EL1), read_from_write_only },
+ 	{ SYS_DESC(SYS_ICC_RPR_EL1), write_to_read_only },
+ 	{ SYS_DESC(SYS_ICC_SGI1R_EL1), access_gic_sgi },
+-- 
+2.43.0
+

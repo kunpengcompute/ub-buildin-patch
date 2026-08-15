@@ -1,0 +1,55 @@
+From 00e1b791907bdaf21eb91fbb63dc890bce93ff57 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:17 +0800
+Subject: [PATCH 542/960] downstream: KVM: arm64: vgic-v3: Clearing pending
+ status of vtimer on guest reset
+
+On reset, userspace clears pending status for all PPIs and SGIs by
+writing all 0's to GICR_ISPENDR0. The pending state of vtimer
+interrupt is somehow staying in redistributor and we have to
+explicitly clear it...
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-mmio-v3.c | 19 +++++++++++++++++--
+ 1 file changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-mmio-v3.c b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+index 7c0b23415ad9..db1a86c0ccc8 100644
+--- a/arch/arm64/kvm/vgic/vgic-mmio-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+@@ -382,9 +382,24 @@ static int vgic_v3_uaccess_write_pending(struct kvm_vcpu *vcpu,
+ 
+ 		if (irq->pending_latch)
+ 			vgic_queue_irq_unlock(vcpu->kvm, irq, flags);
+-		else
++		else {
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++			/**
++			 * workaround: On reset, userspace clears pending status
++			 * for all PPIs and SGIs by writing all 0's to
++			 * GICR_ISPENDR0. The pending state of vtimer interrupt
++			 * is somehow staying in redistributor and we have to
++			 * explicitly clear it...
++			 *
++			 * P.S., irq->vtimer_info is NULL on restore.
++			 */
++			if (irq->vtimer_info)
++				WARN_ON_ONCE(irq_set_irqchip_state(irq->host_irq,
++							IRQCHIP_STATE_PENDING,
++							false));
++#endif
+ 			raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
+-
++		}
+ 		vgic_put_irq(vcpu->kvm, irq);
+ 	}
+ 
+-- 
+2.43.0
+

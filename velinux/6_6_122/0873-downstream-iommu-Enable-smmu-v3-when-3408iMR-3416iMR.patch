@@ -1,0 +1,239 @@
+From e4377e50c374db7f846a8d1c8c1e21bdee39d7db Mon Sep 17 00:00:00 2001
+From: zhangnaichuan <zhangnaichuan@huawei.com>
+Date: Thu, 28 Dec 2023 16:40:56 +0800
+Subject: [PATCH 873/960] downstream: iommu: Enable smmu-v3 when
+ 3408iMR/3416iMRraid card exist
+
+arm64 cannot support virtualization pass-through feature when using the
+3408iMR/3416iMR raid card.
+For solving the problem, we add two functions:
+1.we prepare init bypass level2 entry for specific devices
+when smmu uses 2 level streamid entry.
+2.we add smmu.bypassdev cmdline to allow SMMU bypass streams
+for some specific devices.
+
+usage: 3408iMRraid: smmu.bypassdev=0x1000:0x17
+       3416iMRraid: smmu.bypassdev=0x1000:0x15
+ Conflicts: - context
+	drivers/iommu/Kconfig
+
+Signed-off-by: zhangnaichuan <zhangnaichuan@huawei.com>
+Signed-off-by: luochunsheng<luochunsheng@huawei.com>
+Signed-off-by: Zheng Zengkai <zhengzengkai@huawei.com>
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+Signed-off-by: Zhang Guangzhi <zhangguangzhi3@huawei.com>
+
+Conflicts:
+    config.aarch64-64k
+        config.aarch64
+[Context conflict.]
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ config.aarch64                              |   1 +
+ config.aarch64-64k                          |   1 +
+ drivers/iommu/Kconfig                       |   9 ++
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 112 +++++++++++++++++++-
+ 4 files changed, 121 insertions(+), 2 deletions(-)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 5fa70727e47c..d82af01072e7 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -8723,6 +8723,7 @@ CONFIG_ARM_SMMU_V3_SVA=y
+ CONFIG_ARM_SMMU_V3_HTTU=y
+ CONFIG_QCOM_IOMMU=y
+ CONFIG_ARM_SMMU_V3_IOMMUFD=y
++CONFIG_SMMU_BYPASS_DEV=y
+ # CONFIG_VIRTIO_IOMMU is not set
+ 
+ #
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 8842cd46d6b8..0c5a57e5e9cf 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -8716,6 +8716,7 @@ CONFIG_ARM_SMMU_V3_SVA=y
+ CONFIG_ARM_SMMU_V3_HTTU=y
+ CONFIG_ARM_SMMU_V3_IOMMUFD=y
+ CONFIG_QCOM_IOMMU=y
++CONFIG_SMMU_BYPASS_DEV=y
+ # CONFIG_VIRTIO_IOMMU is not set
+ 
+ #
+diff --git a/drivers/iommu/Kconfig b/drivers/iommu/Kconfig
+index c24a8db1e11d..e0cda65f233f 100644
+--- a/drivers/iommu/Kconfig
++++ b/drivers/iommu/Kconfig
+@@ -526,4 +526,13 @@ config SPRD_IOMMU
+ 
+ 	  Say Y here if you want to use the multimedia devices listed above.
+ 
++config  SMMU_BYPASS_DEV
++	bool "SMMU bypass streams for some specific devices"
++	depends on ARM_SMMU_V3=y
++	help
++	  according smmu.bypassdev cmdline, SMMU performs attribute
++	  transformation only,with no address translation.
++	  E.g:SMMU allow iMR3408/3416 Raid bypass at DMA default domain
++	  to support other devices Virtualization through.
++
+ endif # IOMMU_SUPPORT
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 28c6ccadfc1b..c3c310ceaa2c 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -40,6 +40,59 @@ MODULE_PARM_DESC(disable_msipolling,
+ static struct iommu_ops arm_smmu_ops;
+ static struct iommu_dirty_ops arm_smmu_dirty_ops;
+ 
++#ifdef CONFIG_SMMU_BYPASS_DEV
++struct smmu_bypass_device {
++	unsigned short vendor;
++	unsigned short device;
++};
++#define MAX_CMDLINE_SMMU_BYPASS_DEV 16
++
++static struct smmu_bypass_device smmu_bypass_devices[MAX_CMDLINE_SMMU_BYPASS_DEV];
++static int smmu_bypass_devices_num;
++
++static int __init arm_smmu_bypass_dev_setup(char *str)
++{
++	unsigned short vendor;
++	unsigned short device;
++	int ret;
++
++	if (!str)
++		return -EINVAL;
++
++	ret = sscanf(str, "%hx:%hx", &vendor, &device);
++	if (ret != 2)
++		return -EINVAL;
++
++	if (smmu_bypass_devices_num >= MAX_CMDLINE_SMMU_BYPASS_DEV)
++		return -ERANGE;
++
++	smmu_bypass_devices[smmu_bypass_devices_num].vendor = vendor;
++	smmu_bypass_devices[smmu_bypass_devices_num].device = device;
++	smmu_bypass_devices_num++;
++
++	return 0;
++}
++
++__setup("smmu.bypassdev=", arm_smmu_bypass_dev_setup);
++
++static int arm_smmu_bypass_dev_domain_type(struct device *dev)
++{
++	int i;
++	struct pci_dev *pdev = to_pci_dev(dev);
++
++	for (i = 0; i < smmu_bypass_devices_num; i++) {
++		if ((smmu_bypass_devices[i].vendor == pdev->vendor) &&
++		    (smmu_bypass_devices[i].device == pdev->device)) {
++			dev_info(dev, "device 0x%hx:0x%hx uses identity mapping.",
++				pdev->vendor, pdev->device);
++			return IOMMU_DOMAIN_IDENTITY;
++		}
++	}
++
++	return 0;
++}
++#endif
++
+ enum arm_smmu_msi_index {
+ 	EVTQ_MSI_INDEX,
+ 	GERROR_MSI_INDEX,
+@@ -3755,14 +3808,19 @@ static int arm_smmu_dev_disable_feature(struct device *dev,
+ 
+ static int arm_smmu_def_domain_type(struct device *dev)
+ {
++	int ret = 0;
++
+ 	if (dev_is_pci(dev)) {
+ 		struct pci_dev *pdev = to_pci_dev(dev);
+ 
+ 		if (IS_HISI_PTT_DEVICE(pdev))
+ 			return IOMMU_DOMAIN_IDENTITY;
++#ifdef CONFIG_SMMU_BYPASS_DEV
++		ret = arm_smmu_bypass_dev_domain_type(dev);
++#endif
+ 	}
+ 
+-	return 0;
++	return ret;
+ }
+ 
+ static struct iommu_ops arm_smmu_ops = {
+@@ -3912,12 +3970,56 @@ static int arm_smmu_init_queues(struct arm_smmu_device *smmu)
+ 				       PRIQ_ENT_DWORDS, "priq");
+ }
+ 
++#ifdef CONFIG_SMMU_BYPASS_DEV
++static void arm_smmu_install_bypass_ste_for_dev(struct arm_smmu_device *smmu,
++				    u32 sid)
++{
++	u64 val;
++	struct arm_smmu_ste *step = arm_smmu_get_step_for_sid(smmu, sid);
++
++	if (!step)
++		return;
++
++	val = STRTAB_STE_0_V;
++	val |= FIELD_PREP(STRTAB_STE_0_CFG, STRTAB_STE_0_CFG_BYPASS);
++	step->data[0] = cpu_to_le64(val);
++	step->data[1] = cpu_to_le64(FIELD_PREP(STRTAB_STE_1_SHCFG,
++	STRTAB_STE_1_SHCFG_INCOMING));
++	step->data[2] = 0;
++}
++
++static int arm_smmu_prepare_init_l2_strtab(struct device *dev, void *data)
++{
++	u32 sid;
++	int ret;
++	struct pci_dev *pdev;
++	struct arm_smmu_device *smmu = (struct arm_smmu_device *)data;
++
++	if (!arm_smmu_def_domain_type(dev))
++		return 0;
++
++	pdev = to_pci_dev(dev);
++	sid = PCI_DEVID(pdev->bus->number, pdev->devfn);
++	if (!arm_smmu_sid_in_range(smmu, sid))
++		return -ERANGE;
++
++	ret = arm_smmu_init_l2_strtab(smmu, sid);
++	if (ret)
++		return ret;
++
++	arm_smmu_install_bypass_ste_for_dev(smmu, sid);
++
++	return 0;
++}
++#endif
++
+ static int arm_smmu_init_strtab_2lvl(struct arm_smmu_device *smmu)
+ {
+ 	u32 l1size;
+ 	struct arm_smmu_strtab_cfg *cfg = &smmu->strtab_cfg;
+ 	unsigned int last_sid_idx =
+ 		arm_smmu_strtab_l1_idx((1ULL << smmu->sid_bits) - 1);
++	int ret = 0;
+ 
+ 	/* Calculate the L1 size, capped to the SIDSIZE. */
+ 	cfg->l2.num_l1_ents = min(last_sid_idx + 1, STRTAB_MAX_L1_ENTRIES);
+@@ -3942,7 +4044,13 @@ static int arm_smmu_init_strtab_2lvl(struct arm_smmu_device *smmu)
+ 	if (!cfg->l2.l2ptrs)
+ 		return -ENOMEM;
+ 
+-	return 0;
++#ifdef CONFIG_SMMU_BYPASS_DEV
++	if (smmu_bypass_devices_num) {
++		ret = bus_for_each_dev(&pci_bus_type, NULL, (void *)smmu,
++								arm_smmu_prepare_init_l2_strtab);
++	}
++#endif
++	return ret;
+ }
+ 
+ static int arm_smmu_init_strtab_linear(struct arm_smmu_device *smmu)
+-- 
+2.43.0
+

@@ -1,0 +1,44 @@
+From 85e3466ac344bfaa22a61f55aa6db43a597256cf Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 29 May 2025 09:34:51 +0800
+Subject: [PATCH 723/960] downstream: fs/resctrl: Add missing
+ rdt_last_cmd_clear() after rdtgroup_kn_lock_live()
+
+The fixes tag patch resolves the lockdep warning. However, directly
+removing rdt_last_cmd_clear() would leave the last_cmd_status interface
+with stale logs, which does not conform to the functional definition before
+the fix. Therefore, the rdt_last_cmd_clear() operation is performed after
+successfully acquiring the rdtgroup_mutex.
+
+Fixes: c8eafe149530 ("x86/resctrl: Fix potential lockdep warning")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/rdtgroup.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/fs/resctrl/rdtgroup.c b/fs/resctrl/rdtgroup.c
+index a42da66ae88e..b97d49f01b1c 100644
+--- a/fs/resctrl/rdtgroup.c
++++ b/fs/resctrl/rdtgroup.c
+@@ -527,6 +527,8 @@ static ssize_t rdtgroup_cpus_write(struct kernfs_open_file *of,
+ 		goto unlock;
+ 	}
+ 
++	rdt_last_cmd_clear();
++
+ 	if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKED ||
+ 	    rdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP) {
+ 		ret = -EINVAL;
+@@ -3266,6 +3268,8 @@ static int mkdir_rdt_prepare(struct kernfs_node *parent_kn,
+ 		goto out_unlock;
+ 	}
+ 
++	rdt_last_cmd_clear();
++
+ 	if (rtype == RDTMON_GROUP &&
+ 	    (prdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP ||
+ 	     prdtgrp->mode == RDT_MODE_PSEUDO_LOCKED)) {
+-- 
+2.43.0
+

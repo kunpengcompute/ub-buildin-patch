@@ -1,0 +1,343 @@
+From 7795135cb9b8d8dbf2f64e0e91e0dd2665b2b4e0 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 28 Apr 2025 19:56:57 +0800
+Subject: [PATCH 708/960] downstream: arm64/mpam: Add mbw_min and cmin features
+
+Implement mbw_min/cmin feature for mata/cache msc, and provide MBMIN/LxMIN
+interface in schemata file for user.
+
+On some specific platforms, L3 implements the cmin feature, but L2 may not
+provide it, or vice versa. Therefore, it is necessary to separately
+determine whether the cache msc has implemented the corresponding feature.
+
+Before transmitting the cache MIN portion value to msc, need to check
+whether the CMIN setting from user space is validate or not. The same
+goes for MBMIN.
+
+It should be noted that the new configuration value is in decimal form
+instead of hexadecimal, so here reuse the parse_bw() to analysis input
+value for cache msc.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  |  26 +++++--
+ drivers/platform/mpam/mpam_internal.h |   4 +
+ drivers/platform/mpam/mpam_resctrl.c  | 102 ++++++++++++++++++++++++--
+ include/linux/resctrl_types.h         |   3 +
+ 4 files changed, 123 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index a9971cd2adbf..050b9bbca2d4 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -577,9 +577,14 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
+ 		u32 ccap_features = mpam_read_partsel_reg(msc, CCAP_IDR);
+ 
+ 		props->cmax_wd = FIELD_GET(MPAMF_CCAP_IDR_CMAX_WD, ccap_features);
+-		if (props->cmax_wd &&
+-		   !FIELD_GET(MPAMF_CCAP_IDR_NO_CMAX, ccap_features))
+-			mpam_set_feature(mpam_feat_ccap_part, props);
++
++		if (props->cmax_wd) {
++			if (!FIELD_GET(MPAMF_CCAP_IDR_NO_CMAX, ccap_features))
++				mpam_set_feature(mpam_feat_ccap_part, props);
++
++			if (FIELD_GET(MPAMF_CCAP_IDR_HAS_CMIN, ccap_features))
++				mpam_set_feature(mpam_feat_cmin, props);
++		}
+ 	}
+ 
+ 	/* Cache Portion partitioning */
+@@ -1215,6 +1220,13 @@ static void mpam_reprogram_ris_partid(struct mpam_msc_ris *ris, u16 partid,
+ 			mpam_write_partsel_reg(msc, CMAX, cmax);
+ 	}
+ 
++	if (mpam_has_feature(mpam_feat_cmin, rprops)) {
++		if (mpam_has_feature(mpam_feat_cmin, cfg))
++			mpam_write_partsel_reg(msc, CMIN, cfg->cmin);
++		else
++			mpam_write_partsel_reg(msc, CMIN, 0);
++	}
++
+ 	if (mpam_has_feature(mpam_feat_mbw_part, rprops)) {
+ 		if (mpam_has_feature(mpam_feat_mbw_part, cfg))
+ 			mpam_write_partsel_reg(msc, MBW_PBM, cfg->mbw_pbm);
+@@ -1223,8 +1235,12 @@ static void mpam_reprogram_ris_partid(struct mpam_msc_ris *ris, u16 partid,
+ 					      rprops->mbw_pbm_bits);
+ 	}
+ 
+-	if (mpam_has_feature(mpam_feat_mbw_min, rprops))
+-		mpam_write_partsel_reg(msc, MBW_MIN, 0);
++	if (mpam_has_feature(mpam_feat_mbw_min, rprops)) {
++		if (mpam_has_feature(mpam_feat_mbw_min, cfg))
++			mpam_write_partsel_reg(msc, MBW_MIN, cfg->mbw_min);
++		else
++			mpam_write_partsel_reg(msc, MBW_MIN, 0);
++	}
+ 
+ 	if (mpam_has_feature(mpam_feat_mbw_max, rprops)) {
+ 		if (mpam_has_feature(mpam_feat_mbw_max, cfg))
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index eff9a4ca2f57..632916be9053 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -85,6 +85,7 @@ typedef u32 mpam_features_t;
+ enum mpam_device_features {
+ 	mpam_feat_ccap_part = 0,
+ 	mpam_feat_cpor_part,
++	mpam_feat_cmin,
+ 	mpam_feat_mbw_part,
+ 	mpam_feat_mbw_min,
+ 	mpam_feat_mbw_max,
+@@ -159,7 +160,9 @@ struct mpam_config {
+ 	u32	cpbm;
+ 	u32	mbw_pbm;
+ 	u16	mbw_max;
++	u16	mbw_min;
+ 	u16	cmax;
++	u16	cmin;
+ };
+ 
+ struct mpam_component {
+@@ -338,6 +341,7 @@ void mpam_resctrl_exit(void);
+ #define MPAMCFG_PART_SEL        0x0100  /* partid to configure: */
+ #define MPAMCFG_CPBM            0x1000  /* cache-portion config */
+ #define MPAMCFG_CMAX            0x0108  /* cache-capacity config */
++#define MPAMCFG_CMIN            0x0110  /* cache-capacity min config */
+ #define MPAMCFG_MBW_MIN         0x0200  /* min mem-bw config */
+ #define MPAMCFG_MBW_MAX         0x0208  /* max mem-bw config */
+ #define MPAMCFG_MBW_WINWD       0x0220  /* mem-bw accounting window config */
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 7c1bc97a9743..f744180a13e0 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -446,6 +446,13 @@ static bool cache_has_usable_cmax(struct mpam_class *class)
+ 	return mpam_has_feature(mpam_feat_ccap_part, cprops);
+ }
+ 
++static bool cache_has_usable_cmin(struct mpam_class *class)
++{
++	struct mpam_props *cprops = &class->props;
++
++	return mpam_has_feature(mpam_feat_cmin, cprops);
++}
++
+ static bool cache_has_usable_csu(struct mpam_class *class)
+ {
+ 	struct mpam_props *cprops;
+@@ -499,6 +506,14 @@ static bool class_has_usable_mba(struct mpam_props *cprops)
+ 	return false;
+ }
+ 
++static bool class_has_usable_mbw_min(struct mpam_props *cprops)
++{
++	if (mpam_has_feature(mpam_feat_mbw_min, cprops))
++		return true;
++
++	return false;
++}
++
+ /*
+  * Calculate the percentage change from each implemented bit in the control
+  * This can return 0 when BWA_WD is greater than 6. (100 / (1<<7) == 0)
+@@ -602,9 +617,9 @@ static void mpam_resctrl_pick_caches(void)
+ {
+ 	int idx;
+ 	unsigned int cache_size;
+-	bool has_cpor, has_cmax;
+ 	struct mpam_class *class;
+ 	struct mpam_resctrl_res *res;
++	bool has_cpor, has_cmax, has_cmin;
+ 
+ 	lockdep_assert_cpus_held();
+ 
+@@ -614,6 +629,7 @@ static void mpam_resctrl_pick_caches(void)
+ 
+ 		has_cpor = cache_has_usable_cpor(class);
+ 		has_cmax = cache_has_usable_cmax(class);
++		has_cmin = cache_has_usable_cmin(class);
+ 
+ 		if (class->type != MPAM_CLASS_CACHE) {
+ 			pr_debug("pick_caches: Class is not a cache\n");
+@@ -669,6 +685,17 @@ static void mpam_resctrl_pick_caches(void)
+ 			}
+ 			res->class = class;
+ 		}
++
++		if (has_cmin) {
++			if (class->level == 2) {
++				res = &mpam_resctrl_exports[RDT_RESOURCE_L2_MIN];
++				res->resctrl_res.name = "L2MIN";
++			} else {
++				res = &mpam_resctrl_exports[RDT_RESOURCE_L3_MIN];
++				res->resctrl_res.name = "L3MIN";
++			}
++			res->class = class;
++		}
+ 	}
+ 	srcu_read_unlock(&mpam_srcu, idx);
+ }
+@@ -676,8 +703,8 @@ static void mpam_resctrl_pick_caches(void)
+ static void mpam_resctrl_pick_mba(void)
+ {
+ 	struct mpam_resctrl_res *res;
++	bool has_mba, has_mbw_min;
+ 	struct mpam_class *class;
+-	bool has_mba;
+ 	int idx;
+ 
+ 	lockdep_assert_cpus_held();
+@@ -687,13 +714,11 @@ static void mpam_resctrl_pick_mba(void)
+ 		struct mpam_props *cprops = &class->props;
+ 
+ 		has_mba = class_has_usable_mba(cprops);
++		has_mbw_min = class_has_usable_mbw_min(cprops);
+ 
+ 		if (class->level < 3)
+ 			continue;
+ 
+-		if (!class_has_usable_mba(cprops))
+-			continue;
+-
+ 		if (!cpumask_equal(&class->affinity, cpu_possible_mask))
+ 			continue;
+ 
+@@ -702,6 +727,12 @@ static void mpam_resctrl_pick_mba(void)
+ 			res->class = class;
+ 			res->resctrl_res.name = "MB";
+ 		}
++
++		if (has_mbw_min) {
++			res = &mpam_resctrl_exports[RDT_RESOURCE_MB_MIN];
++			res->class = class;
++			res->resctrl_res.name = "MBMIN";
++		}
+ 	}
+ 	srcu_read_unlock(&mpam_srcu, idx);
+ }
+@@ -858,6 +889,41 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->membw.bw_gran = max(100 / (1 << cprops->cmax_wd), 1);
+ 		break;
+ 
++	case RDT_RESOURCE_L3_MIN:
++	case RDT_RESOURCE_L2_MIN:
++		r->format_str = "%d=%0*u";
++		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
++		r->fflags = RFTYPE_RES_CACHE;
++		r->default_ctrl = MAX_MBA_BW;
++		r->data_width = 3;
++		r->cache_level = class->level;
++
++		if (cache_has_usable_cmin(class))
++			r->alloc_capable = true;
++
++		r->membw.min_bw = 0;
++		r->membw.bw_gran = max(100 / (1 << cprops->cmax_wd), 1);
++		break;
++
++	case RDT_RESOURCE_MB_MIN:
++		r->format_str = "%d=%0*u";
++		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
++		r->fflags = RFTYPE_RES_MB;
++		r->default_ctrl = MAX_MBA_BW;
++		r->data_width = 3;
++
++		r->membw.delay_linear = true;
++		r->membw.throttle_mode = THREAD_THROTTLE_UNDEFINED;
++		r->membw.bw_gran = get_mba_granularity(cprops);
++
++		/* Round up to at least 1% */
++		if (!r->membw.bw_gran)
++			r->membw.bw_gran = 1;
++
++		if (class_has_usable_mbw_min(cprops))
++			r->alloc_capable = true;
++		break;
++
+ 	default:
+ 		break;
+ 	}
+@@ -980,6 +1046,10 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 	case RDT_RESOURCE_L3_MAX:
+ 		configured_by = mpam_feat_ccap_part;
+ 		break;
++	case RDT_RESOURCE_L2_MIN:
++	case RDT_RESOURCE_L3_MIN:
++		configured_by = mpam_feat_cmin;
++		break;
+ 
+ 	case RDT_RESOURCE_MBA:
+ 		if (mba_class_use_mbw_part(cprops)) {
+@@ -989,7 +1059,12 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 			configured_by = mpam_feat_mbw_max;
+ 			break;
+ 		}
+-		fallthrough;
++		return -EINVAL;
++
++	case RDT_RESOURCE_MB_MIN:
++		configured_by = mpam_feat_mbw_min;
++		break;
++
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -1004,11 +1079,15 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 		return cfg->cpbm;
+ 	case mpam_feat_ccap_part:
+ 		return mbw_max_to_percent(cfg->cmax, cprops->cmax_wd);
++	case mpam_feat_cmin:
++		return mbw_max_to_percent(cfg->cmin, cprops->cmax_wd);
+ 	case mpam_feat_mbw_part:
+ 		/* TODO: Scaling is not yet supported */
+ 		return mbw_pbm_to_percent(cfg->mbw_pbm, cprops);
+ 	case mpam_feat_mbw_max:
+ 		return mbw_max_to_percent(cfg->mbw_max, cprops->bwa_wd);
++	case mpam_feat_mbw_min:
++		return mbw_max_to_percent(cfg->mbw_min, cprops->bwa_wd);
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -1051,6 +1130,11 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 		cfg.cmax = percent_to_mbw_max(cfg_val, cprops->cmax_wd);
+ 		mpam_set_feature(mpam_feat_ccap_part, &cfg);
+ 		break;
++	case RDT_RESOURCE_L2_MIN:
++	case RDT_RESOURCE_L3_MIN:
++		cfg.cmin = percent_to_mbw_max(cfg_val, cprops->cmax_wd);
++		mpam_set_feature(mpam_feat_cmin, &cfg);
++		break;
+ 	case RDT_RESOURCE_MBA:
+ 		if (mba_class_use_mbw_part(cprops)) {
+ 			cfg.mbw_pbm = percent_to_mbw_pbm(cfg_val, cprops);
+@@ -1061,7 +1145,11 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 			mpam_set_feature(mpam_feat_mbw_max, &cfg);
+ 			break;
+ 		}
+-		fallthrough;
++		return -EINVAL;
++	case RDT_RESOURCE_MB_MIN:
++		cfg.mbw_min = percent_to_mbw_max(cfg_val, cprops->bwa_wd);
++		mpam_set_feature(mpam_feat_mbw_min, &cfg);
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+diff --git a/include/linux/resctrl_types.h b/include/linux/resctrl_types.h
+index b155d536ed3d..ceaf8d31333e 100644
+--- a/include/linux/resctrl_types.h
++++ b/include/linux/resctrl_types.h
+@@ -81,6 +81,9 @@ enum resctrl_res_level {
+ #ifdef CONFIG_ARM64_MPAM
+ 	RDT_RESOURCE_L3_MAX,
+ 	RDT_RESOURCE_L2_MAX,
++	RDT_RESOURCE_L3_MIN,
++	RDT_RESOURCE_L2_MIN,
++	RDT_RESOURCE_MB_MIN,
+ #endif
+ 
+ 	/* Must be the last */
+-- 
+2.43.0
+

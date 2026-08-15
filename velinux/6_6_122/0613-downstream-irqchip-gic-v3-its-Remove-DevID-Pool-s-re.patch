@@ -1,0 +1,35 @@
+From 83af74d33d5edd840717bccb3dc48a6b987109b8 Mon Sep 17 00:00:00 2001
+From: Jie Yang <yangjieyj.yang@huawei.com>
+Date: Wed, 23 Jul 2025 14:27:41 +0800
+Subject: [PATCH 613/960] downstream: irqchip/gic-v3-its: Remove DevID Pool's
+ restriction
+
+DevID Pool only relay on ARM's IORT, so delete the chip restriction.
+
+Signed-off-by: Jia Qingtong <jiaqingtong@huawei.com>
+Signed-off-by: Jie Yang <yangjieyj.yang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3-its.c | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 0fee33e047f0..64994214ebb9 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -435,12 +435,6 @@ EXPORT_SYMBOL(gic_data_rdist_get_vlpi_base);
+  */
+ void build_devid_pools(void)
+ {
+-	struct its_node *its;
+-
+-	its = list_first_entry(&its_nodes, struct its_node, entry);
+-	if (readl_relaxed(its->base + GITS_IIDR) != 0x00051736)
+-		return;
+-
+ 	if (!probe_devid_pool_one())
+ 		rsv_devid_pool_cap = true;
+ 
+-- 
+2.43.0
+

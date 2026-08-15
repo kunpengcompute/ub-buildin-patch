@@ -1,0 +1,325 @@
+From 07864a60b0e301e89e0b16ac75b3d51e5a6cfb18 Mon Sep 17 00:00:00 2001
+From: Lei Gong <gonglei25@huawei.com>
+Date: Thu, 21 Aug 2025 15:36:25 +0800
+Subject: [PATCH 956/960] downstream: iommu/ummu-core: add UMMU EID operation
+ interfaces
+
+Every UB Entity should register a eid to the UB domain to be able to
+communicate with other entity.
+
+UMMU uses EID to verify if the entity is legal and which address domain
+it should access.
+
+UMMU-Core provides ummu_core_add_eid/ummu_core_del_eid to UB drivers.
+
+In some cases, ub devices might be online before the ummu device. We
+designed a eid cached list, which stores eids and flushs them to the ummu
+when the ummu device is registered and onlined.
+
+The thread-safe is garanteed by the ummu-core.
+
+Signed-off-by: Yuhao Zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Lei Gong <gonglei25@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/iommu/hisilicon/ummu-core/Makefile    |   4 +-
+ .../iommu/hisilicon/ummu-core/core_common.c   |  23 ++++
+ drivers/iommu/hisilicon/ummu-core/core_eid.c  | 107 ++++++++++++++++++
+ .../hisilicon/ummu-core/ummu_core_priv.h      |  22 ++++
+ include/linux/ummu_core.h                     |  83 ++++++++++++++
+ 5 files changed, 238 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/iommu/hisilicon/ummu-core/core_common.c
+ create mode 100644 drivers/iommu/hisilicon/ummu-core/core_eid.c
+ create mode 100644 drivers/iommu/hisilicon/ummu-core/ummu_core_priv.h
+
+diff --git a/drivers/iommu/hisilicon/ummu-core/Makefile b/drivers/iommu/hisilicon/ummu-core/Makefile
+index 7084b6768fd6..524585b0305c 100644
+--- a/drivers/iommu/hisilicon/ummu-core/Makefile
++++ b/drivers/iommu/hisilicon/ummu-core/Makefile
+@@ -1,5 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0+
+ 
+-ummu_core_builtin-y := core_iova.o
++ummu_core_builtin-y := core_iova.o \
++	core_eid.o \
++	core_common.o
+ 
+ obj-$(CONFIG_UB_UMMU_CORE) += ummu_core_builtin.o
+diff --git a/drivers/iommu/hisilicon/ummu-core/core_common.c b/drivers/iommu/hisilicon/ummu-core/core_common.c
+new file mode 100644
+index 000000000000..884feb5b381b
+--- /dev/null
++++ b/drivers/iommu/hisilicon/ummu-core/core_common.c
+@@ -0,0 +1,23 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright(c) 2025 HiSilicon Technologies CO., All rights reserved.
++ * Description: common built-in symbols.
++ */
++
++#include <linux/spinlock.h>
++#include <linux/module.h>
++#include <linux/dma-map-ops.h>
++
++#include "ummu_core_priv.h"
++
++struct ummu_core_device *global_core_device;
++EXPORT_SYMBOL_NS_GPL(global_core_device, UMMU_CORE_INTERNAL);
++
++DEFINE_MUTEX(global_device_lock);
++EXPORT_SYMBOL_NS_GPL(global_device_lock, UMMU_CORE_INTERNAL);
++
++void setup_tdev_dma_ops(struct device *dev, bool coherent)
++{
++	arch_setup_dma_ops(dev, 0, U64_MAX, coherent);
++}
++EXPORT_SYMBOL_NS_GPL(setup_tdev_dma_ops, UMMU_CORE_INTERNAL);
+diff --git a/drivers/iommu/hisilicon/ummu-core/core_eid.c b/drivers/iommu/hisilicon/ummu-core/core_eid.c
+new file mode 100644
+index 000000000000..fd3360d400d0
+--- /dev/null
++++ b/drivers/iommu/hisilicon/ummu-core/core_eid.c
+@@ -0,0 +1,107 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright(c) 2025 HiSilicon Technologies CO., All rights reserved.
++ * Description: eid related functions.
++ */
++
++#define pr_fmt(fmt) "[UMMU_CORE][EID]: " fmt
++
++#include <linux/list.h>
++#include <linux/spinlock.h>
++#include <linux/init.h>
++#include <linux/module.h>
++
++#include "ummu_core_priv.h"
++
++static DEFINE_SPINLOCK(eid_func_lock);
++static LIST_HEAD(eid_pre_insmode);
++
++struct eid_info {
++	enum eid_type type;
++	eid_t eid;
++	guid_t guid;
++	struct list_head list;
++};
++
++/* add cached eid to the core device */
++void ummu_flush_cached_eid(struct ummu_core_device *core_device)
++{
++	struct eid_info *info, *next;
++
++	spin_lock(&eid_func_lock);
++	list_for_each_entry_safe(info, next, &eid_pre_insmode, list) {
++		core_device->ops->add_eid(core_device, &info->guid, info->eid, info->type);
++		list_del(&info->list);
++		kfree(info);
++	}
++	spin_unlock(&eid_func_lock);
++}
++EXPORT_SYMBOL_NS_GPL(ummu_flush_cached_eid, UMMU_CORE_INTERNAL);
++
++int ummu_core_add_eid(guid_t *guid, eid_t eid, enum eid_type type)
++{
++	struct eid_info *info;
++	int ret = 0;
++
++	if (type >= EID_TYPE_MAX)
++		return -EINVAL;
++
++	mutex_lock(&global_device_lock);
++	if (global_core_device) {
++		ret = global_core_device->ops->add_eid(global_core_device, guid, eid, type);
++		goto out_unlock_mutex;
++	}
++
++	/* cached the eid */
++	spin_lock(&eid_func_lock);
++	list_for_each_entry(info, &eid_pre_insmode, list)
++		if (guid_equal(guid, &info->guid) && info->eid == eid) {
++			ret = -EEXIST;
++			goto out_unlock_spin;
++		}
++
++	info = kzalloc(sizeof(*info), GFP_ATOMIC);
++	if (!info) {
++		ret = -ENOMEM;
++		goto out_unlock_spin;
++	}
++	info->eid = eid;
++	info->type = type;
++	guid_copy(&info->guid, guid);
++	list_add_tail(&info->list, &eid_pre_insmode);
++
++out_unlock_spin:
++	spin_unlock(&eid_func_lock);
++
++out_unlock_mutex:
++	mutex_unlock(&global_device_lock);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(ummu_core_add_eid);
++
++void ummu_core_del_eid(guid_t *guid, eid_t eid, enum eid_type type)
++{
++	struct eid_info *info, *next;
++
++	if (WARN_ON(type >= EID_TYPE_MAX))
++		return;
++
++	mutex_lock(&global_device_lock);
++	if (global_core_device) {
++		global_core_device->ops->del_eid(global_core_device, guid, eid, type);
++		goto out_unlock_mutex;
++	}
++
++	/* uncache the eid */
++	spin_lock(&eid_func_lock);
++	list_for_each_entry_safe(info, next, &eid_pre_insmode, list)
++		if (guid_equal(guid, &info->guid) && info->eid == eid) {
++			list_del(&info->list);
++			kfree(info);
++		}
++	spin_unlock(&eid_func_lock);
++
++out_unlock_mutex:
++	mutex_unlock(&global_device_lock);
++}
++EXPORT_SYMBOL_GPL(ummu_core_del_eid);
+diff --git a/drivers/iommu/hisilicon/ummu-core/ummu_core_priv.h b/drivers/iommu/hisilicon/ummu-core/ummu_core_priv.h
+new file mode 100644
+index 000000000000..2a6befdcc702
+--- /dev/null
++++ b/drivers/iommu/hisilicon/ummu-core/ummu_core_priv.h
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
++ * Description: UMMU CORE private interfaces.
++ */
++
++#ifndef __UMMU_CORE_PRIV_H__
++#define __UMMU_CORE_PRIV_H__
++
++#include <linux/ummu_core.h>
++#include <linux/iommu.h>
++
++/* private initialization */
++
++/* private definition */
++extern struct ummu_core_device *global_core_device;
++extern struct mutex global_device_lock;
++
++/* private interfaces */
++void ummu_flush_cached_eid(struct ummu_core_device *core_device);
++void setup_tdev_dma_ops(struct device *dev, bool coherent);
++#endif /* __UMMU_CORE_PRIV_H__ */
+diff --git a/include/linux/ummu_core.h b/include/linux/ummu_core.h
+index 02699440c573..47ee1dce56e3 100644
+--- a/include/linux/ummu_core.h
++++ b/include/linux/ummu_core.h
+@@ -8,10 +8,83 @@
+ #define _UMMU_CORE_H_
+ 
+ #include <linux/iommu.h>
++#include <linux/uuid.h>
++#include <linux/xarray.h>
++
++#define eid_t u128
++
++enum eid_type {
++	EID_NONE = 0,
++	EID_BYPASS,
++	EID_TYPE_MAX,
++};
+ 
+ struct iova_slot;
++struct ummu_base_domain;
++struct ummu_core_device;
++
++/**
++ * struct ummu_core_ops - ummu ops for normal use, expand from iommu_ops.
++ * @add_eid: Add EID to the UMMU device.
++ * @del_eid: Add EID to the UMMU device.
++ */
++struct ummu_core_ops {
++	int (*add_eid)(struct ummu_core_device *dev, guid_t *guid, eid_t eid,
++		       enum eid_type type);
++	void (*del_eid)(struct ummu_core_device *dev, guid_t *guid, eid_t eid,
++			enum eid_type type);
++};
++
++/**
++ * ummu-core defined iommu device type
++ * @list: used to link all ummu-core devices
++ * @iommu: iommu prototype
++ * @ops: ummu-core defined iommu operations
++ */
++struct ummu_core_device {
++	struct list_head list;
++	struct iommu_device iommu;
++	const struct ummu_core_ops *ops;
++};
++
++struct ummu_base_domain {
++	struct iommu_domain domain;
++	struct ummu_core_device *core_dev;
++	struct iommu_domain *parent;
++	struct list_head list;
++	u32 tid;
++};
++
++static inline struct ummu_core_device *to_ummu_core(struct iommu_device *iommu)
++{
++	return container_of(iommu, struct ummu_core_device, iommu);
++}
++
++static inline struct ummu_base_domain *
++to_ummu_base_domain(struct iommu_domain *dom)
++{
++	return container_of(dom, struct ummu_base_domain, domain);
++}
+ 
+ #ifdef CONFIG_UB_UMMU_CORE
++/* EID API */
++/**
++ * Add a new EID to the UMMU.
++ * @guid: entity/device identity.
++ * @eid: entity id to be added.
++ * @type: eid type.
++ *
++ * Return: 0 on success, or an error.
++ */
++int ummu_core_add_eid(guid_t *guid, eid_t eid, enum eid_type type);
++/**
++ * Delete an EID from the UMMU.
++ * @guid: entity/device identity.
++ * @eid: entity id to be deleted.
++ * @type: eid type.
++ */
++void ummu_core_del_eid(guid_t *guid, eid_t eid, enum eid_type type);
++
+ /* UMMU IOVA API */
+ /**
+  * Allocate a range of IOVA. The input iova size might be aligned.
+@@ -56,6 +129,16 @@ int ummu_fill_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pa
+  */
+ int ummu_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages);
+ #else
++static inline int ummu_core_add_eid(guid_t *guid, eid_t eid, enum eid_type type)
++{
++	return -EOPNOTSUPP;
++}
++
++static inline void ummu_core_del_eid(guid_t *guid, eid_t eid,
++				     enum eid_type type)
++{
++}
++
+ static inline struct iova_slot *dma_alloc_iova(struct device *dev, size_t size,
+ 					       unsigned long attrs,
+ 					       dma_addr_t *iovap, size_t *sizep)
+-- 
+2.43.0
+

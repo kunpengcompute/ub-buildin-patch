@@ -1,0 +1,38 @@
+From 108214e3aff0aaf220ba2b845bbbb91667dcc3bf Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Mon, 23 Mar 2026 20:09:09 +0800
+Subject: [PATCH 917/960] downstream: mm: avoid memory access during
+ __access_remote_vm if task facing critical RAS
+
+After a critical RAS event is triggered, user data for this task becomes
+inaccessible.
+
+During __access_remote_vm, task data will be accessed. Terminate this to
+prevent wider system impact.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/memory.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/mm/memory.c b/mm/memory.c
+index cfacabfaca4f..384edc262144 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -5946,6 +5946,11 @@ int __access_remote_vm(struct mm_struct *mm, unsigned long addr, void *buf,
+ 				break;
+ 		} else {
+ 			int ret = 0;
++
++			if (mm_is_critical_error(mm)) {
++				mmap_read_unlock(mm);
++				return 0;
++			}
+ 			bytes = len;
+ 			offset = addr & (PAGE_SIZE-1);
+ 			if (bytes > PAGE_SIZE-offset)
+-- 
+2.43.0
+

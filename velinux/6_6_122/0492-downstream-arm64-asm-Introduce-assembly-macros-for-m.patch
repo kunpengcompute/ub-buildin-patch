@@ -1,0 +1,52 @@
+From 848bdefa77f4ebefdb5418b0924fbea514156b7f Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@kernel.org>
+Date: Fri, 7 Oct 2022 12:17:01 +0100
+Subject: [PATCH 492/960] downstream: arm64/asm: Introduce assembly macros for
+ managing ALLINT
+
+In order to allow assembly code to ensure that not even superpriorty
+interrupts can preempt it provide macros for enabling and disabling
+ALLINT.ALLINT.  This is not integrated into the existing DAIF macros
+since we do not always wish to manage ALLINT along with DAIF and the
+use of DAIF in the naming of the existing macros might lead to surprises
+if ALLINT is also managed.
+
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/assembler.h | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/arch/arm64/include/asm/assembler.h b/arch/arm64/include/asm/assembler.h
+index 7e3e6d7e40ac..40d2d41341b5 100644
+--- a/arch/arm64/include/asm/assembler.h
++++ b/arch/arm64/include/asm/assembler.h
+@@ -34,6 +34,22 @@
+ 	wx\n	.req	w\n
+ 	.endr
+ 
++	.macro	disable_allint
++#ifdef CONFIG_ARM64_NMI
++alternative_if ARM64_HAS_NMI
++	msr_s	SYS_ALLINT_SET, xzr
++alternative_else_nop_endif
++#endif
++	.endm
++
++	.macro	enable_allint
++#ifdef CONFIG_ARM64_NMI
++alternative_if ARM64_HAS_NMI
++	msr_s	SYS_ALLINT_CLR, xzr
++alternative_else_nop_endif
++#endif
++	.endm
++
+ 	.macro disable_daif
+ 	msr	daifset, #0xf
+ 	.endm
+-- 
+2.43.0
+

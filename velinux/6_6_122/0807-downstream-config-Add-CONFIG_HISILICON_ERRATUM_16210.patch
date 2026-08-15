@@ -1,0 +1,40 @@
+From b2e74250ec91dbba7a08c1378a6bb88dab9864e6 Mon Sep 17 00:00:00 2001
+From: Slim6882 <yangjunshuo@huawei.com>
+Date: Mon, 20 Oct 2025 11:55:44 +0800
+Subject: [PATCH 807/960] downstream: config: Add
+ CONFIG_HISILICON_ERRATUM_162100803
+
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 1 +
+ config.aarch64-64k | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index c720e266faf7..4b5dcb480c0d 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -391,6 +391,7 @@ CONFIG_CAVIUM_ERRATUM_30115=y
+ CONFIG_CAVIUM_TX2_ERRATUM_219=y
+ CONFIG_FUJITSU_ERRATUM_010001=y
+ CONFIG_HISILICON_ERRATUM_161600802=y
++CONFIG_HISILICON_ERRATUM_162100803=y
+ CONFIG_HISILICON_ERRATUM_162102203=y
+ CONFIG_HISILICON_ERRATUM_162100602=y
+ CONFIG_QCOM_FALKOR_ERRATUM_1003=y
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 7d8d1e329d39..14ff133ba879 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -391,6 +391,7 @@ CONFIG_CAVIUM_ERRATUM_30115=y
+ CONFIG_CAVIUM_TX2_ERRATUM_219=y
+ CONFIG_FUJITSU_ERRATUM_010001=y
+ CONFIG_HISILICON_ERRATUM_161600802=y
++CONFIG_HISILICON_ERRATUM_162100803=y
+ CONFIG_HISILICON_ERRATUM_162102203=y
+ CONFIG_HISILICON_ERRATUM_162100602=y
+ CONFIG_QCOM_FALKOR_ERRATUM_1003=y
+-- 
+2.43.0
+

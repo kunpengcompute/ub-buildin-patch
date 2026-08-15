@@ -1,0 +1,86 @@
+From 653a2f572b2aeba15f168b147a3b10ba33b6f915 Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Tue, 17 Jun 2025 19:31:02 +0800
+Subject: [PATCH 605/960] downstream: KVM: arm64: check if IPIV is enabled in
+ BIOS
+
+GICD_MISC_CTRL bit19(cfg_ipiv_en) is read-only in EL2.
+The write of GICD_MISC_CTRL bit19=1 is done by BIOS.
+Therefore, need to check whether the BIOS has enabled
+ipiv in OS.
+
+Fixes: 5aac9c6da644 ("downstream: kvm: hisi_virt: Probe and configure IPIV capacity on HIP12")
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hisilicon/hisi_virt.c |  5 +++++
+ arch/arm64/kvm/hisilicon/hisi_virt.h |  1 +
+ drivers/irqchip/irq-gic-v3.c         | 16 ++++++++++++----
+ 3 files changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index d9029d612697..d108b0ba3146 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -179,6 +179,11 @@ bool hisi_ipiv_supported(void)
+ 		return false;
+ 	}
+ 
++	if (!gic_get_ipiv_status()) {
++		kvm_info("Hisi ipiv is disabled by BIOS\n");
++		return false;
++	}
++
+ 	/* User provided kernel command-line parameter */
+ 	if (!ipiv_enabled || !is_kernel_in_hyp_mode())
+ 		return false;
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index 15943e1fc27b..2609e360a254 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -138,5 +138,6 @@ static inline void kvm_hisi_reload_lsudvmbm(struct kvm *kvm) {}
+ 
+ #ifdef CONFIG_ARM64_HISI_IPIV
+ extern bool gic_dist_enable_ipiv(void);
++extern bool gic_get_ipiv_status(void);
+ #endif /* CONFIG_ARM64_HISI_IPIV */
+ #endif /* __HISI_VIRT_H__ */
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 6739061eb801..0e5d1033e170 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -1375,11 +1375,7 @@ void gic_dist_enable_ipiv(void)
+ {
+ 	u32 val;
+ 
+-	val = readl_relaxed(gic_data.dist_base + GICD_MISC_CTRL);
+-	val |= GICD_MISC_CTRL_CFG_IPIV_EN;
+-	writel_relaxed(val, gic_data.dist_base + GICD_MISC_CTRL);
+ 	static_branch_enable(&ipiv_enable);
+-
+ 	val = (0 << GICD_IPIV_CTRL_AFF_DIRECT_VPEID_SHIFT) |
+ 		(4 << GICD_IPIV_CTRL_AFF1_LEFT_SHIFT_SHIFT) |
+ 		(12 << GICD_IPIV_CTRL_AFF2_LEFT_SHIFT_SHIFT) |
+@@ -1391,6 +1387,18 @@ void gic_dist_enable_ipiv(void)
+ 	writel_relaxed(0x4880, gic_data.dist_base + GICD_IPIV_ITS_TA_BASE);
+ }
+ EXPORT_SYMBOL(gic_dist_enable_ipiv);
++
++bool gic_get_ipiv_status(void)
++{
++	u32 val;
++
++	val = readl_relaxed(gic_data.dist_base + GICD_MISC_CTRL);
++	if (val & GICD_MISC_CTRL_CFG_IPIV_EN)
++		return true;
++
++	return false;
++}
++EXPORT_SYMBOL(gic_get_ipiv_status);
+ #endif /* CONFIG_ARM64_HISI_IPIV */
+ 
+ static void gic_cpu_init(void)
+-- 
+2.43.0
+

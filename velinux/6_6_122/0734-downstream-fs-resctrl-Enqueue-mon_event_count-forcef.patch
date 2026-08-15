@@ -1,0 +1,41 @@
+From 9ffcd69bc4683e1a47041bf40ee415d277b22d83 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 28 Jul 2025 11:11:39 +0800
+Subject: [PATCH 734/960] downstream: fs/resctrl: Enqueue mon_event_count()
+ forcefully for MPAM
+
+smp_call_function_any() doesn't allow nested calls, since it runs in
+interrupt context, and nesting would trigger a warning due to interrupt
+disabled.
+
+In mon_event_read(), when all CPUs of the target domain are in TICK-NOHZ
+mode, no house-keeping cpu can invoke smp_call_on_cpu(). When the IPI
+fallback is used on machines where MPAM needs to make an access on multiple
+CPUs, the counter read will always fail.
+
+Therefore, must use smp_call_on_cpu() to invoke mon_event_read() in a
+thread context to ensure the success of MPAM counter read.
+
+Fixes: 158e5bec7d72 ("x86/resctrl: Queue mon_event_read() instead of sending an IPI")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/ctrlmondata.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/resctrl/ctrlmondata.c b/fs/resctrl/ctrlmondata.c
+index 025fbf91dfc6..35aeff5e04fc 100644
+--- a/fs/resctrl/ctrlmondata.c
++++ b/fs/resctrl/ctrlmondata.c
+@@ -511,7 +511,7 @@ void mon_event_read(struct rmid_read *rr, struct rdt_resource *r,
+ 	 * MPAM's resctrl_arch_rmid_read() is unable to read the
+ 	 * counters on some platforms if its called in IRQ context.
+ 	 */
+-	if (tick_nohz_full_cpu(cpu))
++	if (tick_nohz_full_cpu(cpu) && !IS_ENABLED(CONFIG_ARM64_MPAM))
+ 		smp_call_function_any(&d->cpu_mask, mon_event_count, rr, 1);
+ 	else
+ 		smp_call_on_cpu(cpu, smp_mon_event_count, rr, false);
+-- 
+2.43.0
+

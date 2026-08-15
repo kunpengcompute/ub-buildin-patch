@@ -1,0 +1,98 @@
+From 5d1cfde3c6d994035ef582ed63a7e002d749d7e9 Mon Sep 17 00:00:00 2001
+From: Kefeng Wang <wangkefeng.wang@huawei.com>
+Date: Tue, 19 Aug 2025 20:10:56 +0800
+Subject: [PATCH 903/960] downstream: mm: memory-failure: use
+ kill_accessing_process() in ghes
+
+Use kill_accessing_process() instead of force_sig() to pass addr
+to userspace.
+
+Signed-off-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/apei/ghes.c |  4 +---
+ include/linux/mm.h       |  1 +
+ mm/memory-failure.c      | 17 ++++++++++++-----
+ 3 files changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/acpi/apei/ghes.c b/drivers/acpi/apei/ghes.c
+index 8a258dafa9de..bca041457487 100644
+--- a/drivers/acpi/apei/ghes.c
++++ b/drivers/acpi/apei/ghes.c
+@@ -489,9 +489,7 @@ static void memory_failure_cb(struct callback_head *twork)
+ 	if (!ret || ret == -EHWPOISON || ret == -EOPNOTSUPP)
+ 		return;
+ 
+-	pr_err("%#llx: Sending SIGBUS to %s:%d due to hardware memory corruption\n",
+-			twcb->pfn, current->comm, task_pid_nr(current));
+-	force_sig(SIGBUS);
++	kill_accessing_process(twcb->pfn, twcb->flags, true);
+ }
+ 
+ static bool ghes_do_memory_failure(u64 physical_addr, int flags)
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index d9a12a77892a..1fe3ee9944f3 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -4018,6 +4018,7 @@ extern int unpoison_memory(unsigned long pfn);
+ extern void shake_page(struct page *p);
+ extern atomic_long_t num_poisoned_pages __read_mostly;
+ extern int soft_offline_page(unsigned long pfn, int flags);
++int kill_accessing_process(unsigned long pfn, int flags, bool force_kill);
+ #ifdef CONFIG_MEMORY_FAILURE
+ /*
+  * Sysfs entries for memory failure handling statistics.
+diff --git a/mm/memory-failure.c b/mm/memory-failure.c
+index 612c5724d44a..d2370da0bce4 100644
+--- a/mm/memory-failure.c
++++ b/mm/memory-failure.c
+@@ -862,9 +862,9 @@ static const struct mm_walk_ops hwpoison_walk_ops = {
+  * is proper in most cases, but it could be wrong when the application
+  * process has multiple entries mapping the error page.
+  */
+-static int kill_accessing_process(unsigned long pfn, int flags)
++int kill_accessing_process(unsigned long pfn, int flags, bool force_kill)
+ {
+-	int ret;
++	int ret, ret_kill = -EINVAL;
+ 	struct task_struct *p = current;
+ 	struct hwpoison_walk priv = {
+ 		.pfn = pfn,
+@@ -884,7 +884,14 @@ static int kill_accessing_process(unsigned long pfn, int flags)
+ 	 * SIGBUS is needed.
+ 	 */
+ 	if (ret == 1 && priv.tk.addr)
+-		kill_proc(&priv.tk, pfn, flags);
++		ret_kill = kill_proc(&priv.tk, pfn, flags);
++
++	if (force_kill && (ret_kill < 0)) {
++		pr_err("%#lx: Sending force SIGBUS to %s:%d due to hardware memory corruption\n",
++				pfn, p->comm, task_pid_nr(p));
++		force_sig(SIGBUS);
++	}
++
+ 	mmap_read_unlock(p->mm);
+ 
+ 	return ret > 0 ? -EHWPOISON : 0;
+@@ -2065,7 +2072,7 @@ static int try_memory_failure_hugetlb(unsigned long pfn, int flags, int *hugetlb
+ 		pr_err("%#lx: already hardware poisoned\n", pfn);
+ 		if (flags & MF_ACTION_REQUIRED) {
+ 			folio = page_folio(p);
+-			res = kill_accessing_process(folio_pfn(folio), flags);
++			res = kill_accessing_process(folio_pfn(folio), flags, false);
+ 		}
+ 		return res;
+ 	} else if (res == -EBUSY) {
+@@ -2243,7 +2250,7 @@ int memory_failure(unsigned long pfn, int flags)
+ 		pr_err("%#lx: already hardware poisoned\n", pfn);
+ 		res = -EHWPOISON;
+ 		if (flags & MF_ACTION_REQUIRED)
+-			res = kill_accessing_process(pfn, flags);
++			res = kill_accessing_process(pfn, flags, false);
+ 		if (flags & MF_COUNT_INCREASED)
+ 			put_page(p);
+ 		goto unlock_mutex;
+-- 
+2.43.0
+

@@ -1,0 +1,44 @@
+From e59a5c6ab32195fee7b964ec82cc14792c8b5861 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Tue, 22 Jul 2025 21:24:09 +0800
+Subject: [PATCH 732/960] downstream: arm64/mpam: Fix incorrect CPU-to-partid
+ binding under CDP mode
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Under CDP mode, MPAM uses different PartIDs to track CPU instruction-port
+and data-port memory-access requests.
+
+In practice, to prevent tasks switching their PartIDs too frequently, the
+root directory group’s default mpam_partid_pmg remains 0, rather than 1,
+under CDP mode.
+
+Accordingly, mpam_thread_switch() must check the task’s mpam_partid_pmg
+against 0 instead of against mpam_resctrl_default_group; otherwise, in CDP
+mode the scheduler will fail to switch to the partid that corresponds to
+CPU.
+
+Fixes: 5cd0dad659e8 ("arm64: mpam: Context switch the MPAM registers")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/mpam.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm64/include/asm/mpam.h b/arch/arm64/include/asm/mpam.h
+index 76062337f1db..783b3929e144 100644
+--- a/arch/arm64/include/asm/mpam.h
++++ b/arch/arm64/include/asm/mpam.h
+@@ -153,7 +153,7 @@ static inline void mpam_thread_switch(struct task_struct *tsk)
+ 	    !static_branch_likely(&mpam_enabled))
+ 		return;
+ 
+-	if (regval == READ_ONCE(mpam_resctrl_default_group))
++	if (!regval)
+ 		regval = READ_ONCE(per_cpu(arm64_mpam_default, cpu));
+ 
+ 	oldregval = READ_ONCE(per_cpu(arm64_mpam_current, cpu));
+-- 
+2.43.0
+

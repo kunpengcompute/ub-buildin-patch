@@ -1,0 +1,62 @@
+From 2ff8276a60f4ed30a5d90d919df2736a71d160f2 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 11 Sep 2025 15:18:45 +0800
+Subject: [PATCH 764/960] downstream: arm64/mpam: Add quirk for L3 CSU counters
+
+On certain platforms, the Cache Storage Usage monitor statistics need
+to half.
+
+Due to the L3 cache compression feature on some hisi chips, the L3 CSU
+counter shows a value twice the actual usage, which does not reflect the
+real occupancy.
+
+To mitigate this effect as much as possible, the statistic method needs
+to half the statistic. With L3 compression disabled, the halved value
+matches the real L3 usage. However, with L3 compression enabled, it
+becomes slightly lower than the real L3 occupancy.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index 3ed443c1f7d2..4a64f94f9c40 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -934,6 +934,23 @@ static bool mpam_ris_has_nrdy_bit(struct mpam_msc_ris *ris)
+ 	return true;
+ }
+ 
++static u64 mpam_csu_hisi_need_halved(struct mpam_msc_ris *ris, u64 now)
++{
++	static const struct midr_range cpus[] = {
++		MIDR_ALL_VERSIONS(MIDR_HISI_HIP12),
++		{ /* sentinel */ }
++	};
++
++	if (!is_midr_in_range_list(read_cpuid_id(), cpus))
++		return now;
++
++	if (ris->comp->class->type != MPAM_CLASS_CACHE ||
++	    ris->comp->class->level != 3)
++		return now;
++
++	return now >> 1;
++}
++
+ static void __ris_msmon_read(void *arg)
+ {
+ 	bool nrdy = false;
+@@ -989,6 +1006,7 @@ static void __ris_msmon_read(void *arg)
+ 		now = mpam_read_monsel_reg(msc, CSU);
+ 		nrdy = now & MSMON___NRDY;
+ 		now = FIELD_GET(MSMON___VALUE, now);
++		now = mpam_csu_hisi_need_halved(ris, now);
+ 		break;
+ 	case mpam_feat_msmon_mbwu:
+ 		/*
+-- 
+2.43.0
+

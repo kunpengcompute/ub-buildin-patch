@@ -1,0 +1,120 @@
+From e1877ce9c85820a0d187c7678c84797a22a99585 Mon Sep 17 00:00:00 2001
+From: Johannes Weiner <hannes@cmpxchg.org>
+Date: Mon, 24 Feb 2025 19:08:25 -0500
+Subject: [PATCH 055/960] mm: page_alloc: remove remnants of unlocked
+ migratetype updates
+
+commit 020396a581dc69be2d30939fabde6c029d847034 upstream.
+
+The freelist hygiene patches made migratetype accesses fully protected
+under the zone->lock.  Remove remnants of handling the race conditions
+that existed before from the MIGRATE_HIGHATOMIC code.
+
+Link: https://lkml.kernel.org/r/20250225001023.1494422-3-hannes@cmpxchg.org
+Signed-off-by: Johannes Weiner <hannes@cmpxchg.org>
+Reviewed-by: Brendan Jackman <jackmanb@google.com>
+Reviewed-by: Vlastimil Babka <vbabka@suse.cz>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/page_alloc.c | 50 ++++++++++++++++---------------------------------
+ 1 file changed, 16 insertions(+), 34 deletions(-)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 18b045838de6..d3225ef1d49d 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -1920,20 +1920,10 @@ static inline bool boost_watermark(struct zone *zone)
+ static struct page *
+ try_to_steal_block(struct zone *zone, struct page *page,
+ 		   int current_order, int order, int start_type,
+-		   unsigned int alloc_flags)
++		   int block_type, unsigned int alloc_flags)
+ {
+ 	int free_pages, movable_pages, alike_pages;
+ 	unsigned long start_pfn;
+-	int block_type;
+-
+-	block_type = get_pageblock_migratetype(page);
+-
+-	/*
+-	 * This can happen due to races and we want to prevent broken
+-	 * highatomic accounting.
+-	 */
+-	if (is_migrate_highatomic(block_type))
+-		return NULL;
+ 
+ 	/* Take ownership for orders >= pageblock_order */
+ 	if (current_order >= pageblock_order) {
+@@ -2104,33 +2094,22 @@ static bool unreserve_highatomic_pageblock(const struct alloc_context *ac,
+ 		spin_lock_irqsave(&zone->lock, flags);
+ 		for (order = 0; order < NR_PAGE_ORDERS; order++) {
+ 			struct free_area *area = &(zone->free_area[order]);
+-			int mt;
++			unsigned long size;
+ 
+ 			page = get_page_from_free_area(area, MIGRATE_HIGHATOMIC);
+ 			if (!page)
+ 				continue;
+ 
+-			mt = get_pageblock_migratetype(page);
+ 			/*
+-			 * In page freeing path, migratetype change is racy so
+-			 * we can counter several free pages in a pageblock
+-			 * in this loop although we changed the pageblock type
+-			 * from highatomic to ac->migratetype. So we should
+-			 * adjust the count once.
++			 * It should never happen but changes to
++			 * locking could inadvertently allow a per-cpu
++			 * drain to add pages to MIGRATE_HIGHATOMIC
++			 * while unreserving so be safe and watch for
++			 * underflows.
+ 			 */
+-			if (is_migrate_highatomic(mt)) {
+-				unsigned long size;
+-				/*
+-				 * It should never happen but changes to
+-				 * locking could inadvertently allow a per-cpu
+-				 * drain to add pages to MIGRATE_HIGHATOMIC
+-				 * while unreserving so be safe and watch for
+-				 * underflows.
+-				 */
+-				size = max(pageblock_nr_pages, 1UL << order);
+-				size = min(size, zone->nr_reserved_highatomic);
+-				zone->nr_reserved_highatomic -= size;
+-			}
++			size = max(pageblock_nr_pages, 1UL << order);
++			size = min(size, zone->nr_reserved_highatomic);
++			zone->nr_reserved_highatomic -= size;
+ 
+ 			/*
+ 			 * Convert to ac->migratetype and avoid the normal
+@@ -2142,10 +2121,12 @@ static bool unreserve_highatomic_pageblock(const struct alloc_context *ac,
+ 			 * may increase.
+ 			 */
+ 			if (order < pageblock_order)
+-				ret = move_freepages_block(zone, page, mt,
++				ret = move_freepages_block(zone, page,
++							   MIGRATE_HIGHATOMIC,
+ 							   ac->migratetype);
+ 			else {
+-				move_to_free_list(page, zone, order, mt,
++				move_to_free_list(page, zone, order,
++						  MIGRATE_HIGHATOMIC,
+ 						  ac->migratetype);
+ 				change_pageblock_range(page, order,
+ 						       ac->migratetype);
+@@ -2219,7 +2200,8 @@ __rmqueue_fallback(struct zone *zone, int order, int start_migratetype,
+ 
+ 		page = get_page_from_free_area(area, fallback_mt);
+ 		page = try_to_steal_block(zone, page, current_order, order,
+-					  start_migratetype, alloc_flags);
++					  start_migratetype, fallback_mt,
++					  alloc_flags);
+ 		if (page)
+ 			goto got_one;
+ 	}
+-- 
+2.43.0
+

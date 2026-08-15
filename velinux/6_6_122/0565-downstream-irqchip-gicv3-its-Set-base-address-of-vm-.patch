@@ -1,0 +1,180 @@
+From 490f751c2fbc742d589c0b196b96264b5eff14f6 Mon Sep 17 00:00:00 2001
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Wed, 23 Apr 2025 17:16:25 +0800
+Subject: [PATCH 565/960] downstream: irqchip: gicv3-its: Set base address of
+ vm table and targe ITS when vpe schedule and deschedule
+
+Set the base address of vm table and target ITS when vpe schedule
+and deschedule. Also need to make sure IPIV is not busy before
+setting them.
+Disable ICC_SGI1R_EL1 trap when vpe schedule, and enable the trap
+when vpe deschedule.
+Only disable ICC_SGI1R_EL1 trap when enabled ipiv and set
+GICD_CTLR_nASSGIreq for register GICD_CTLR of virtual machine.
+
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: Nianyao Tang <tangnianyao@huawei.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-mmio-v3.c |  1 +
+ drivers/irqchip/irq-gic-v3-its.c   | 70 ++++++++++++++++++++++++++++++
+ include/linux/irqchip/arm-gic-v3.h | 15 +++++++
+ include/linux/irqchip/arm-gic-v4.h |  1 +
+ 4 files changed, 87 insertions(+)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-mmio-v3.c b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+index db1a86c0ccc8..7ad6708a5451 100644
+--- a/arch/arm64/kvm/vgic/vgic-mmio-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+@@ -130,6 +130,7 @@ static void vgic_mmio_write_v3_misc(struct kvm_vcpu *vcpu,
+ 
+ 		/* Switching HW SGIs? */
+ 		dist->nassgireq = val & GICD_CTLR_nASSGIreq;
++		dist->its_vm.nassgireq = dist->nassgireq;
+ 		if (is_hwsgi != dist->nassgireq)
+ 			vgic_v4_configure_vsgis(vcpu->kvm);
+ 
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 4aff22a810e7..bdb8bffff83a 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -4370,11 +4370,69 @@ static void its_vpe_4_1_unmask_irq(struct irq_data *d)
+ 	its_vpe_4_1_send_inv(d);
+ }
+ 
++/* IPIV private register */
++#define CPU_SYS_TRAP_EL2		sys_reg(3, 4, 15, 7, 2)
++#define CPU_SYS_TRAP_EL2_IPIV_ENABLE_SHIFT	0
++#define CPU_SYS_TRAP_EL2_IPIV_ENABLE		\
++	(1ULL << CPU_SYS_TRAP_EL2_IPIV_ENABLE_SHIFT)
++
++/*
++ * ipiv_disable_vsgi_trap and ipiv_enable_vsgi_trap run only
++ * in VHE mode and in EL2.
++ */
++static void ipiv_disable_vsgi_trap(void)
++{
++#ifdef CONFIG_ARM64
++	u64 val;
++
++	/* disable guest access ICC_SGI1R_EL1 trap, enable ipiv */
++	val = read_sysreg_s(CPU_SYS_TRAP_EL2);
++	val |= CPU_SYS_TRAP_EL2_IPIV_ENABLE;
++	write_sysreg_s(val, CPU_SYS_TRAP_EL2);
++#endif
++}
++
++static void ipiv_enable_vsgi_trap(void)
++{
++#ifdef CONFIG_ARM64
++	u64 val;
++
++	/* enable guest access ICC_SGI1R_EL1 trap, disable ipiv */
++	val = read_sysreg_s(CPU_SYS_TRAP_EL2);
++	val &= ~CPU_SYS_TRAP_EL2_IPIV_ENABLE;
++	write_sysreg_s(val, CPU_SYS_TRAP_EL2);
++#endif
++}
++
+ static void its_vpe_4_1_schedule(struct its_vpe *vpe,
+ 				 struct its_cmd_info *info)
+ {
+ 	void __iomem *vlpi_base = gic_data_rdist_vlpi_base();
++	struct its_vm *vm = vpe->its_vm;
++	unsigned long vpeid_page_addr;
++	u64 ipiv_val = 0;
+ 	u64 val = 0;
++	u32 nr_vpes;
++
++	if (static_branch_unlikely(&ipiv_enable) &&
++	    vm->nassgireq) {
++		/* wait gicr_ipiv_busy */
++		WARN_ON_ONCE(readl_relaxed_poll_timeout_atomic(vlpi_base + GICR_IPIV_ST,
++					ipiv_val, !(ipiv_val & GICR_IPIV_ST_IPIV_BUSY), 1, 500));
++		vpeid_page_addr = virt_to_phys(page_address(vm->vpeid_page));
++		writel_relaxed(lower_32_bits(vpeid_page_addr),
++					vlpi_base + GICR_VM_TABLE_BAR_L);
++		writel_relaxed(upper_32_bits(vpeid_page_addr),
++					vlpi_base + GICR_VM_TABLE_BAR_H);
++
++		/* setup gicr_vcpu_entry_num_max and gicr_ipiv_its_ta_sel */
++		nr_vpes = vpe->its_vm->nr_vpes;
++		ipiv_val = ((nr_vpes - 1) << GICR_IPIV_CTRL_VCPU_ENTRY_NUM_MAX_SHIFT) |
++			(0 << GICR_IPIV_CTRL_IPIV_ITS_TA_SEL_SHIFT);
++		writel_relaxed(ipiv_val, vlpi_base + GICR_IPIV_CTRL);
++
++		ipiv_disable_vsgi_trap();
++	}
+ 
+ 	/* Schedule the VPE */
+ 	val |= GICR_VPENDBASER_Valid;
+@@ -4389,6 +4447,7 @@ static void its_vpe_4_1_deschedule(struct its_vpe *vpe,
+ 				   struct its_cmd_info *info)
+ {
+ 	void __iomem *vlpi_base = gic_data_rdist_vlpi_base();
++	struct its_vm *vm = vpe->its_vm;
+ 	u64 val;
+ 
+ 	if (info->req_db) {
+@@ -4420,6 +4479,17 @@ static void its_vpe_4_1_deschedule(struct its_vpe *vpe,
+ 					    GICR_VPENDBASER_PendingLast);
+ 		vpe->pending_last = true;
+ 	}
++
++	if (static_branch_unlikely(&ipiv_enable) &&
++	    vm->nassgireq) {
++		/* wait gicr_ipiv_busy */
++		WARN_ON_ONCE(readl_relaxed_poll_timeout_atomic(vlpi_base + GICR_IPIV_ST,
++					val, !(val & GICR_IPIV_ST_IPIV_BUSY), 1, 500));
++		writel_relaxed(0, vlpi_base + GICR_VM_TABLE_BAR_L);
++		writel_relaxed(0, vlpi_base + GICR_VM_TABLE_BAR_H);
++
++		ipiv_enable_vsgi_trap();
++	}
+ }
+ 
+ static void its_vpe_4_1_invall(struct its_vpe *vpe)
+diff --git a/include/linux/irqchip/arm-gic-v3.h b/include/linux/irqchip/arm-gic-v3.h
+index 7a91ec9e2afd..656023f5e19b 100644
+--- a/include/linux/irqchip/arm-gic-v3.h
++++ b/include/linux/irqchip/arm-gic-v3.h
+@@ -360,6 +360,21 @@
+ #define GICR_VSGIPENDR_BUSY		(1U << 31)
+ #define GICR_VSGIPENDR_PENDING		GENMASK(15, 0)
+ 
++/* IPIV VM table address */
++#define GICR_VM_TABLE_BAR_L		0x140
++#define GICR_VM_TABLE_BAR_H		0x144
++
++#define GICR_IPIV_CTRL		0x148
++#define GICR_IPIV_CTRL_VCPU_ENTRY_NUM_MAX_SHIFT 8
++/*
++ * Select ITS to determine the ITS through which the IPI is sent.
++ */
++#define GICR_IPIV_CTRL_IPIV_ITS_TA_SEL_SHIFT 4
++
++#define GICR_IPIV_ST		0x14c
++#define GICR_IPIV_ST_IPIV_BUSY_SHIFT 0
++#define GICR_IPIV_ST_IPIV_BUSY (1 << GICR_IPIV_ST_IPIV_BUSY_SHIFT)
++
+ /*
+  * ITS registers, offsets from ITS_base
+  */
+diff --git a/include/linux/irqchip/arm-gic-v4.h b/include/linux/irqchip/arm-gic-v4.h
+index 4ff871269f7c..17ecf8054f72 100644
+--- a/include/linux/irqchip/arm-gic-v4.h
++++ b/include/linux/irqchip/arm-gic-v4.h
+@@ -35,6 +35,7 @@ struct its_vm {
+ 	 */
+ 	raw_spinlock_t		vmapp_lock;
+ 	u32			vlpi_count[GICv4_ITS_LIST_MAX];
++	bool			nassgireq;
+ };
+ 
+ /* Embedded in kvm_vcpu.arch */
+-- 
+2.43.0
+

@@ -1,0 +1,50 @@
+From 5d5e17bb9a50e649c576beb0ff56f79880d5d452 Mon Sep 17 00:00:00 2001
+From: Dongxu Sun <sundongxu3@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:21 +0800
+Subject: [PATCH 545/960] downstream: mbigen: probe mbigen driver with
+ arch_initcall
+
+If we set kvm-arm.vtimer_irqbypass=1, we need to probe mbigen
+driver before kvm_arm_init, since the vtimer mbigen regs should
+be set before kvm_arm_init flush the value of vtimer_irqbypass.
+Otherwise the regs of vtimer mbigen may not be set correctly,
+and kvm will set vtimer_irqbypass=0.
+
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-mbigen.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/drivers/irqchip/irq-mbigen.c b/drivers/irqchip/irq-mbigen.c
+index edc077c88d78..130e5e75a5e3 100644
+--- a/drivers/irqchip/irq-mbigen.c
++++ b/drivers/irqchip/irq-mbigen.c
+@@ -870,7 +870,22 @@ static struct platform_driver mbigen_platform_driver = {
+ 	.probe			= mbigen_device_probe,
+ };
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++static int __init mbigen_init(void)
++{
++	return platform_driver_register(&mbigen_platform_driver);
++}
++
++static void __exit mbigen_exit(void)
++{
++	return platform_driver_unregister(&mbigen_platform_driver);
++}
++
++arch_initcall(mbigen_init);
++module_exit(mbigen_exit);
++#else
+ module_platform_driver(mbigen_platform_driver);
++#endif
+ 
+ MODULE_AUTHOR("Jun Ma <majun258@huawei.com>");
+ MODULE_AUTHOR("Yun Wu <wuyun.wu@huawei.com>");
+-- 
+2.43.0
+

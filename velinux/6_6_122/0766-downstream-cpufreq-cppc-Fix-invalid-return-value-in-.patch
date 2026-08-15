@@ -1,0 +1,43 @@
+From 2100aa69c40a4523976e91ad25195bfd6f060852 Mon Sep 17 00:00:00 2001
+From: Lifeng Zheng <zhenglifeng1@huawei.com>
+Date: Thu, 21 Aug 2025 15:15:58 +0800
+Subject: [PATCH 766/960] downstream: cpufreq: cppc: Fix invalid return value
+ in hisi_cppc_cpufreq_get_rate()
+
+Returning a negative error code in a function with an unsigned
+return type is a pretty bad idea. Return 0 is enough when something wrong.
+
+Fixes: cf7de25878a1 ("cppc_cpufreq: Fix possible null pointer dereference")
+Signed-off-by: Lifeng Zheng <zhenglifeng1@huawei.com>
+Signed-off-by: Hongye Lin <linhongye@h-partners.com>
+Signed-off-by: heppen <hepeng68@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/cpufreq/cppc_cpufreq.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/cpufreq/cppc_cpufreq.c b/drivers/cpufreq/cppc_cpufreq.c
+index 12bd571d255d..58bf74f32ca7 100644
+--- a/drivers/cpufreq/cppc_cpufreq.c
++++ b/drivers/cpufreq/cppc_cpufreq.c
+@@ -878,7 +878,7 @@ static unsigned int hisi_cppc_cpufreq_get_rate(unsigned int cpu)
+ 	int ret;
+ 
+ 	if (!policy)
+-		return -ENODEV;
++		return 0;
+ 
+ 	cpu_data = policy->driver_data;
+ 
+@@ -886,7 +886,7 @@ static unsigned int hisi_cppc_cpufreq_get_rate(unsigned int cpu)
+ 
+ 	ret = cppc_get_desired_perf(cpu, &desired_perf);
+ 	if (ret < 0)
+-		return -EIO;
++		return 0;
+ 
+ 	return cppc_perf_to_khz(&cpu_data->perf_caps, desired_perf);
+ }
+-- 
+2.43.0
+

@@ -1,0 +1,171 @@
+From 5b00aec4e787978bfc8ae11fc3f453644df7244f Mon Sep 17 00:00:00 2001
+From: Lu Baolu <baolu.lu@linux.intel.com>
+Date: Tue, 2 Jul 2024 14:34:43 +0800
+Subject: [PATCH 359/960] iommufd/selftest: Add IOPF support for mock device
+
+commit ddee19971081b42615d62f4fdada21274708ed4d upstream.
+
+Extend the selftest mock device to support generating and responding to
+an IOPF. Also add an ioctl interface to userspace applications to trigger
+the IOPF on the mock device. This would allow userspace applications to
+test the IOMMUFD's handling of IOPFs without having to rely on any real
+hardware.
+
+Link: https://lore.kernel.org/r/20240702063444.105814-10-baolu.lu@linux.intel.com
+Signed-off-by: Lu Baolu <baolu.lu@linux.intel.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/iommufd_test.h |  8 ++++
+ drivers/iommu/iommufd/selftest.c     | 64 ++++++++++++++++++++++++++++
+ 2 files changed, 72 insertions(+)
+
+diff --git a/drivers/iommu/iommufd/iommufd_test.h b/drivers/iommu/iommufd/iommufd_test.h
+index e854d3f67205..acbbba1c6671 100644
+--- a/drivers/iommu/iommufd/iommufd_test.h
++++ b/drivers/iommu/iommufd/iommufd_test.h
+@@ -22,6 +22,7 @@ enum {
+ 	IOMMU_TEST_OP_MOCK_DOMAIN_FLAGS,
+ 	IOMMU_TEST_OP_DIRTY,
+ 	IOMMU_TEST_OP_MD_CHECK_IOTLB,
++	IOMMU_TEST_OP_TRIGGER_IOPF,
+ };
+ 
+ enum {
+@@ -127,6 +128,13 @@ struct iommu_test_cmd {
+ 			__u32 id;
+ 			__u32 iotlb;
+ 		} check_iotlb;
++		struct {
++			__u32 dev_id;
++			__u32 pasid;
++			__u32 grpid;
++			__u32 perm;
++			__u64 addr;
++		} trigger_iopf;
+ 	};
+ 	__u32 last;
+ };
+diff --git a/drivers/iommu/iommufd/selftest.c b/drivers/iommu/iommufd/selftest.c
+index 10357106a61e..b52fc3478ff5 100644
+--- a/drivers/iommu/iommufd/selftest.c
++++ b/drivers/iommu/iommufd/selftest.c
+@@ -504,6 +504,8 @@ static bool mock_domain_capable(struct device *dev, enum iommu_cap cap)
+ 	return false;
+ }
+ 
++static struct iopf_queue *mock_iommu_iopf_queue;
++
+ static struct iommu_device mock_iommu_device = {
+ };
+ 
+@@ -514,6 +516,29 @@ static struct iommu_device *mock_probe_device(struct device *dev)
+ 	return &mock_iommu_device;
+ }
+ 
++static void mock_domain_page_response(struct device *dev, struct iopf_fault *evt,
++				      struct iommu_page_response *msg)
++{
++}
++
++static int mock_dev_enable_feat(struct device *dev, enum iommu_dev_features feat)
++{
++	if (feat != IOMMU_DEV_FEAT_IOPF || !mock_iommu_iopf_queue)
++		return -ENODEV;
++
++	return iopf_queue_add_device(mock_iommu_iopf_queue, dev);
++}
++
++static int mock_dev_disable_feat(struct device *dev, enum iommu_dev_features feat)
++{
++	if (feat != IOMMU_DEV_FEAT_IOPF || !mock_iommu_iopf_queue)
++		return -ENODEV;
++
++	iopf_queue_remove_device(mock_iommu_iopf_queue, dev);
++
++	return 0;
++}
++
+ static const struct iommu_ops mock_ops = {
+ 	/*
+ 	 * IOMMU_DOMAIN_BLOCKED cannot be returned from def_domain_type()
+@@ -529,6 +554,10 @@ static const struct iommu_ops mock_ops = {
+ 	.capable = mock_domain_capable,
+ 	.device_group = generic_device_group,
+ 	.probe_device = mock_probe_device,
++	.page_response = mock_domain_page_response,
++	.dev_enable_feat = mock_dev_enable_feat,
++	.dev_disable_feat = mock_dev_disable_feat,
++	.user_pasid_table = true,
+ 	.default_domain_ops =
+ 		&(struct iommu_domain_ops){
+ 			.free = mock_domain_free,
+@@ -1381,6 +1410,31 @@ static int iommufd_test_dirty(struct iommufd_ucmd *ucmd, unsigned int mockpt_id,
+ 	return rc;
+ }
+ 
++static int iommufd_test_trigger_iopf(struct iommufd_ucmd *ucmd,
++				     struct iommu_test_cmd *cmd)
++{
++	struct iopf_fault event = { };
++	struct iommufd_device *idev;
++
++	idev = iommufd_get_device(ucmd, cmd->trigger_iopf.dev_id);
++	if (IS_ERR(idev))
++		return PTR_ERR(idev);
++
++	event.fault.prm.flags = IOMMU_FAULT_PAGE_REQUEST_LAST_PAGE;
++	if (cmd->trigger_iopf.pasid != IOMMU_NO_PASID)
++		event.fault.prm.flags |= IOMMU_FAULT_PAGE_REQUEST_PASID_VALID;
++	event.fault.type = IOMMU_FAULT_PAGE_REQ;
++	event.fault.prm.addr = cmd->trigger_iopf.addr;
++	event.fault.prm.pasid = cmd->trigger_iopf.pasid;
++	event.fault.prm.grpid = cmd->trigger_iopf.grpid;
++	event.fault.prm.perm = cmd->trigger_iopf.perm;
++
++	iommu_report_device_fault(idev->dev, &event);
++	iommufd_put_object(ucmd->ictx, &idev->obj);
++
++	return 0;
++}
++
+ void iommufd_selftest_destroy(struct iommufd_object *obj)
+ {
+ 	struct selftest_obj *sobj = container_of(obj, struct selftest_obj, obj);
+@@ -1456,6 +1510,8 @@ int iommufd_test(struct iommufd_ucmd *ucmd)
+ 					  cmd->dirty.page_size,
+ 					  u64_to_user_ptr(cmd->dirty.uptr),
+ 					  cmd->dirty.flags);
++	case IOMMU_TEST_OP_TRIGGER_IOPF:
++		return iommufd_test_trigger_iopf(ucmd, cmd);
+ 	default:
+ 		return -EOPNOTSUPP;
+ 	}
+@@ -1497,6 +1553,9 @@ int __init iommufd_test_init(void)
+ 				  &iommufd_mock_bus_type.nb);
+ 	if (rc)
+ 		goto err_sysfs;
++
++	mock_iommu_iopf_queue = iopf_queue_alloc("mock-iopfq");
++
+ 	return 0;
+ 
+ err_sysfs:
+@@ -1512,6 +1571,11 @@ int __init iommufd_test_init(void)
+ 
+ void iommufd_test_exit(void)
+ {
++	if (mock_iommu_iopf_queue) {
++		iopf_queue_free(mock_iommu_iopf_queue);
++		mock_iommu_iopf_queue = NULL;
++	}
++
+ 	iommu_device_sysfs_remove(&mock_iommu_device);
+ 	iommu_device_unregister_bus(&mock_iommu_device,
+ 				    &iommufd_mock_bus_type.bus,
+-- 
+2.43.0
+

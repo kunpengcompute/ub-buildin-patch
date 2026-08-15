@@ -1,0 +1,63 @@
+From b0970a5bb9767b318667ec5fcf5ab7e543302d7d Mon Sep 17 00:00:00 2001
+From: Nicolin Chen <nicolinc@nvidia.com>
+Date: Wed, 30 Oct 2024 21:20:46 -0300
+Subject: [PATCH 854/960] downstream: ACPICA: IORT: Update for revision E.f
+
+ACPICA commit c4f5c083d24df9ddd71d5782c0988408cf0fc1ab
+
+The IORT spec, Issue E.f (April 2024), adds a new CANWBS bit to the Memory
+Access Flag field in the Memory Access Properties table, mainly for a PCI
+Root Complex.
+
+This CANWBS defines the coherency of memory accesses to be not marked IOWB
+cacheable/shareable. Its value further implies the coherency impact from a
+pair of mismatched memory attributes (e.g. in a nested translation case):
+  0x0: Use of mismatched memory attributes for accesses made by this
+       device may lead to a loss of coherency.
+  0x1: Coherency of accesses made by this device to locations in
+       Conventional memory are ensured as follows, even if the memory
+       attributes for the accesses presented by the device or provided by
+       the SMMU are different from Inner and Outer Write-back cacheable,
+       Shareable.
+
+Link: https://github.com/acpica/acpica/commit/c4f5c083
+Acked-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Acked-by: Hanjun Guo <guohanjun@huawei.com>
+Tested-by: Nicolin Chen <nicolinc@nvidia.com>
+Reviewed-by: Jerry Snitselaar <jsnitsel@redhat.com>
+Reviewed-by: Donald Dutile <ddutile@redhat.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Link: https://lore.kernel.org/r/2-v4-9e99b76f3518+3a8-smmuv3_nesting_jgg@nvidia.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ include/acpi/actbl2.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/include/acpi/actbl2.h b/include/acpi/actbl2.h
+index 0f1a2243a392..b6f5534a5fcd 100644
+--- a/include/acpi/actbl2.h
++++ b/include/acpi/actbl2.h
+@@ -376,7 +376,7 @@ struct acpi_table_ccel {
+  * IORT - IO Remapping Table
+  *
+  * Conforms to "IO Remapping Table System Software on ARM Platforms",
+- * Document number: ARM DEN 0049E.e, Sep 2022
++ * Document number: ARM DEN 0049E.f, Apr 2024
+  *
+  ******************************************************************************/
+ 
+@@ -447,6 +447,7 @@ struct acpi_iort_memory_access {
+ 
+ #define ACPI_IORT_MF_COHERENCY          (1)
+ #define ACPI_IORT_MF_ATTRIBUTES         (1<<1)
++#define ACPI_IORT_MF_CANWBS             (1<<2)
+ 
+ /*
+  * IORT node specific subtables
+-- 
+2.43.0
+

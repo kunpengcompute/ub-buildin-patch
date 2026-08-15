@@ -1,0 +1,44 @@
+From 1763cfa4f2a547c82d13cd9286df9b69b7a6210d Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:06 +0800
+Subject: [PATCH 581/960] downstream: KVM: arm64: Don't trap ALLINT accesses if
+ the vcpu has FEAT_NMI
+
+This is counter-productive, so let it rip.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hyp/include/hyp/switch.h | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kvm/hyp/include/hyp/switch.h b/arch/arm64/kvm/hyp/include/hyp/switch.h
+index 6269cab564e9..350758bd62b2 100644
+--- a/arch/arm64/kvm/hyp/include/hyp/switch.h
++++ b/arch/arm64/kvm/hyp/include/hyp/switch.h
+@@ -194,7 +194,8 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
+ 		vcpu_set_flag(vcpu, PMUSERENR_ON_CPU);
+ 	}
+ 
+-	if (cpus_have_final_cap(ARM64_HAS_NMI))
++	if (cpus_have_final_cap(ARM64_HAS_NMI) &&
++	    !kern_hyp_va(vcpu->kvm)->arch.pfr1_nmi)
+ 		sysreg_clear_set_s(SYS_HCRX_EL2, 0, HCRX_EL2_TALLINT);
+ 
+ 	*host_data_ptr(host_debug_state.mdcr_el2) = read_sysreg(mdcr_el2);
+@@ -227,7 +228,8 @@ static inline void __deactivate_traps_common(struct kvm_vcpu *vcpu)
+ {
+ 	write_sysreg(*host_data_ptr(host_debug_state.mdcr_el2), mdcr_el2);
+ 
+-	if (cpus_have_final_cap(ARM64_HAS_NMI))
++	if (cpus_have_final_cap(ARM64_HAS_NMI) &&
++	    !kern_hyp_va(vcpu->kvm)->arch.pfr1_nmi)
+ 		sysreg_clear_set_s(SYS_HCRX_EL2, HCRX_EL2_TALLINT, 0);
+ 
+ 	write_sysreg(0, hstr_el2);
+-- 
+2.43.0
+

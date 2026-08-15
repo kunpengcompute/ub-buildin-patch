@@ -1,0 +1,249 @@
+From 4c99867c9de958cb8d124159e0300fc6e1f52403 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Tue, 22 Aug 2023 13:15:56 -0300
+Subject: [PATCH 164/960] iommu: Remove useless group refcounting
+
+commit e946f8e3e62bf05da21a14658f8cb05e2a616260 upstream.
+
+Several functions obtain the group reference and then release it before
+returning. This gives the impression that the refcount is protecting
+something for the duration of the function.
+
+In truth all of these functions are called in places that know a device
+driver is probed to the device and our locking rules already require
+that dev->iommu_group cannot change while a driver is attached to the
+struct device.
+
+If this was not the case then this code is already at risk of triggering
+UAF as it is racy if the dev->iommu_group is concurrently going to
+NULL/free. refcount debugging will throw a WARN if kobject_get() is
+called on a 0 refcount object to highlight the bug.
+
+Remove the confusing refcounting and leave behind a comment about the
+restriction.
+
+Reviewed-by: Lu Baolu <baolu.lu@linux.intel.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Link: https://lore.kernel.org/r/1-v1-c869a95191f2+5e8-iommu_single_grp_jgg@nvidia.com
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommu.c | 57 ++++++++++++++++---------------------------
+ 1 file changed, 21 insertions(+), 36 deletions(-)
+
+diff --git a/drivers/iommu/iommu.c b/drivers/iommu/iommu.c
+index d76e4419279c..a55e4f981e27 100644
+--- a/drivers/iommu/iommu.c
++++ b/drivers/iommu/iommu.c
+@@ -2165,10 +2165,10 @@ static int __iommu_attach_device(struct iommu_domain *domain,
+  */
+ int iommu_attach_device(struct iommu_domain *domain, struct device *dev)
+ {
+-	struct iommu_group *group;
++	/* Caller must be a probed driver on dev */
++	struct iommu_group *group = dev->iommu_group;
+ 	int ret;
+ 
+-	group = iommu_group_get(dev);
+ 	if (!group)
+ 		return -ENODEV;
+ 
+@@ -2185,8 +2185,6 @@ int iommu_attach_device(struct iommu_domain *domain, struct device *dev)
+ 
+ out_unlock:
+ 	mutex_unlock(&group->mutex);
+-	iommu_group_put(group);
+-
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(iommu_attach_device);
+@@ -2201,9 +2199,9 @@ int iommu_deferred_attach(struct device *dev, struct iommu_domain *domain)
+ 
+ void iommu_detach_device(struct iommu_domain *domain, struct device *dev)
+ {
+-	struct iommu_group *group;
++	/* Caller must be a probed driver on dev */
++	struct iommu_group *group = dev->iommu_group;
+ 
+-	group = iommu_group_get(dev);
+ 	if (!group)
+ 		return;
+ 
+@@ -2215,24 +2213,18 @@ void iommu_detach_device(struct iommu_domain *domain, struct device *dev)
+ 
+ out_unlock:
+ 	mutex_unlock(&group->mutex);
+-	iommu_group_put(group);
+ }
+ EXPORT_SYMBOL_GPL(iommu_detach_device);
+ 
+ struct iommu_domain *iommu_get_domain_for_dev(struct device *dev)
+ {
+-	struct iommu_domain *domain;
+-	struct iommu_group *group;
++	/* Caller must be a probed driver on dev */
++	struct iommu_group *group = dev->iommu_group;
+ 
+-	group = iommu_group_get(dev);
+ 	if (!group)
+ 		return NULL;
+ 
+-	domain = group->domain;
+-
+-	iommu_group_put(group);
+-
+-	return domain;
++	return group->domain;
+ }
+ EXPORT_SYMBOL_GPL(iommu_get_domain_for_dev);
+ 
+@@ -3235,7 +3227,8 @@ static bool iommu_is_default_domain(struct iommu_group *group)
+  */
+ int iommu_device_use_default_domain(struct device *dev)
+ {
+-	struct iommu_group *group = iommu_group_get(dev);
++	/* Caller is the driver core during the pre-probe path */
++	struct iommu_group *group = dev->iommu_group;
+ 	int ret = 0;
+ 
+ 	if (!group)
+@@ -3260,8 +3253,6 @@ int iommu_device_use_default_domain(struct device *dev)
+ 
+ unlock_out:
+ 	mutex_unlock(&group->mutex);
+-	iommu_group_put(group);
+-
+ 	return ret;
+ }
+ 
+@@ -3275,7 +3266,8 @@ int iommu_device_use_default_domain(struct device *dev)
+  */
+ void iommu_device_unuse_default_domain(struct device *dev)
+ {
+-	struct iommu_group *group = iommu_group_get(dev);
++	/* Caller is the driver core during the post-probe path */
++	struct iommu_group *group = dev->iommu_group;
+ 
+ 	if (!group)
+ 		return;
+@@ -3285,7 +3277,6 @@ void iommu_device_unuse_default_domain(struct device *dev)
+ 		group->owner_cnt--;
+ 
+ 	mutex_unlock(&group->mutex);
+-	iommu_group_put(group);
+ }
+ 
+ static int __iommu_group_alloc_blocking_domain(struct iommu_group *group)
+@@ -3369,13 +3360,13 @@ EXPORT_SYMBOL_GPL(iommu_group_claim_dma_owner);
+  */
+ int iommu_device_claim_dma_owner(struct device *dev, void *owner)
+ {
+-	struct iommu_group *group;
++	/* Caller must be a probed driver on dev */
++	struct iommu_group *group = dev->iommu_group;
+ 	int ret = 0;
+ 
+ 	if (WARN_ON(!owner))
+ 		return -EINVAL;
+ 
+-	group = iommu_group_get(dev);
+ 	if (!group)
+ 		return -ENODEV;
+ 
+@@ -3392,8 +3383,6 @@ int iommu_device_claim_dma_owner(struct device *dev, void *owner)
+ 	ret = __iommu_take_dma_ownership(group, owner);
+ unlock_out:
+ 	mutex_unlock(&group->mutex);
+-	iommu_group_put(group);
+-
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(iommu_device_claim_dma_owner);
+@@ -3431,7 +3420,8 @@ EXPORT_SYMBOL_GPL(iommu_group_release_dma_owner);
+  */
+ void iommu_device_release_dma_owner(struct device *dev)
+ {
+-	struct iommu_group *group = iommu_group_get(dev);
++	/* Caller must be a probed driver on dev */
++	struct iommu_group *group = dev->iommu_group;
+ 
+ 	mutex_lock(&group->mutex);
+ 	if (group->owner_cnt > 1)
+@@ -3439,7 +3429,6 @@ void iommu_device_release_dma_owner(struct device *dev)
+ 	else
+ 		__iommu_release_dma_ownership(group);
+ 	mutex_unlock(&group->mutex);
+-	iommu_group_put(group);
+ }
+ EXPORT_SYMBOL_GPL(iommu_device_release_dma_owner);
+ 
+@@ -3511,14 +3500,14 @@ static void __iommu_remove_group_pasid(struct iommu_group *group,
+ int iommu_attach_device_pasid(struct iommu_domain *domain,
+ 			      struct device *dev, ioasid_t pasid)
+ {
+-	struct iommu_group *group;
++	/* Caller must be a probed driver on dev */
++	struct iommu_group *group = dev->iommu_group;
+ 	void *curr;
+ 	int ret;
+ 
+ 	if (!domain->ops->set_dev_pasid)
+ 		return -EOPNOTSUPP;
+ 
+-	group = iommu_group_get(dev);
+ 	if (!group)
+ 		return -ENODEV;
+ 
+@@ -3534,8 +3523,6 @@ int iommu_attach_device_pasid(struct iommu_domain *domain,
+ 		xa_erase(&group->pasid_array, pasid);
+ out_unlock:
+ 	mutex_unlock(&group->mutex);
+-	iommu_group_put(group);
+-
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(iommu_attach_device_pasid);
+@@ -3552,14 +3539,13 @@ EXPORT_SYMBOL_GPL(iommu_attach_device_pasid);
+ void iommu_detach_device_pasid(struct iommu_domain *domain, struct device *dev,
+ 			       ioasid_t pasid)
+ {
+-	struct iommu_group *group = iommu_group_get(dev);
++	/* Caller must be a probed driver on dev */
++	struct iommu_group *group = dev->iommu_group;
+ 
+ 	mutex_lock(&group->mutex);
+ 	__iommu_remove_group_pasid(group, pasid);
+ 	WARN_ON(xa_erase(&group->pasid_array, pasid) != domain);
+ 	mutex_unlock(&group->mutex);
+-
+-	iommu_group_put(group);
+ }
+ EXPORT_SYMBOL_GPL(iommu_detach_device_pasid);
+ 
+@@ -3581,10 +3567,10 @@ struct iommu_domain *iommu_get_domain_for_dev_pasid(struct device *dev,
+ 						    ioasid_t pasid,
+ 						    unsigned int type)
+ {
++	/* Caller must be a probed driver on dev */
++	struct iommu_group *group = dev->iommu_group;
+ 	struct iommu_domain *domain;
+-	struct iommu_group *group;
+ 
+-	group = iommu_group_get(dev);
+ 	if (!group)
+ 		return NULL;
+ 
+@@ -3593,7 +3579,6 @@ struct iommu_domain *iommu_get_domain_for_dev_pasid(struct device *dev,
+ 	if (type && domain && domain->type != type)
+ 		domain = ERR_PTR(-EBUSY);
+ 	xa_unlock(&group->pasid_array);
+-	iommu_group_put(group);
+ 
+ 	return domain;
+ }
+-- 
+2.43.0
+

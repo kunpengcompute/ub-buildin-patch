@@ -1,0 +1,60 @@
+From 6bb427b64b61b05b7d66cbf137b6d5114851d8c2 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 1 Sep 2025 17:16:36 +0800
+Subject: [PATCH 761/960] downstream: arm64/mpam: Fix num_rmids when enable CDP
+ mode
+
+At initialization, the number of RMIDs is set to
+num_of_PARTID * num_of_PMG. When resctrl is later mounted in CDP mode,
+however, the RMID count should be halved, just like the CLOSID count.
+
+Because CDP mode is activated during the mount operation, update the
+num_of_RMID in rdt_enable_ctx().
+
+Fixes: ae6bcabac715 ("arm64/mpam: Fix num_rmids information")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 8 +++++++-
+ include/linux/arm_mpam.h             | 2 +-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index a2225c1a11b0..a1bf59cf89fa 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -100,11 +100,17 @@ bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level rid)
+ 	}
+ }
+ 
+-int resctrl_arch_set_cdp_enabled(enum resctrl_res_level ignored, bool enable)
++int resctrl_arch_set_cdp_enabled(enum resctrl_res_level rid, bool enable)
+ {
+ 	u64 regval;
++	struct rdt_resource *r;
+ 	u32 partid, partid_i, partid_d;
+ 
++	r = resctrl_arch_get_resource(rid);
++	r->num_rmid = resctrl_arch_system_num_rmid_idx();
++	if (enable)
++		r->num_rmid >>= 1;
++
+ 	cdp_enabled = enable;
+ 
+ 	partid = RESCTRL_RESERVED_CLOSID;
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index 0c2a2515ff87..f5d2eefd199b 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -74,7 +74,7 @@ bool resctrl_arch_would_mbm_overflow(void);
+ void resctrl_arch_reset_resources(void);
+ 
+ bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level ignored);
+-int resctrl_arch_set_cdp_enabled(enum resctrl_res_level ignored, bool enable);
++int resctrl_arch_set_cdp_enabled(enum resctrl_res_level rid, bool enable);
+ bool resctrl_arch_hide_cdp(enum resctrl_res_level rid);
+ bool resctrl_arch_match_closid(struct task_struct *tsk, u32 closid);
+ bool resctrl_arch_match_rmid(struct task_struct *tsk, u32 closid, u32 rmid);
+-- 
+2.43.0
+
