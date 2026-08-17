@@ -1,0 +1,76 @@
+From 2048fe5da613f139a45937def3369fb0283a5d02 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 6 Nov 2025 15:46:09 +0800
+Subject: [PATCH 785/960] downstream: fs/resctrl: Fix the L3 CMAX conversion
+ mechanism
+
+RDT formats the precision through bw_validate() during the validity check.
+But MPAM does not rely on such conversion, the CMAX interface converts
+percentages through percent_to_ca_max() and ca_max_to_percent(). So skip
+the conversion in bw_validate() to avoid loss of precision.
+
+Finally, percent_to_ca_max() and ca_max_to_percent() are restored to round
+up the user configuration to the required precision, avoiding to pass
+values smaller than the minimum threshold as parameters.
+
+Fixes: 642d6efc60a8 ("downstream: arm64/mpam: Add quirk for cmax and cmin")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Quanmin Yan <yanquanmin1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 7 ++++---
+ fs/resctrl/ctrlmondata.c             | 6 +++++-
+ 2 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index ce13a227a7dc..a8e69f8274d2 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -642,7 +642,7 @@ static u16 percent_to_mbw_max(u32 pc, u8 wd)
+ static u16 percent_to_ca_max(u32 pc, u8 wd)
+ {
+ 	struct rdt_resource *l3 = resctrl_arch_get_resource(RDT_RESOURCE_L3);
+-	u32 valid_max;
++	u32 valid_max, ca_max;
+ 
+ 	if (read_cpuid_implementor() != ARM_CPU_IMP_HISI)
+ 		return percent_to_mbw_max(pc, wd);
+@@ -654,7 +654,8 @@ static u16 percent_to_ca_max(u32 pc, u8 wd)
+ 	if (pc >= MAX_MBA_BW)
+ 		return valid_max << (16 - wd);
+ 
+-	return ((pc * valid_max + 50) / 100) << (16 - wd);
++	ca_max = DIV_ROUND_UP(pc * valid_max, 100);
++	return ca_max << (16 - wd);
+ }
+ 
+ static u16 ca_max_to_percent(u16 ca_max, u8 wd)
+@@ -673,7 +674,7 @@ static u16 ca_max_to_percent(u16 ca_max, u8 wd)
+ 	if (ca_max >= valid_max)
+ 		return MAX_MBA_BW;
+ 
+-	return (ca_max * 100 + valid_max / 2) / valid_max;
++	return (ca_max * 100) / valid_max;
+ }
+ 
+ /* Test whether we can export MPAM_CLASS_CACHE:{2,3}? */
+diff --git a/fs/resctrl/ctrlmondata.c b/fs/resctrl/ctrlmondata.c
+index 061d2e42f821..9b2b74296b78 100644
+--- a/fs/resctrl/ctrlmondata.c
++++ b/fs/resctrl/ctrlmondata.c
+@@ -69,7 +69,11 @@ static bool bw_validate(char *buf, u32 *data, struct rdt_resource *r)
+ 		return false;
+ 	}
+ 
+-	*data = roundup(bw, (unsigned long)r->membw.bw_gran);
++	if (!IS_ENABLED(CONFIG_ARM64_MPAM))
++		*data = roundup(bw, (unsigned long)r->membw.bw_gran);
++	else
++		*data = bw;
++
+ 	return true;
+ }
+ 
+-- 
+2.43.0
+

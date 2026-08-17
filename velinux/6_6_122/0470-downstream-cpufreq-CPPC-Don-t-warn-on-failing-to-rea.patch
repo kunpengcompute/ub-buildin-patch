@@ -1,0 +1,47 @@
+From 616530caab81e95615a970c2be4eaee0b1b822fa Mon Sep 17 00:00:00 2001
+From: Jie Zhan <zhanjie9@hisilicon.com>
+Date: Fri, 13 Jun 2025 15:27:49 +0800
+Subject: [PATCH 470/960] downstream: cpufreq: CPPC: Don't warn on failing to
+ read perf counters on offline cpus
+
+Reading perf counters on offline cpus should be expected to fail, e.g. it
+returns -EFAULT as counters are shown to be 0.  Remove the unnecessary
+warning print on this failure path.
+
+Fixes: 1eb5dde674f5 ("cpufreq: CPPC: Add support for frequency invariance")
+Signed-off-by: Jie Zhan <zhanjie9@hisilicon.com>
+Signed-off-by: Hongye Lin <linhongye@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/cpufreq/cppc_cpufreq.c | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/cpufreq/cppc_cpufreq.c b/drivers/cpufreq/cppc_cpufreq.c
+index 6ce9c88cbd0b..6001099eb4bc 100644
+--- a/drivers/cpufreq/cppc_cpufreq.c
++++ b/drivers/cpufreq/cppc_cpufreq.c
+@@ -165,16 +165,14 @@ static void cppc_cpufreq_cpu_fie_init(struct cpufreq_policy *policy)
+ 		init_irq_work(&cppc_fi->irq_work, cppc_irq_work);
+ 
+ 		ret = cppc_get_perf_ctrs(cpu, &cppc_fi->prev_perf_fb_ctrs);
+-		if (ret) {
+-			pr_warn("%s: failed to read perf counters for cpu:%d: %d\n",
+-				__func__, cpu, ret);
+-
++		if (ret && cpu_online(cpu)) {
+ 			/*
+ 			 * Don't abort if the CPU was offline while the driver
+ 			 * was getting registered.
+ 			 */
+-			if (cpu_online(cpu))
+-				return;
++			pr_debug("%s: failed to read perf counters for cpu:%d: %d\n",
++				__func__, cpu, ret);
++			return;
+ 		}
+ 	}
+ 
+-- 
+2.43.0
+

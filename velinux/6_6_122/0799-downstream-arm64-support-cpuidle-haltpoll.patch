@@ -1,0 +1,67 @@
+From 3ae48a1f1cf3203c13bef16c6be5646dfc77fe15 Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:55 +0800
+Subject: [PATCH 799/960] downstream: arm64: support cpuidle-haltpoll
+
+Add architectural support for the cpuidle-haltpoll driver by defining
+arch_haltpoll_*(). Also define ARCH_CPUIDLE_HALTPOLL to allow
+cpuidle-haltpoll to be selected.
+
+Tested-by: Haris Okanovic <harisokn@amazon.com>
+Tested-by: Misono Tomohiro <misono.tomohiro@fujitsu.com>
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/Kconfig                        |  6 ++++++
+ arch/arm64/include/asm/cpuidle_haltpoll.h | 20 ++++++++++++++++++++
+ 2 files changed, 26 insertions(+)
+ create mode 100644 arch/arm64/include/asm/cpuidle_haltpoll.h
+
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index f8726e474fd4..8a91ba0f21e9 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -2537,6 +2537,12 @@ config ARCH_HIBERNATION_HEADER
+ config ARCH_SUSPEND_POSSIBLE
+ 	def_bool y
+ 
++config ARCH_CPUIDLE_HALTPOLL
++	bool "Enable selection of the cpuidle-haltpoll driver"
++	help
++	  cpuidle-haltpoll allows for adaptive polling based on
++	  current load before entering the idle state.
++
+ endmenu # "Power management options"
+ 
+ menu "CPU Power Management"
+diff --git a/arch/arm64/include/asm/cpuidle_haltpoll.h b/arch/arm64/include/asm/cpuidle_haltpoll.h
+new file mode 100644
+index 000000000000..aa01ae9ad5dd
+--- /dev/null
++++ b/arch/arm64/include/asm/cpuidle_haltpoll.h
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++
++#ifndef _ARCH_HALTPOLL_H
++#define _ARCH_HALTPOLL_H
++
++static inline void arch_haltpoll_enable(unsigned int cpu) { }
++static inline void arch_haltpoll_disable(unsigned int cpu) { }
++
++static inline bool arch_haltpoll_want(bool force)
++{
++	/*
++	 * Enabling haltpoll requires KVM support for arch_haltpoll_enable(),
++	 * arch_haltpoll_disable().
++	 *
++	 * Given that that's missing right now, only allow force loading for
++	 * haltpoll.
++	 */
++	return force;
++}
++#endif
+-- 
+2.43.0
+

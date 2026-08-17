@@ -1,0 +1,271 @@
+From 98597e985a8b05632422c01a5fc14506f22f688f Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Fri, 1 Mar 2024 11:16:56 +0000
+Subject: [PATCH 446/960] KVM: arm64: Add accessor for per-CPU state
+
+commit 87f842c6c6543cf0dd66161fdf4b62cec804479b upstream.
+
+In order to facilitate the introduction of new per-CPU state,
+add a new host_data_ptr() helped that hides some of the per-CPU
+verbosity, and make it easier to move that state around in the
+future.
+
+Reviewed-by: Suzuki K Poulose <suzuki.poulose@arm.com>
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Junhao He <hejunhao3@huawei.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h         | 37 +++++++++++++++++++++++
+ arch/arm64/kvm/arm.c                      |  2 +-
+ arch/arm64/kvm/hyp/include/hyp/debug-sr.h |  4 +--
+ arch/arm64/kvm/hyp/include/hyp/switch.h   |  8 ++---
+ arch/arm64/kvm/hyp/nvhe/psci-relay.c      |  2 +-
+ arch/arm64/kvm/hyp/nvhe/setup.c           |  3 +-
+ arch/arm64/kvm/hyp/nvhe/switch.c          |  4 +--
+ arch/arm64/kvm/hyp/vhe/switch.c           |  4 +--
+ arch/arm64/kvm/hyp/vhe/sysreg-sr.c        |  4 +--
+ arch/arm64/kvm/pmu.c                      |  2 +-
+ 10 files changed, 53 insertions(+), 17 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 582ba39dba04..54d41e590293 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -429,6 +429,17 @@ struct kvm_cpu_context {
+ 	struct kvm_vcpu *__hyp_running_vcpu;
+ };
+ 
++/*
++ * This structure is instantiated on a per-CPU basis, and contains
++ * data that is:
++ *
++ * - tied to a single physical CPU, and
++ * - either have a lifetime that does not extend past vcpu_put()
++ * - or is an invariant for the lifetime of the system
++ *
++ * Use host_data_ptr(field) as a way to access a pointer to such a
++ * field.
++ */
+ struct kvm_host_data {
+ 	struct kvm_cpu_context host_ctxt;
+ };
+@@ -1037,6 +1048,32 @@ struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);
+ 
+ DECLARE_KVM_HYP_PER_CPU(struct kvm_host_data, kvm_host_data);
+ 
++/*
++ * How we access per-CPU host data depends on the where we access it from,
++ * and the mode we're in:
++ *
++ * - VHE and nVHE hypervisor bits use their locally defined instance
++ *
++ * - the rest of the kernel use either the VHE or nVHE one, depending on
++ *   the mode we're running in.
++ *
++ *   Unless we're in protected mode, fully deprivileged, and the nVHE
++ *   per-CPU stuff is exclusively accessible to the protected EL2 code.
++ *   In this case, the EL1 code uses the *VHE* data as its private state
++ *   (which makes sense in a way as there shouldn't be any shared state
++ *   between the host and the hypervisor).
++ *
++ * Yes, this is all totally trivial. Shoot me now.
++ */
++#if defined(__KVM_NVHE_HYPERVISOR__) || defined(__KVM_VHE_HYPERVISOR__)
++#define host_data_ptr(f)	(&this_cpu_ptr(&kvm_host_data)->f)
++#else
++#define host_data_ptr(f)						\
++	(static_branch_unlikely(&kvm_protected_mode_initialized) ?	\
++	 &this_cpu_ptr(&kvm_host_data)->f :				\
++	 &this_cpu_ptr_hyp_sym(kvm_host_data)->f)
++#endif
++
+ static inline void kvm_init_host_cpu_context(struct kvm_cpu_context *cpu_ctxt)
+ {
+ 	/* The host's MPIDR is immutable, so let's set it up at boot time */
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 099cd2118eb6..327a5b59e66e 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -1836,7 +1836,7 @@ static void cpu_set_hyp_vector(void)
+ 
+ static void cpu_hyp_init_context(void)
+ {
+-	kvm_init_host_cpu_context(&this_cpu_ptr_hyp_sym(kvm_host_data)->host_ctxt);
++	kvm_init_host_cpu_context(host_data_ptr(host_ctxt));
+ 
+ 	if (!is_kernel_in_hyp_mode())
+ 		cpu_init_hyp_mode();
+diff --git a/arch/arm64/kvm/hyp/include/hyp/debug-sr.h b/arch/arm64/kvm/hyp/include/hyp/debug-sr.h
+index 961bbef104a6..eec0f8ccda56 100644
+--- a/arch/arm64/kvm/hyp/include/hyp/debug-sr.h
++++ b/arch/arm64/kvm/hyp/include/hyp/debug-sr.h
+@@ -135,7 +135,7 @@ static inline void __debug_switch_to_guest_common(struct kvm_vcpu *vcpu)
+ 	if (!vcpu_get_flag(vcpu, DEBUG_DIRTY))
+ 		return;
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 	guest_ctxt = &vcpu->arch.ctxt;
+ 	host_dbg = &vcpu->arch.host_debug_state.regs;
+ 	guest_dbg = kern_hyp_va(vcpu->arch.debug_ptr);
+@@ -154,7 +154,7 @@ static inline void __debug_switch_to_host_common(struct kvm_vcpu *vcpu)
+ 	if (!vcpu_get_flag(vcpu, DEBUG_DIRTY))
+ 		return;
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 	guest_ctxt = &vcpu->arch.ctxt;
+ 	host_dbg = &vcpu->arch.host_debug_state.regs;
+ 	guest_dbg = kern_hyp_va(vcpu->arch.debug_ptr);
+diff --git a/arch/arm64/kvm/hyp/include/hyp/switch.h b/arch/arm64/kvm/hyp/include/hyp/switch.h
+index 33a1b79cd21b..bc1e167e7176 100644
+--- a/arch/arm64/kvm/hyp/include/hyp/switch.h
++++ b/arch/arm64/kvm/hyp/include/hyp/switch.h
+@@ -81,7 +81,7 @@ static inline void __activate_traps_fpsimd32(struct kvm_vcpu *vcpu)
+ 
+ static inline void __activate_traps_hfgxtr(struct kvm_vcpu *vcpu)
+ {
+-	struct kvm_cpu_context *hctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	struct kvm_cpu_context *hctxt = host_data_ptr(host_ctxt);
+ 	u64 r_clr = 0, w_clr = 0, r_set = 0, w_set = 0, tmp;
+ 	u64 r_val, w_val;
+ 
+@@ -156,7 +156,7 @@ static inline void __activate_traps_hfgxtr(struct kvm_vcpu *vcpu)
+ 
+ static inline void __deactivate_traps_hfgxtr(struct kvm_vcpu *vcpu)
+ {
+-	struct kvm_cpu_context *hctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	struct kvm_cpu_context *hctxt = host_data_ptr(host_ctxt);
+ 
+ 	if (!cpus_have_final_cap(ARM64_HAS_FGT))
+ 		return;
+@@ -188,7 +188,7 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
+ 
+ 		write_sysreg(0, pmselr_el0);
+ 
+-		hctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++		hctxt = host_data_ptr(host_ctxt);
+ 		ctxt_sys_reg(hctxt, PMUSERENR_EL0) = read_sysreg(pmuserenr_el0);
+ 		write_sysreg(ARMV8_PMU_USERENR_MASK, pmuserenr_el0);
+ 		vcpu_set_flag(vcpu, PMUSERENR_ON_CPU);
+@@ -228,7 +228,7 @@ static inline void __deactivate_traps_common(struct kvm_vcpu *vcpu)
+ 	if (kvm_arm_support_pmu_v3()) {
+ 		struct kvm_cpu_context *hctxt;
+ 
+-		hctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++		hctxt = host_data_ptr(host_ctxt);
+ 		write_sysreg(ctxt_sys_reg(hctxt, PMUSERENR_EL0), pmuserenr_el0);
+ 		vcpu_clear_flag(vcpu, PMUSERENR_ON_CPU);
+ 	}
+diff --git a/arch/arm64/kvm/hyp/nvhe/psci-relay.c b/arch/arm64/kvm/hyp/nvhe/psci-relay.c
+index d57bcb6ab94d..dfe8fe0f7eaf 100644
+--- a/arch/arm64/kvm/hyp/nvhe/psci-relay.c
++++ b/arch/arm64/kvm/hyp/nvhe/psci-relay.c
+@@ -205,7 +205,7 @@ asmlinkage void __noreturn __kvm_host_psci_cpu_entry(bool is_cpu_on)
+ 	struct psci_boot_args *boot_args;
+ 	struct kvm_cpu_context *host_ctxt;
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 
+ 	if (is_cpu_on)
+ 		boot_args = this_cpu_ptr(&cpu_on_args);
+diff --git a/arch/arm64/kvm/hyp/nvhe/setup.c b/arch/arm64/kvm/hyp/nvhe/setup.c
+index bc58d1b515af..ae00dfa80801 100644
+--- a/arch/arm64/kvm/hyp/nvhe/setup.c
++++ b/arch/arm64/kvm/hyp/nvhe/setup.c
+@@ -257,8 +257,7 @@ static int fix_hyp_pgtable_refcnt(void)
+ 
+ void __noreturn __pkvm_init_finalise(void)
+ {
+-	struct kvm_host_data *host_data = this_cpu_ptr(&kvm_host_data);
+-	struct kvm_cpu_context *host_ctxt = &host_data->host_ctxt;
++	struct kvm_cpu_context *host_ctxt = host_data_ptr(host_ctxt);
+ 	unsigned long nr_pages, reserved_pages, pfn;
+ 	int ret;
+ 
+diff --git a/arch/arm64/kvm/hyp/nvhe/switch.c b/arch/arm64/kvm/hyp/nvhe/switch.c
+index 27ad6933bec0..19d4b0dc82c9 100644
+--- a/arch/arm64/kvm/hyp/nvhe/switch.c
++++ b/arch/arm64/kvm/hyp/nvhe/switch.c
+@@ -302,7 +302,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+ 		pmr_sync();
+ 	}
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 	host_ctxt->__hyp_running_vcpu = vcpu;
+ 	guest_ctxt = &vcpu->arch.ctxt;
+ 
+@@ -405,7 +405,7 @@ asmlinkage void __noreturn hyp_panic(void)
+ 	struct kvm_cpu_context *host_ctxt;
+ 	struct kvm_vcpu *vcpu;
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 	vcpu = host_ctxt->__hyp_running_vcpu;
+ 
+ 	if (vcpu) {
+diff --git a/arch/arm64/kvm/hyp/vhe/switch.c b/arch/arm64/kvm/hyp/vhe/switch.c
+index 31304da0d617..52750ab7570d 100644
+--- a/arch/arm64/kvm/hyp/vhe/switch.c
++++ b/arch/arm64/kvm/hyp/vhe/switch.c
+@@ -206,7 +206,7 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
+ 	struct kvm_cpu_context *guest_ctxt;
+ 	u64 exit_code;
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 	host_ctxt->__hyp_running_vcpu = vcpu;
+ 	guest_ctxt = &vcpu->arch.ctxt;
+ 
+@@ -301,7 +301,7 @@ static void __hyp_call_panic(u64 spsr, u64 elr, u64 par)
+ 	struct kvm_cpu_context *host_ctxt;
+ 	struct kvm_vcpu *vcpu;
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 	vcpu = host_ctxt->__hyp_running_vcpu;
+ 
+ 	__deactivate_traps(vcpu);
+diff --git a/arch/arm64/kvm/hyp/vhe/sysreg-sr.c b/arch/arm64/kvm/hyp/vhe/sysreg-sr.c
+index b35a178e7e0d..5ca8f7485318 100644
+--- a/arch/arm64/kvm/hyp/vhe/sysreg-sr.c
++++ b/arch/arm64/kvm/hyp/vhe/sysreg-sr.c
+@@ -67,7 +67,7 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
+ 	struct kvm_cpu_context *guest_ctxt = &vcpu->arch.ctxt;
+ 	struct kvm_cpu_context *host_ctxt;
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 	__sysreg_save_user_state(host_ctxt);
+ 
+ 	/*
+@@ -112,7 +112,7 @@ void kvm_vcpu_put_sysregs_vhe(struct kvm_vcpu *vcpu)
+ 	struct kvm_cpu_context *guest_ctxt = &vcpu->arch.ctxt;
+ 	struct kvm_cpu_context *host_ctxt;
+ 
+-	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	host_ctxt = host_data_ptr(host_ctxt);
+ 	deactivate_traps_vhe_put(vcpu);
+ 
+ 	__sysreg_save_el1_state(guest_ctxt);
+diff --git a/arch/arm64/kvm/pmu.c b/arch/arm64/kvm/pmu.c
+index a243934c5568..329819806096 100644
+--- a/arch/arm64/kvm/pmu.c
++++ b/arch/arm64/kvm/pmu.c
+@@ -232,7 +232,7 @@ bool kvm_set_pmuserenr(u64 val)
+ 	if (!vcpu || !vcpu_get_flag(vcpu, PMUSERENR_ON_CPU))
+ 		return false;
+ 
+-	hctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
++	hctxt = host_data_ptr(host_ctxt);
+ 	ctxt_sys_reg(hctxt, PMUSERENR_EL0) = val;
+ 	return true;
+ }
+-- 
+2.43.0
+

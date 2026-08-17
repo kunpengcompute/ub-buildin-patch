@@ -1,0 +1,52 @@
+From 8672328dde82c910d37146be64ebcd162deea6a4 Mon Sep 17 00:00:00 2001
+From: Lukas Bulwahn <lukas.bulwahn@gmail.com>
+Date: Mon, 22 Jan 2024 10:25:04 +0100
+Subject: [PATCH 074/960] mempolicy: clean up minor dead code in
+ queue_pages_test_walk()
+
+commit 3efbe13e361acfd163fd1a2466e4fb9bed7dc1b0 upstream.
+
+Commit 2cafb582173f ("mempolicy: remove confusing MPOL_MF_LAZY dead code")
+removes MPOL_MF_LAZY handling in queue_pages_test_walk(), and with that,
+there is no effective use of the local variable endvma in that function
+remaining.
+
+Remove the local variable endvma and its dead code. No functional change.
+
+This issue was identified with clang-analyzer's dead stores analysis.
+
+Link: https://lkml.kernel.org/r/20240122092504.18377-1-lukas.bulwahn@gmail.com
+Signed-off-by: Lukas Bulwahn <lukas.bulwahn@gmail.com>
+Cc: Hugh Dickins <hughd@google.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Quanmin Yan <yanquanmin1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/mempolicy.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/mm/mempolicy.c b/mm/mempolicy.c
+index ff6e13d36410..04266b0d7ea6 100644
+--- a/mm/mempolicy.c
++++ b/mm/mempolicy.c
+@@ -722,7 +722,6 @@ static int queue_pages_test_walk(unsigned long start, unsigned long end,
+ {
+ 	struct vm_area_struct *next, *vma = walk->vma;
+ 	struct queue_pages *qp = walk->private;
+-	unsigned long endvma = vma->vm_end;
+ 	unsigned long flags = qp->flags;
+ 
+ 	/* range check first */
+@@ -750,9 +749,6 @@ static int queue_pages_test_walk(unsigned long start, unsigned long end,
+ 	    !(flags & MPOL_MF_STRICT))
+ 		return 1;
+ 
+-	if (endvma > end)
+-		endvma = end;
+-
+ 	/*
+ 	 * Check page nodes, and queue pages to move, in the current vma.
+ 	 * But if no moving, and no strict checking, the scan can be skipped.
+-- 
+2.43.0
+

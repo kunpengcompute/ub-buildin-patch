@@ -1,0 +1,44 @@
+From 3e4fd30defe147a678db0d8d5b7fe41de86c0679 Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@kernel.org>
+Date: Thu, 6 Oct 2022 18:21:35 +0100
+Subject: [PATCH 493/960] downstream: arm64/hyp-stub: Enable access to ALLINT
+
+In order to use NMIs we need to ensure that traps are disabled for it so
+update HCRX_EL2 to ensure that TALLINT is not set when we detect support
+for NMIs.
+
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/hyp-stub.S | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/arch/arm64/kernel/hyp-stub.S b/arch/arm64/kernel/hyp-stub.S
+index 65f76064c86b..731344c90871 100644
+--- a/arch/arm64/kernel/hyp-stub.S
++++ b/arch/arm64/kernel/hyp-stub.S
+@@ -76,6 +76,18 @@ SYM_CODE_END(elx_sync)
+ SYM_CODE_START_LOCAL(__finalise_el2)
+ 	finalise_el2_state
+ 
++	// NMIs
++	check_override id_aa64pfr1 ID_AA64PFR1_EL1_NMI_SHIFT .Linit_nmi .Lskip_nmi x1 x2
++.Linit_nmi:
++	mrs	x1, id_aa64mmfr1_el1		// HCRX_EL2 present?
++	ubfx	x1, x1, #ID_AA64MMFR1_EL1_HCX_SHIFT, #4
++	cbz	x1, .Lskip_nmi
++
++	mrs_s	x1, SYS_HCRX_EL2
++	bic	x1, x1, #HCRX_EL2_TALLINT_MASK	// Don't trap ALLINT
++	msr_s	SYS_HCRX_EL2, x1
++.Lskip_nmi:
++
+ 	// nVHE? No way! Give me the real thing!
+ 	// Sanity check: MMU *must* be off
+ 	mrs	x1, sctlr_el2
+-- 
+2.43.0
+

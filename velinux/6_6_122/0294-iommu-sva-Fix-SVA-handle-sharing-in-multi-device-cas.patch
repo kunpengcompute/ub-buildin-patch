@@ -1,0 +1,47 @@
+From 92a1247a8493ac5541e26da5e9b309a35eb76394 Mon Sep 17 00:00:00 2001
+From: Zhangfei Gao <zhangfei.gao@linaro.org>
+Date: Tue, 27 Feb 2024 06:48:21 +0000
+Subject: [PATCH 294/960] iommu/sva: Fix SVA handle sharing in multi device
+ case
+
+commit 6384c56c99d98c84afea5b9ec7029a6e153ae431 upstream.
+
+iommu_sva_bind_device will directly goto out in multi-device
+case when found existing domain, ignoring list_add handle,
+which causes the handle to fail to be shared.
+
+Fixes: 65d4418c5002 ("iommu/sva: Restore SVA handle sharing")
+Signed-off-by: Zhangfei Gao <zhangfei.gao@linaro.org>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Reviewed-by: Lu Baolu <baolu.lu@linux.intel.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Link: https://lore.kernel.org/r/20240227064821.128-1-zhangfei.gao@linaro.org
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommu-sva.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/iommu/iommu-sva.c b/drivers/iommu/iommu-sva.c
+index 73c9e499fb5f..887d6812f6cd 100644
+--- a/drivers/iommu/iommu-sva.c
++++ b/drivers/iommu/iommu-sva.c
+@@ -121,11 +121,11 @@ struct iommu_sva *iommu_sva_bind_device(struct device *dev, struct mm_struct *mm
+ 	if (ret)
+ 		goto out_free_domain;
+ 	domain->users = 1;
+-	refcount_set(&handle->users, 1);
+ 	list_add(&domain->next, &mm->iommu_mm->sva_domains);
+-	list_add(&handle->handle_item, &mm->iommu_mm->sva_handles);
+ 
+ out:
++	refcount_set(&handle->users, 1);
++	list_add(&handle->handle_item, &mm->iommu_mm->sva_handles);
+ 	mutex_unlock(&iommu_sva_lock);
+ 	handle->dev = dev;
+ 	handle->domain = domain;
+-- 
+2.43.0
+

@@ -1,0 +1,36 @@
+From cf37bf72ed636c7ac643b3fed04dccee8c2ab641 Mon Sep 17 00:00:00 2001
+From: Zenghui Yu <yuzenghui@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:13 +0800
+Subject: [PATCH 538/960] downstream: KVM: arm64: GICv4.1: Allow non-trapping
+ WFI when using direct vtimer interrupt
+
+It's beneficial to avoid trapping on WFI when the vcpu is using the
+direct delivered vtimer interrupt.
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_emulate.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/arm64/include/asm/kvm_emulate.h b/arch/arm64/include/asm/kvm_emulate.h
+index 9579ab0646a9..7a7039a395f5 100644
+--- a/arch/arm64/include/asm/kvm_emulate.h
++++ b/arch/arm64/include/asm/kvm_emulate.h
+@@ -112,6 +112,9 @@ static inline void vcpu_clear_wfx_traps(struct kvm_vcpu *vcpu)
+ {
+ 	vcpu->arch.hcr_el2 &= ~HCR_TWE;
+ 	if (atomic_read(&vcpu->arch.vgic_cpu.vgic_v3.its_vpe.vlpi_count) ||
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	    vcpu->arch.vgic_cpu.vtimier_irqbypass ||
++#endif
+ 	    vcpu->kvm->arch.vgic.nassgireq)
+ 		vcpu->arch.hcr_el2 &= ~HCR_TWI;
+ 	else
+-- 
+2.43.0
+

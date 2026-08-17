@@ -1,0 +1,158 @@
+From d2cd98fdfd332c8206a30ad4c11f9182c18211db Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 23 Apr 2025 18:51:48 +0800
+Subject: [PATCH 705/960] downstream: fs/resctrl: Fix configuration to wrong
+ control group when CDP is enabled
+
+When CDP is enabled, but the resource like MATA doesn't support it, we need
+to apply the same configuration to both of the CDP_CODE and CDP_DATA
+partids.
+
+In mpam_apply_config(), it will synchronize the configuration to the wrong
+comp->cfg[partid]. We will first update the staged_config with correct
+conf_type and then update the configuration to the comp->cfg corresponding
+to the partid by resctrl_arch_update_one().
+
+In the same way, when get configuration from schemata interface by
+resctrl_arch_get_config(), we need to get the configuration of the
+CDP_CODE partid.
+
+Fixes: 58db5c68e84a ("untested: arm_mpam: resctrl: Add support for MB resource")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 31 +++++++++++-----------------
+ fs/resctrl/ctrlmondata.c             | 28 ++++++++++++++++++++++---
+ include/linux/arm_mpam.h             |  1 +
+ 3 files changed, 38 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 09b5a8022f97..c13915e0b448 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -119,7 +119,7 @@ int resctrl_arch_set_cdp_enabled(enum resctrl_res_level ignored, bool enable)
+ 	return 0;
+ }
+ 
+-static bool mpam_resctrl_hide_cdp(enum resctrl_res_level rid)
++bool resctrl_arch_hide_cdp(enum resctrl_res_level rid)
+ {
+ 	return cdp_enabled && !resctrl_arch_get_cdp_enabled(rid);
+ }
+@@ -912,7 +912,16 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+ 	cprops = &res->class->props;
+ 
+-	partid = resctrl_get_config_index(closid, type);
++	/*
++	 * When CDP is enabled, but the resource doesn't support it, we
++	 * need to get the configuration from the CDP_CODE resctrl_conf_type
++	 * which is same as the CDP_DATA one.
++	 */
++	if (resctrl_arch_hide_cdp(r->rid))
++		partid = resctrl_get_config_index(closid, CDP_CODE);
++	else
++		partid = resctrl_get_config_index(closid, type);
++
+ 	cfg = &dom->comp->cfg[partid];
+ 
+ 	switch (r->rid) {
+@@ -954,7 +963,6 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 			    u32 closid, enum resctrl_conf_type t, u32 cfg_val)
+ {
+-	int err;
+ 	u32 partid;
+ 	struct mpam_config cfg;
+ 	struct mpam_props *cprops;
+@@ -997,22 +1005,7 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 		return -EINVAL;
+ 	}
+ 
+-	/*
+-	 * When CDP is enabled, but the resource doesn't support it, we need to
+-	 * apply the same configuration to the other partid.
+-	 */
+-	if (mpam_resctrl_hide_cdp(r->rid)) {
+-		partid = resctrl_get_config_index(closid, CDP_CODE);
+-		err = mpam_apply_config(dom->comp, partid, &cfg);
+-		if (err)
+-			return err;
+-
+-		partid = resctrl_get_config_index(closid, CDP_DATA);
+-		return mpam_apply_config(dom->comp, partid, &cfg);
+-
+-	} else {
+-		return mpam_apply_config(dom->comp, partid, &cfg);
+-	}
++	return mpam_apply_config(dom->comp, partid, &cfg);
+ }
+ 
+ /* TODO: this is IPI heavy */
+diff --git a/fs/resctrl/ctrlmondata.c b/fs/resctrl/ctrlmondata.c
+index ae9584be4348..e57faaf11189 100644
+--- a/fs/resctrl/ctrlmondata.c
++++ b/fs/resctrl/ctrlmondata.c
+@@ -71,15 +71,15 @@ static bool bw_validate(char *buf, u32 *data, struct rdt_resource *r)
+ 	return true;
+ }
+ 
+-static int parse_bw(struct rdt_parse_data *data, struct resctrl_schema *s,
+-		    struct rdt_domain *d)
++static int parse_bw_conf_type(struct rdt_parse_data *data, struct resctrl_schema *s,
++			      struct rdt_domain *d, enum resctrl_conf_type conf_type)
+ {
+ 	struct resctrl_staged_config *cfg;
+ 	u32 closid = data->rdtgrp->closid;
+ 	struct rdt_resource *r = s->res;
+ 	u32 bw_val;
+ 
+-	cfg = &d->staged_config[s->conf_type];
++	cfg = &d->staged_config[conf_type];
+ 	if (cfg->have_new_ctrl) {
+ 		rdt_last_cmd_printf("Duplicate domain %d\n", d->id);
+ 		return -EINVAL;
+@@ -99,6 +99,28 @@ static int parse_bw(struct rdt_parse_data *data, struct resctrl_schema *s,
+ 	return 0;
+ }
+ 
++static int parse_bw(struct rdt_parse_data *data, struct resctrl_schema *s,
++		    struct rdt_domain *d)
++{
++	struct rdt_resource *r = s->res;
++	int err;
++
++	/*
++	 * When CDP is enabled, but the resource doesn't support it, we
++	 * need to apply the same configuration to both of the CDP_CODE
++	 * and CDP_DATA resctrl_conf_type.
++	 */
++	if (resctrl_arch_hide_cdp(r->rid)) {
++		err = parse_bw_conf_type(data, s, d, CDP_CODE);
++		if (err)
++			return err;
++
++		return parse_bw_conf_type(data, s, d, CDP_DATA);
++	}
++
++	return parse_bw_conf_type(data, s, d, s->conf_type);
++}
++
+ /*
+  * Check whether a cache bit mask is valid.
+  * On Intel CPUs, non-contiguous 1s value support is indicated by CPUID:
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index 9028bdc8daec..9f9fc7c29130 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -73,6 +73,7 @@ void resctrl_arch_reset_resources(void);
+ 
+ bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level ignored);
+ int resctrl_arch_set_cdp_enabled(enum resctrl_res_level ignored, bool enable);
++bool resctrl_arch_hide_cdp(enum resctrl_res_level rid);
+ bool resctrl_arch_match_closid(struct task_struct *tsk, u32 closid);
+ bool resctrl_arch_match_rmid(struct task_struct *tsk, u32 closid, u32 rmid);
+ void resctrl_arch_set_cpu_default_closid(int cpu, u32 closid);
+-- 
+2.43.0
+

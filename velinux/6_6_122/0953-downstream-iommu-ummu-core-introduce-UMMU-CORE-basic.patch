@@ -1,0 +1,128 @@
+From eea9bd1f4527f5e558998a9078dffb91c9e8f249 Mon Sep 17 00:00:00 2001
+From: Lei Gong <gonglei25@huawei.com>
+Date: Thu, 21 Aug 2025 14:42:39 +0800
+Subject: [PATCH 953/960] downstream: iommu/ummu-core: introduce UMMU-CORE,
+ basic configs
+
+We introduce ummu-core, which acts as an extension of the current IOMMU
+Framework. This patch initializes basic ummu-core configs. To keep the
+flexibility of utilizing, the ummu-core can be compiled to a module or
+built-in kernel image.
+
+UMMU-CORE provides fundamental interfaces for ummu drivers to manage
+ummu resources. It also provides public interfaces and defines programming
+model to ub drivers.
+
+The ummu driver must select ummu-core kconfigs.
+
+Signed-off-by: Yuhao Zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Lei Gong <gonglei25@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64                             |  5 +++++
+ config.aarch64-64k                         |  5 +++++
+ drivers/iommu/Kconfig                      |  1 +
+ drivers/iommu/Makefile                     |  2 +-
+ drivers/iommu/hisilicon/Kconfig            |  6 ++++++
+ drivers/iommu/hisilicon/Makefile           |  3 +++
+ drivers/iommu/hisilicon/ummu-core/Kconfig  | 11 +++++++++++
+ drivers/iommu/hisilicon/ummu-core/Makefile |  0
+ 8 files changed, 32 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/iommu/hisilicon/Kconfig
+ create mode 100644 drivers/iommu/hisilicon/Makefile
+ create mode 100644 drivers/iommu/hisilicon/ummu-core/Kconfig
+ create mode 100644 drivers/iommu/hisilicon/ummu-core/Makefile
+
+diff --git a/config.aarch64 b/config.aarch64
+index 6dd46e2790a7..f36cfb4ecd39 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -11021,3 +11021,8 @@ CONFIG_ARM_GIC_V3_ITS_UBUS=y
+ CONFIG_UDFI=y
+ 
+ # end of unified bus
++
++# UMMU
++CONFIG_UB_UMMU_CORE=y
++CONFIG_UB_UMMU_CORE_DRIVER=m
++# end of UMMU
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 4a91ef320e08..05ef12dd16f7 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -11002,3 +11002,8 @@ CONFIG_UB_UBUS_USI=y
+ CONFIG_ARM_GIC_V3_ITS_UBUS=y
+ 
+ # end of unified bus
++
++# UMMU
++CONFIG_UB_UMMU_CORE=y
++CONFIG_UB_UMMU_CORE_DRIVER=m
++# end of UMMU
+diff --git a/drivers/iommu/Kconfig b/drivers/iommu/Kconfig
+index 4c997a005c24..ef9e1ded6149 100644
+--- a/drivers/iommu/Kconfig
++++ b/drivers/iommu/Kconfig
+@@ -203,6 +203,7 @@ config MSM_IOMMU
+ source "drivers/iommu/amd/Kconfig"
+ source "drivers/iommu/intel/Kconfig"
+ source "drivers/iommu/iommufd/Kconfig"
++source "drivers/iommu/hisilicon/Kconfig"
+ 
+ config IRQ_REMAP
+ 	bool "Support for Interrupt Remapping"
+diff --git a/drivers/iommu/Makefile b/drivers/iommu/Makefile
+index 542760d963ec..b7434502555b 100644
+--- a/drivers/iommu/Makefile
++++ b/drivers/iommu/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
+-obj-y += amd/ intel/ arm/ iommufd/
++obj-y += amd/ intel/ arm/ iommufd/ hisilicon/
+ obj-$(CONFIG_IOMMU_API) += iommu.o
+ obj-$(CONFIG_IOMMU_API) += iommu-traces.o
+ obj-$(CONFIG_IOMMU_API) += iommu-sysfs.o
+diff --git a/drivers/iommu/hisilicon/Kconfig b/drivers/iommu/hisilicon/Kconfig
+new file mode 100644
+index 000000000000..76acd888b65e
+--- /dev/null
++++ b/drivers/iommu/hisilicon/Kconfig
+@@ -0,0 +1,6 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# Hisilicon UMMU support
++#
++
++source "drivers/iommu/hisilicon/ummu-core/Kconfig"
+diff --git a/drivers/iommu/hisilicon/Makefile b/drivers/iommu/hisilicon/Makefile
+new file mode 100644
+index 000000000000..e32879971f3f
+--- /dev/null
++++ b/drivers/iommu/hisilicon/Makefile
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0+
++
++obj-y += ummu-core/
+diff --git a/drivers/iommu/hisilicon/ummu-core/Kconfig b/drivers/iommu/hisilicon/ummu-core/Kconfig
+new file mode 100644
+index 000000000000..64c2dc4235c7
+--- /dev/null
++++ b/drivers/iommu/hisilicon/ummu-core/Kconfig
+@@ -0,0 +1,11 @@
++# SPDX-License-Identifier: GPL-2.0+
++
++config UB_UMMU_CORE
++	bool "UMMU Framework Builtin API"
++	default n
++	depends on UB_UBUS
++	help
++	  Enable the UMMU framework and configure this config, as the kernel
++	  provides the basic functionality for using UB features. This config
++	  is built-in by default if you are using UB features.
++	  Say 'Y' here if you are using UB.
+diff --git a/drivers/iommu/hisilicon/ummu-core/Makefile b/drivers/iommu/hisilicon/ummu-core/Makefile
+new file mode 100644
+index 000000000000..e69de29bb2d1
+-- 
+2.43.0
+

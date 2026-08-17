@@ -1,0 +1,94 @@
+From 8e7afa19b4112d9b8f6b470cfacf35256fb3a3f7 Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:47 +0800
+Subject: [PATCH 791/960] downstream: arm64: barrier: add support for
+ smp_cond_relaxed_timeout()
+
+Support a waited variant of polling on a conditional variable
+via smp_cond_relaxed_timeout().
+
+This uses the __cmpwait_relaxed() primitive to do the actual
+waiting, when the wait can be guaranteed to not block forever
+(in case there are no stores to the waited for cacheline.)
+For this we depend on the availability of the event-stream.
+
+For cases when the event-stream is unavailable, we fallback to
+a spin-waited implementation which is identical to the generic
+variant.
+
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/barrier.h | 54 ++++++++++++++++++++++++++++++++
+ 1 file changed, 54 insertions(+)
+
+diff --git a/arch/arm64/include/asm/barrier.h b/arch/arm64/include/asm/barrier.h
+index 1ca947d5c939..ab2515ecd6ca 100644
+--- a/arch/arm64/include/asm/barrier.h
++++ b/arch/arm64/include/asm/barrier.h
+@@ -216,6 +216,60 @@ do {									\
+ 	(typeof(*ptr))VAL;						\
+ })
+ 
++#define __smp_cond_load_timeout_spin(ptr, cond_expr,			\
++				     time_expr_ns, time_limit_ns)	\
++({									\
++	typeof(ptr) __PTR = (ptr);					\
++	__unqual_scalar_typeof(*ptr) VAL;				\
++	unsigned int __count = 0;					\
++	for (;;) {							\
++		VAL = READ_ONCE(*__PTR);				\
++		if (cond_expr)						\
++			break;						\
++		cpu_relax();						\
++		if (__count++ < smp_cond_time_check_count)		\
++			continue;					\
++		if ((time_expr_ns) >= time_limit_ns)			\
++			break;						\
++		__count = 0;						\
++	}								\
++	(typeof(*ptr))VAL;						\
++})
++
++#define __smp_cond_load_timeout_wait(ptr, cond_expr,			\
++				     time_expr_ns, time_limit_ns)	\
++({									\
++	typeof(ptr) __PTR = (ptr);					\
++	__unqual_scalar_typeof(*ptr) VAL;				\
++	for (;;) {							\
++		VAL = READ_ONCE(*__PTR);				\
++		if (cond_expr)						\
++			break;						\
++		__cmpwait_relaxed(__PTR, VAL);				\
++		if ((time_expr_ns) >= time_limit_ns)			\
++			break;						\
++	}								\
++	(typeof(*ptr))VAL;						\
++})
++
++#define smp_cond_load_relaxed_timeout(ptr, cond_expr,			\
++				      time_expr_ns, time_limit_ns)	\
++({									\
++	__unqual_scalar_typeof(*ptr) _val;				\
++									\
++	int __wfe = arch_timer_evtstrm_available();			\
++	if (likely(__wfe))						\
++		_val = __smp_cond_load_timeout_wait(ptr, cond_expr,	\
++						   time_expr_ns,	\
++						   time_limit_ns);	\
++	else								\
++		_val = __smp_cond_load_timeout_spin(ptr, cond_expr,	\
++						   time_expr_ns,	\
++						   time_limit_ns);	\
++	(typeof(*ptr))_val;						\
++})
++
++
+ #include <asm-generic/barrier.h>
+ 
+ #endif	/* __ASSEMBLY__ */
+-- 
+2.43.0
+

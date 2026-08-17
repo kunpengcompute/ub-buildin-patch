@@ -1,0 +1,103 @@
+From 8b940605159a66b0ce6f6c577b36ad9d2603cc93 Mon Sep 17 00:00:00 2001
+From: Gregory Price <gourry.memverge@gmail.com>
+Date: Fri, 2 Feb 2024 12:02:38 -0500
+Subject: [PATCH 073/960] mm/mempolicy: protect task interleave functions with
+ tsk->mems_allowed_seq
+
+commit 274519ed414bd2b9a77c5db78ee51778d37ceacf upstream.
+
+In the event of rebind, pol->nodemask can change at the same time as an
+allocation occurs.  We can detect this with tsk->mems_allowed_seq and
+prevent a miscount or an allocation failure from occurring.
+
+The same thing happens in the allocators to detect failure, but this can
+prevent spurious failures in a much smaller critical section.
+
+[gourry.memverge@gmail.com: weighted interleave checks wrong parameter]
+  Link: https://lkml.kernel.org/r/20240206192853.3589-1-gregory.price@memverge.com
+Link: https://lkml.kernel.org/r/20240202170238.90004-5-gregory.price@memverge.com
+Signed-off-by: Gregory Price <gregory.price@memverge.com>
+Suggested-by: "Huang, Ying" <ying.huang@intel.com>
+Cc: Dan Williams <dan.j.williams@intel.com>
+Cc: Hasan Al Maruf <Hasan.Maruf@amd.com>
+Cc: Honggyu Kim <honggyu.kim@sk.com>
+Cc: Hyeongtak Ji <hyeongtak.ji@sk.com>
+Cc: Johannes Weiner <hannes@cmpxchg.org>
+Cc: Jonathan Corbet <corbet@lwn.net>
+Cc: Michal Hocko <mhocko@kernel.org>
+Cc: Rakie Kim <rakie.kim@sk.com>
+Cc: Ravi Jonnalagadda <ravis.opensrc@micron.com>
+Cc: Srinivasulu Thanneeru <sthanneeru.opensrc@micron.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Quanmin Yan <yanquanmin1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/mempolicy.c | 27 +++++++++++++++++++++++----
+ 1 file changed, 23 insertions(+), 4 deletions(-)
+
+diff --git a/mm/mempolicy.c b/mm/mempolicy.c
+index 1c0753ba50a5..ff6e13d36410 100644
+--- a/mm/mempolicy.c
++++ b/mm/mempolicy.c
+@@ -1933,11 +1933,17 @@ bool apply_policy_zone(struct mempolicy *policy, enum zone_type zone)
+ 
+ static unsigned int weighted_interleave_nodes(struct mempolicy *policy)
+ {
+-	unsigned int node = current->il_prev;
++	unsigned int node;
++	unsigned int cpuset_mems_cookie;
+ 
++retry:
++	/* to prevent miscount use tsk->mems_allowed_seq to detect rebind */
++	cpuset_mems_cookie = read_mems_allowed_begin();
++	node = current->il_prev;
+ 	if (!current->il_weight || !node_isset(node, policy->nodes)) {
+ 		node = next_node_in(node, policy->nodes);
+-		/* can only happen if nodemask is being rebound */
++		if (read_mems_allowed_retry(cpuset_mems_cookie))
++			goto retry;
+ 		if (node == MAX_NUMNODES)
+ 			return node;
+ 		current->il_prev = node;
+@@ -1951,8 +1957,14 @@ static unsigned int weighted_interleave_nodes(struct mempolicy *policy)
+ static unsigned int interleave_nodes(struct mempolicy *policy)
+ {
+ 	unsigned int nid;
++	unsigned int cpuset_mems_cookie;
++
++	/* to prevent miscount, use tsk->mems_allowed_seq to detect rebind */
++	do {
++		cpuset_mems_cookie = read_mems_allowed_begin();
++		nid = next_node_in(current->il_prev, policy->nodes);
++	} while (read_mems_allowed_retry(cpuset_mems_cookie));
+ 
+-	nid = next_node_in(current->il_prev, policy->nodes);
+ 	if (nid < MAX_NUMNODES)
+ 		current->il_prev = nid;
+ 	return nid;
+@@ -2430,6 +2442,7 @@ static unsigned long alloc_pages_bulk_array_weighted_interleave(gfp_t gfp,
+ 		struct page **page_array)
+ {
+ 	struct task_struct *me = current;
++	unsigned int cpuset_mems_cookie;
+ 	unsigned long total_allocated = 0;
+ 	unsigned long nr_allocated = 0;
+ 	unsigned long rounds;
+@@ -2447,7 +2460,13 @@ static unsigned long alloc_pages_bulk_array_weighted_interleave(gfp_t gfp,
+ 	if (!nr_pages)
+ 		return 0;
+ 
+-	nnodes = read_once_policy_nodemask(pol, &nodes);
++	/* read the nodes onto the stack, retry if done during rebind */
++	do {
++		cpuset_mems_cookie = read_mems_allowed_begin();
++		nnodes = read_once_policy_nodemask(pol, &nodes);
++	} while (read_mems_allowed_retry(cpuset_mems_cookie));
++
++	/* if the nodemask has become invalid, we cannot do anything */
+ 	if (!nnodes)
+ 		return 0;
+ 
+-- 
+2.43.0
+

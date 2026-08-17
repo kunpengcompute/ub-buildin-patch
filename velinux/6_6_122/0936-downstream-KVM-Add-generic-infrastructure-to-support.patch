@@ -1,0 +1,136 @@
+From cdcdb53cee4408f364c25e18fe83b374b1ec76f1 Mon Sep 17 00:00:00 2001
+From: YeBiaoXiang <yebiaoxiang@huawei.com>
+Date: Fri, 25 Apr 2025 18:02:10 +0800
+Subject: [PATCH 936/960] downstream: KVM: Add generic infrastructure to
+ support pinned VMIDs
+
+Provide generic helper functions to get/put pinned VMIDs if the arch
+Provide interfaces to get/put pinned VMIDs from KVM VMID allocator.
+This will be used by ummu driver in subsequent patch.
+
+Signed-off-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: YeBiaoXiang <yebiaoxiang@huawei.com>
+Signed-off-by: yuhao_zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/Kconfig   |  1 +
+ arch/arm64/kvm/arm.c     | 14 ++++++++++++++
+ include/linux/kvm_host.h | 16 ++++++++++++++++
+ virt/kvm/Kconfig         |  3 +++
+ virt/kvm/kvm_main.c      | 23 +++++++++++++++++++++++
+ 5 files changed, 57 insertions(+)
+
+diff --git a/arch/arm64/kvm/Kconfig b/arch/arm64/kvm/Kconfig
+index f5a9852d26fa..8f4173169758 100644
+--- a/arch/arm64/kvm/Kconfig
++++ b/arch/arm64/kvm/Kconfig
+@@ -44,6 +44,7 @@ menuconfig KVM
+ 	select GUEST_PERF_EVENTS if PERF_EVENTS
+ 	select INTERVAL_TREE
+ 	select XARRAY_MULTI
++	select HAVE_KVM_PINNED_VMID
+ 	help
+ 	  Support hosting virtualized guest machines.
+ 
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index e97ecaeaedd2..6c7b039de969 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -844,6 +844,20 @@ int kvm_arch_vcpu_run_pid_change(struct kvm_vcpu *vcpu)
+ 	return ret;
+ }
+ 
++int kvm_arch_pinned_vmid_get(struct kvm *kvm)
++{
++	int vmid;
++
++	vmid = kvm_arm_pinned_vmid_get(&kvm->arch.mmu.vmid);
++
++	return (vmid == 0) ? -EINVAL : vmid;
++}
++
++void kvm_arch_pinned_vmid_put(struct kvm *kvm)
++{
++	kvm_arm_pinned_vmid_put(&kvm->arch.mmu.vmid);
++}
++
+ bool kvm_arch_intc_initialized(struct kvm *kvm)
+ {
+ 	return vgic_initialized(kvm);
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index 7c38fccba3e4..8a070e478eba 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -2323,6 +2323,22 @@ static inline void kvm_handle_signal_exit(struct kvm_vcpu *vcpu)
+ }
+ #endif /* CONFIG_KVM_XFER_TO_GUEST_WORK */
+ 
++#ifdef CONFIG_HAVE_KVM_PINNED_VMID
++int kvm_pinned_vmid_get(struct kvm *kvm);
++void kvm_pinned_vmid_put(struct kvm *kvm);
++int kvm_arch_pinned_vmid_get(struct kvm *kvm);
++void kvm_arch_pinned_vmid_put(struct kvm *kvm);
++#else
++static inline int kvm_pinned_vmid_get(struct kvm *kvm)
++{
++	return -EINVAL;
++}
++
++static inline void kvm_pinned_vmid_put(struct kvm *kvm)
++{
++}
++#endif
++
+ /*
+  * If more than one page is being (un)accounted, @virt must be the address of
+  * the first page of a block of pages what were allocated together (i.e
+diff --git a/virt/kvm/Kconfig b/virt/kvm/Kconfig
+index 484d0873061c..7e19e8ada121 100644
+--- a/virt/kvm/Kconfig
++++ b/virt/kvm/Kconfig
+@@ -92,3 +92,6 @@ config HAVE_KVM_PM_NOTIFIER
+ 
+ config KVM_GENERIC_HARDWARE_ENABLING
+        bool
++
++config HAVE_KVM_PINNED_VMID
++       bool
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index 44c228bcd699..922cdb1dc8a7 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -3639,6 +3639,29 @@ bool kvm_vcpu_wake_up(struct kvm_vcpu *vcpu)
+ }
+ EXPORT_SYMBOL_GPL(kvm_vcpu_wake_up);
+ 
++#ifdef CONFIG_HAVE_KVM_PINNED_VMID
++int kvm_pinned_vmid_get(struct kvm *kvm)
++{
++	int ret;
++
++	if (!kvm_get_kvm_safe(kvm))
++		return -ENOENT;
++	ret  = kvm_arch_pinned_vmid_get(kvm);
++	if (ret < 0)
++		kvm_put_kvm(kvm);
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(kvm_pinned_vmid_get);
++
++void kvm_pinned_vmid_put(struct kvm *kvm)
++{
++	kvm_arch_pinned_vmid_put(kvm);
++	kvm_put_kvm(kvm);
++}
++EXPORT_SYMBOL_GPL(kvm_pinned_vmid_put);
++#endif
++
+ #ifndef CONFIG_S390
+ /*
+  * Kick a sleeping VCPU, or a guest VCPU in guest mode, into host kernel mode.
+-- 
+2.43.0
+

@@ -1,0 +1,97 @@
+From 6945414267d964836d152f8aa41a899d01ee8686 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 25 Oct 2025 10:04:07 +0800
+Subject: [PATCH 780/960] downstream: fs/resctrl: Re-allocate rmid for the
+ monitor when migrating across control groups
+
+On x86 RDT, RMIDs are completely independent of CLOSIDs, so a monitor group
+can move between control groups freely without modifying rmid_entry.
+
+On ARM64 MPAM, however, a CLOSID owns a slice of RMID space. When migrate
+the monitor group to another control group, it should therefore re-allocate
+for a RMID tied to the new CLOSID.
+
+If the migrated monitor keeps the old CLOSID, tasks of the monitor will
+still adopt the previous CLOSID's settings and when the monitor group is
+later destroyed, the same rmid_entry will be added to the rmid_free_lru
+list twice, which corrupting the list.
+
+Fixes: 8da2b938eb7e ("x86/resctrl: Implement rename op for mon groups")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Quanmin Yan <yanquanmin1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/internal.h |  1 +
+ fs/resctrl/monitor.c  |  2 +-
+ fs/resctrl/rdtgroup.c | 17 +++++++++++++++++
+ 3 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/fs/resctrl/internal.h b/fs/resctrl/internal.h
+index 698af63a2803..d8498ed1480b 100644
+--- a/fs/resctrl/internal.h
++++ b/fs/resctrl/internal.h
+@@ -291,5 +291,6 @@ bool has_busy_rmid(struct rdt_domain *d);
+ void __check_limbo(struct rdt_domain *d, bool force_free);
+ void rdt_staged_configs_clear(void);
+ int resctrl_find_cleanest_closid(void);
++struct rmid_entry *resctrl_find_free_rmid(u32 closid);
+ 
+ #endif /* _FS_RESCTRL_INTERNAL_H */
+diff --git a/fs/resctrl/monitor.c b/fs/resctrl/monitor.c
+index a8f8b228b8c2..4f55614bbf8c 100644
+--- a/fs/resctrl/monitor.c
++++ b/fs/resctrl/monitor.c
+@@ -178,7 +178,7 @@ bool has_busy_rmid(struct rdt_domain *d)
+ 	return find_first_bit(d->rmid_busy_llc, idx_limit) != idx_limit;
+ }
+ 
+-static struct rmid_entry *resctrl_find_free_rmid(u32 closid)
++struct rmid_entry *resctrl_find_free_rmid(u32 closid)
+ {
+ 	struct rmid_entry *itr;
+ 	u32 itr_idx, cmp_idx;
+diff --git a/fs/resctrl/rdtgroup.c b/fs/resctrl/rdtgroup.c
+index e72023818115..bc8ade25deb7 100644
+--- a/fs/resctrl/rdtgroup.c
++++ b/fs/resctrl/rdtgroup.c
+@@ -3654,6 +3654,8 @@ static void mongrp_reparent(struct rdtgroup *rdtgrp,
+ 	list_move_tail(&rdtgrp->mon.crdtgrp_list,
+ 		       &new_prdtgrp->mon.crdtgrp_list);
+ 
++	free_rmid(rdtgrp->closid, rdtgrp->mon.rmid);
++	rdtgrp->mon.rmid = alloc_rmid(new_prdtgrp->closid);
+ 	rdtgrp->mon.parent = new_prdtgrp;
+ 	rdtgrp->closid = new_prdtgrp->closid;
+ 
+@@ -3667,6 +3669,7 @@ static int rdtgroup_rename(struct kernfs_node *kn,
+ 			   struct kernfs_node *new_parent, const char *new_name)
+ {
+ 	struct rdtgroup *new_prdtgrp;
++	struct rmid_entry *entry;
+ 	struct rdtgroup *rdtgrp;
+ 	cpumask_var_t tmpmask;
+ 	int ret;
+@@ -3725,6 +3728,20 @@ static int rdtgroup_rename(struct kernfs_node *kn,
+ 		goto out;
+ 	}
+ 
++	/*
++	 * Unlike RDT, the rmid and closid in MPAM have a hierarchical
++	 * relationship. Therefore, first check whether there are still
++	 * free rmids available under the target closid.
++	 */
++	if (IS_ENABLED(CONFIG_ARM64_MPAM)) {
++		entry = resctrl_find_free_rmid(new_prdtgrp->closid);
++		if (IS_ERR(entry)) {
++			rdt_last_cmd_puts("Destination has been out of RMIDs\n");
++			ret = PTR_ERR(entry);
++			goto out;
++		}
++	}
++
+ 	/*
+ 	 * Allocate the cpumask for use in mongrp_reparent() to avoid the
+ 	 * possibility of failing to allocate it after kernfs_rename() has
+-- 
+2.43.0
+

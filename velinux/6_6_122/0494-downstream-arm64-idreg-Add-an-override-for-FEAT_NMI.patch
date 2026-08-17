@@ -1,0 +1,32 @@
+From 4dc127c1dd70ff45d3c8537350a01d8587673513 Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@kernel.org>
+Date: Fri, 4 Nov 2022 18:08:06 +0000
+Subject: [PATCH 494/960] downstream: arm64/idreg: Add an override for FEAT_NMI
+
+Add a named override for FEAT_NMI, allowing it to be explicitly disabled
+in case of problems.
+
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/idreg-override.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm64/kernel/idreg-override.c b/arch/arm64/kernel/idreg-override.c
+index 3addc09f8746..6f248ef8c9d2 100644
+--- a/arch/arm64/kernel/idreg-override.c
++++ b/arch/arm64/kernel/idreg-override.c
+@@ -100,6 +100,7 @@ static const struct ftr_set_desc pfr1 __initconst = {
+ 	.fields		= {
+ 		FIELD("bt", ID_AA64PFR1_EL1_BT_SHIFT, NULL ),
+ 		FIELD("mte", ID_AA64PFR1_EL1_MTE_SHIFT, NULL),
++		FIELD("nmi", ID_AA64PFR1_EL1_NMI_SHIFT, NULL),
+ 		FIELD("sme", ID_AA64PFR1_EL1_SME_SHIFT, pfr1_sme_filter),
+ 		{}
+ 	},
+-- 
+2.43.0
+

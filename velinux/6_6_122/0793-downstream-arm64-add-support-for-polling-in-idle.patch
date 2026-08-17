@@ -1,0 +1,41 @@
+From 7aec490b618c0cbbd6678102710d93162dc91d23 Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:49 +0800
+Subject: [PATCH 793/960] downstream: arm64: add support for polling in idle
+
+Polling in idle with poll_idle() needs TIF_POLLING_NRFLAG support,
+and a cheap mechanism to do the actual polling via
+smp_cond_load_relaxed_timeout().
+
+Both of these are present on arm64. So, select ARCH_HAS_OPTIMIZED_POLL
+to enable it.
+
+Enabling this should help reduce the cost of remote wakeups, since if
+the target sets TIF_POLLING_NRFLAG (as it does while polling in idle),
+the scheduler does those just by setting the need-resched bit. This
+contrasts with sending an IPI, and incurring the cost of handling the
+interrupt on the receiver.
+
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/Kconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index 7facef7ac5cd..f8726e474fd4 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -35,6 +35,7 @@ config ARM64
+ 	select ARCH_HAS_NMI_SAFE_THIS_CPU_OPS
+ 	select ARCH_HAS_NON_OVERLAPPING_ADDRESS_SPACE
+ 	select ARCH_HAS_NONLEAF_PMD_YOUNG if ARM64_HAFT
++	select ARCH_HAS_OPTIMIZED_POLL
+ 	select ARCH_HAS_PTE_DEVMAP
+ 	select ARCH_HAS_PTE_SPECIAL
+ 	select ARCH_HAS_SETUP_DMA_OPS
+-- 
+2.43.0
+

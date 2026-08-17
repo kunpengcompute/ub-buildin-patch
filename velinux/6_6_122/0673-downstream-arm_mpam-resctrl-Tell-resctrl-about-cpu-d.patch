@@ -1,0 +1,71 @@
+From 21b15af80d0e3714f59945dbdbfc02d756ed6865 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:25 +0800
+Subject: [PATCH 673/960] downstream: arm_mpam: resctrl: Tell resctrl about
+ cpu/domain online/offline
+
+Now that mpam links against resctrl, call the cpu and domain
+online/offline calls at the appropriate point.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index c31f739513ad..b89f71dc7b70 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -823,7 +823,7 @@ int mpam_resctrl_setup(void)
+ 			pr_warn("Number of PMG is not a power of 2! resctrl may misbehave");
+ 		}
+ 
+-		/* TODO: call resctrl_init() */
++		err = resctrl_init();
+ 	}
+ 
+ 	return err;
+@@ -1077,7 +1077,7 @@ struct rdt_domain *resctrl_arch_find_domain(struct rdt_resource *r, int id)
+ 
+ int mpam_resctrl_online_cpu(unsigned int cpu)
+ {
+-	int i;
++	int i, err;
+ 	struct mpam_resctrl_dom *dom;
+ 	struct mpam_resctrl_res *res;
+ 
+@@ -1096,8 +1096,12 @@ int mpam_resctrl_online_cpu(unsigned int cpu)
+ 		dom = mpam_resctrl_alloc_domain(cpu, res);
+ 		if (IS_ERR(dom))
+ 			return PTR_ERR(dom);
++		err = resctrl_online_domain(&res->resctrl_res, &dom->resctrl_dom);
++		if (err)
++			return err;
+ 	}
+ 
++	resctrl_online_cpu(cpu);
+ 	return 0;
+ }
+ 
+@@ -1108,6 +1112,8 @@ int mpam_resctrl_offline_cpu(unsigned int cpu)
+ 	struct mpam_resctrl_res *res;
+ 	struct mpam_resctrl_dom *dom;
+ 
++	resctrl_offline_cpu(cpu);
++
+ 	for (i = 0; i < RDT_NUM_RESOURCES; i++) {
+ 		res = &mpam_resctrl_exports[i];
+ 
+@@ -1126,6 +1132,7 @@ int mpam_resctrl_offline_cpu(unsigned int cpu)
+ 		if (!cpumask_empty(&d->cpu_mask))
+ 			continue;
+ 
++		resctrl_offline_domain(&res->resctrl_res, &dom->resctrl_dom);
+ 		list_del(&d->list);
+ 		kfree(dom);
+ 	}
+-- 
+2.43.0
+

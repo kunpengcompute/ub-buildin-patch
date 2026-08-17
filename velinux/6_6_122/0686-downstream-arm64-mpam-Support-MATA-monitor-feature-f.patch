@@ -1,0 +1,44 @@
+From 15281f82e0f05144066d89ae9c7b345962b933d4 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 22 Feb 2025 11:55:09 +0800
+Subject: [PATCH 686/960] downstream: arm64/mpam: Support MATA monitor feature
+ for MPAM
+
+To support the MB monitoring feature, provide mbm_total_bytes interface
+under the resctrl fs to monitor the MATA memory bandwidth.
+
+To accommodate platforms where the number of MATA monitor resources is less
+than the number of closids, which prevents support for MB(Memory Bandwidth)
+monitoring features, we have removed this constraint.
+
+This allows bandwidth monitoring to operate in non-free running mode.
+
+Fixes: dc2005d467b3 ("untested: arm_mpam: resctrl: Add support for mbm counters")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 8 --------
+ 1 file changed, 8 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index b7549edabc3a..0aae0e61f36f 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -473,14 +473,6 @@ static bool class_has_usable_mbwu(struct mpam_class *class)
+ 	if (!mpam_has_feature(mpam_feat_msmon_mbwu, cprops))
+ 		return false;
+ 
+-	/*
+-	 * resctrl expects the bandwidth counters to be free running,
+-	 * which means we need as many monitors as resctrl has
+-	 * control/monitor groups.
+-	 */
+-	if (cprops->num_mbwu_mon < resctrl_arch_system_num_rmid_idx())
+-		return false;
+-
+ 	return (mpam_partid_max > 1) || (mpam_pmg_max != 0);
+ }
+ 
+-- 
+2.43.0
+

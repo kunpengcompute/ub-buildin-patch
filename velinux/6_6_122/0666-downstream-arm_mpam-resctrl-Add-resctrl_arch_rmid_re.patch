@@ -1,0 +1,128 @@
+From 3e573886935444559a435117e9a45f90965b1c71 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:18 +0800
+Subject: [PATCH 666/960] downstream: arm_mpam: resctrl: Add
+ resctrl_arch_rmid_read() and resctrl_arch_reset_rmid()
+
+resctrl uses resctrl_arch_rmid_read() to read counters. CDP emulation
+means the counter may need reading twice to get both the I and D side
+allocations. The same goes for reset.
+
+Add the rounding helper for checking monitor values while we're here.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 79 ++++++++++++++++++++++++++++
+ include/linux/arm_mpam.h             |  4 ++
+ 2 files changed, 83 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 431ef972a93c..4eef4b73db87 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -304,6 +304,85 @@ void resctrl_arch_mon_ctx_free(struct rdt_resource *r, int evtid,
+ 	}
+ }
+ 
++int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
++			   u32 closid, u32 rmid, enum resctrl_event_id eventid,
++			   u64 *val, void *arch_mon_ctx)
++{
++	int err;
++	u64 cdp_val;
++	struct mon_cfg cfg;
++	struct mpam_resctrl_dom *dom;
++	u32 mon = *(u32 *)arch_mon_ctx;
++	enum mpam_device_features type;
++
++	resctrl_arch_rmid_read_context_check();
++
++	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
++
++	switch (eventid) {
++	case QOS_L3_OCCUP_EVENT_ID:
++		type = mpam_feat_msmon_csu;
++		break;
++	case QOS_L3_MBM_LOCAL_EVENT_ID:
++	case QOS_L3_MBM_TOTAL_EVENT_ID:
++		type = mpam_feat_msmon_mbwu;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	cfg.mon = mon;
++	if (cfg.mon == USE_RMID_IDX)
++		cfg.mon = resctrl_arch_rmid_idx_encode(closid, rmid);
++
++	cfg.match_pmg = true;
++	cfg.pmg = rmid;
++
++	if (cdp_enabled) {
++		cfg.partid = closid << 1;
++		err = mpam_msmon_read(dom->comp, &cfg, type, val);
++		if (err)
++			return err;
++
++		cfg.partid += 1;
++		err = mpam_msmon_read(dom->comp, &cfg, type, &cdp_val);
++		if (!err)
++			*val += cdp_val;
++	} else {
++		cfg.partid = closid;
++		err = mpam_msmon_read(dom->comp, &cfg, type, val);
++	}
++
++	return err;
++}
++
++void resctrl_arch_reset_rmid(struct rdt_resource *r, struct rdt_domain *d,
++			     u32 closid, u32 rmid, enum resctrl_event_id eventid)
++{
++	struct mon_cfg cfg;
++	struct mpam_resctrl_dom *dom;
++
++	if (eventid != QOS_L3_MBM_LOCAL_EVENT_ID)
++		return;
++
++	cfg.mon = resctrl_arch_rmid_idx_encode(closid, rmid);
++	cfg.match_pmg = true;
++	cfg.pmg = rmid;
++
++	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
++
++	if (cdp_enabled) {
++		cfg.partid = closid << 1;
++		mpam_msmon_reset_mbwu(dom->comp, &cfg);
++
++		cfg.partid += 1;
++		mpam_msmon_reset_mbwu(dom->comp, &cfg);
++	} else {
++		cfg.partid = closid;
++		mpam_msmon_reset_mbwu(dom->comp, &cfg);
++	}
++}
++
+ static bool cache_has_usable_cpor(struct mpam_class *class)
+ {
+ 	struct mpam_props *cprops = &class->props;
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index 5ee848d86708..32d15f4e666a 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -50,6 +50,10 @@ int mpam_register_requestor(u16 partid_max, u8 pmg_max);
+ int mpam_ris_create(struct mpam_msc *msc, u8 ris_idx,
+ 		    enum mpam_class_types type, u8 class_id, int component_id);
+ 
++static inline unsigned int resctrl_arch_round_mon_val(unsigned int val)
++{
++	return val;
++}
+ 
+ bool resctrl_arch_alloc_capable(void);
+ bool resctrl_arch_mon_capable(void);
+-- 
+2.43.0
+

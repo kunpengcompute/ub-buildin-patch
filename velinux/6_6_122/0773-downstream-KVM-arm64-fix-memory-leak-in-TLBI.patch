@@ -1,0 +1,39 @@
+From 90d894a18ef4b04423d1173df281a167bbc657c0 Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Fri, 30 May 2025 11:25:30 +0800
+Subject: [PATCH 773/960] downstream: KVM: arm64: fix memory leak in TLBI
+
+If sched_cpus is successfully allocated but pre_sched_cpus fails
+to be allocated, the memory of the former is not released.
+
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Xie Xiaodong <xiexiaodong16@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hisilicon/hisi_virt.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index d108b0ba3146..48b644e4b3f3 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -263,10 +263,14 @@ int kvm_sched_affinity_vcpu_init(struct kvm_vcpu *vcpu)
+ 	if (!kvm_dvmbm_support)
+ 		return 0;
+ 
+-	if (!zalloc_cpumask_var(&vcpu->arch.sched_cpus, GFP_ATOMIC) ||
+-	    !zalloc_cpumask_var(&vcpu->arch.pre_sched_cpus, GFP_ATOMIC))
++	if (!zalloc_cpumask_var(&vcpu->arch.sched_cpus, GFP_ATOMIC))
+ 		return -ENOMEM;
+ 
++	if (!zalloc_cpumask_var(&vcpu->arch.pre_sched_cpus, GFP_ATOMIC)) {
++		free_cpumask_var(vcpu->arch.sched_cpus);
++		return -ENOMEM;
++	}
++
+ 	return 0;
+ }
+ 
+-- 
+2.43.0
+

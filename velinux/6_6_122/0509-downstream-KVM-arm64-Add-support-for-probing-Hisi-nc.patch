@@ -1,0 +1,132 @@
+From 518f0d4e075fe4148a02facaa2e3506faa94cd7e Mon Sep 17 00:00:00 2001
+From: Zenghui Yu <yuzenghui@huawei.com>
+Date: Tue, 6 Feb 2024 21:34:54 +0800
+Subject: [PATCH 509/960] downstream: KVM: arm64: Add support for probing Hisi
+ ncsnp capability
+
+Kunpeng 920 offers the HHA ncsnp capability, with which hypervisor doesn't
+need to perform a lot of cache maintenance like before (in case the guest
+has some non-cacheable Stage-1 mappings). Currently we apply this hardware
+capability when
+
+ - vCPU switching MMU+caches on/off
+ - creating Stage-2 mappings for Daborts
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Yanan Wang <wangyanan55@huawei.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/hisi_cpu_model.h |  2 ++
+ arch/arm64/include/asm/kvm_mmu.h        |  2 +-
+ arch/arm64/kvm/arm.c                    |  2 ++
+ arch/arm64/kvm/hisi_cpu_model.c         | 34 +++++++++++++++++++++++++
+ arch/arm64/kvm/hyp/pgtable.c            |  2 +-
+ 5 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/include/asm/hisi_cpu_model.h b/arch/arm64/include/asm/hisi_cpu_model.h
+index 003a3a53cf33..67008d17416e 100644
+--- a/arch/arm64/include/asm/hisi_cpu_model.h
++++ b/arch/arm64/include/asm/hisi_cpu_model.h
+@@ -14,6 +14,8 @@ enum hisi_cpu_type {
+ };
+ 
+ extern enum hisi_cpu_type hi_cpu_type;
++extern bool kvm_ncsnp_support;
+ 
+ void probe_hisi_cpu_type(void);
++void probe_hisi_ncsnp_support(void);
+ #endif /* __HISI_CPU_MODEL_H__ */
+diff --git a/arch/arm64/include/asm/kvm_mmu.h b/arch/arm64/include/asm/kvm_mmu.h
+index 27810667dec7..ae03cc14d534 100644
+--- a/arch/arm64/include/asm/kvm_mmu.h
++++ b/arch/arm64/include/asm/kvm_mmu.h
+@@ -218,7 +218,7 @@ static inline void __clean_dcache_guest_page(void *va, size_t size)
+ 	 * faulting in pages. Furthermore, FWB implies IDC, so cleaning to
+ 	 * PoU is not required either in this case.
+ 	 */
+-	if (cpus_have_final_cap(ARM64_HAS_STAGE2_FWB))
++	if (kvm_ncsnp_support || cpus_have_final_cap(ARM64_HAS_STAGE2_FWB))
+ 		return;
+ 
+ 	kvm_flush_dcache_to_poc(va, size);
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 661d55fab9b7..efe9cb108651 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -58,6 +58,7 @@ static bool vgic_present, kvm_arm_initialised;
+ 
+ /* Hisi cpu type enum */
+ enum hisi_cpu_type hi_cpu_type = UNKNOWN_HI_TYPE;
++bool kvm_ncsnp_support;
+ 
+ static DEFINE_PER_CPU(unsigned char, kvm_hyp_initialized);
+ 
+@@ -2461,6 +2462,7 @@ static __init int kvm_arm_init(void)
+ 
+ 	/* Probe the Hisi CPU type */
+ 	probe_hisi_cpu_type();
++	probe_hisi_ncsnp_support();
+ 
+ 	in_hyp_mode = is_kernel_in_hyp_mode();
+ 
+diff --git a/arch/arm64/kvm/hisi_cpu_model.c b/arch/arm64/kvm/hisi_cpu_model.c
+index 4d5a099bc27a..52eecf1ba1cf 100644
+--- a/arch/arm64/kvm/hisi_cpu_model.c
++++ b/arch/arm64/kvm/hisi_cpu_model.c
+@@ -81,3 +81,37 @@ void probe_hisi_cpu_type(void)
+ 	if (hi_cpu_type == UNKNOWN_HI_TYPE)
+ 		pr_warn("UNKNOWN Hisi cpu type.\n");
+ }
++
++#define NCSNP_MMIO_BASE	0x20107E238
++
++/*
++ * We have the fantastic HHA ncsnp capability on Kunpeng 920,
++ * with which hypervisor doesn't need to perform a lot of cache
++ * maintenance like before (in case the guest has non-cacheable
++ * Stage-1 mappings).
++ */
++void probe_hisi_ncsnp_support(void)
++{
++	void __iomem *base;
++	unsigned int high;
++
++	kvm_ncsnp_support = false;
++
++	if (hi_cpu_type != HI_1620)
++		goto out;
++
++	base = ioremap(NCSNP_MMIO_BASE, 4);
++	if (!base) {
++		pr_err("Unable to map MMIO region when probing ncsnp!\n");
++		goto out;
++	}
++
++	high = readl_relaxed(base) >> 28;
++	iounmap(base);
++	if (high != 0x1)
++		kvm_ncsnp_support = true;
++
++out:
++	kvm_info("Hisi ncsnp: %s\n", kvm_ncsnp_support ? "enabled" :
++							 "disabled");
++}
+diff --git a/arch/arm64/kvm/hyp/pgtable.c b/arch/arm64/kvm/hyp/pgtable.c
+index 344efe70574e..5b365682a7ab 100644
+--- a/arch/arm64/kvm/hyp/pgtable.c
++++ b/arch/arm64/kvm/hyp/pgtable.c
+@@ -1373,7 +1373,7 @@ int kvm_pgtable_stage2_flush(struct kvm_pgtable *pgt, u64 addr, u64 size)
+ 		.arg	= pgt,
+ 	};
+ 
+-	if (stage2_has_fwb(pgt))
++	if (kvm_ncsnp_support || stage2_has_fwb(pgt))
+ 		return 0;
+ 
+ 	return kvm_pgtable_walk(pgt, addr, size, &walker);
+-- 
+2.43.0
+

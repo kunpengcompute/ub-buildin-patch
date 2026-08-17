@@ -1,0 +1,80 @@
+From 1e627e30644938f7509c5a8a776f601f773db550 Mon Sep 17 00:00:00 2001
+From: Devyn Liu <liudingyuan@huawei.com>
+Date: Thu, 28 Mar 2024 18:55:52 +0800
+Subject: [PATCH 462/960] downstream: i2c: hisi: Add I2C controller reset and
+ initialization proccess in bus recovery action
+
+The I2C controller hardware manual specifies the bus recovery operation
+for I2C. It is recommended to reset the I2C controller and reinitialize
+the I2C bus configuration in bus recovery operation, which can more
+effectively ensure the recovery of the I2C bus.
+So we add I2C controller reset and initialization proccess in bus
+recovery action.
+
+Signed-off-by: Devyn Liu <liudingyuan@huawei.com>
+Signed-off-by: Junhua Lu <lujunhua7@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/i2c/busses/i2c-hisi.c | 30 +++++++++++++++++++++++++++++-
+ 1 file changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/i2c/busses/i2c-hisi.c b/drivers/i2c/busses/i2c-hisi.c
+index 69b0b45ea4bc..989ba813435c 100644
+--- a/drivers/i2c/busses/i2c-hisi.c
++++ b/drivers/i2c/busses/i2c-hisi.c
+@@ -462,6 +462,26 @@ static void hisi_i2c_configure_bus(struct hisi_i2c_controller *ctlr)
+ 
+ #ifdef CONFIG_ACPI
+ #define HISI_I2C_PIN_MUX_METHOD	"PMUX"
++#define HISI_I2C_SOFT_RESET_METHOD	"SRST"
++
++/**
++ * i2c_hisi_soft_reset - Do I2C master soft reset method through ACPI
++ * @dev: device need to be reset
++ *
++ * The function invokes the specific ACPI method "SRST" for trigger a soft
++ * reset of I2C controller in order to help on I2C controller recover from
++ * the abnormal state after bus recovery process.
++ */
++static void i2c_hisi_soft_reset(struct device *dev)
++{
++	acpi_handle handle = ACPI_HANDLE(dev);
++	acpi_status status;
++	unsigned long long data;
++
++	status = acpi_evaluate_integer(handle, HISI_I2C_SOFT_RESET_METHOD, NULL, &data);
++	dev_info(dev, "I2C controller reset %s", ACPI_FAILURE(status) ? "failed" :
++		 "succeed");
++}
+ 
+ /**
+  * i2c_dw_acpi_pin_mux_change - Change the I2C controller's pin mux through ACPI
+@@ -500,6 +520,13 @@ static void i2c_hisi_unprepare_recovery(struct i2c_adapter *adap)
+ 	struct hisi_i2c_controller *ctlr = i2c_get_adapdata(adap);
+ 
+ 	i2c_hisi_pin_mux_change(ctlr->dev, false);
++	i2c_hisi_soft_reset(ctlr->dev);
++
++	/*
++	 * After a soft reset, the device configuration return to default
++	 * values and require reinitialization.
++	 */
++	hisi_i2c_configure_bus(ctlr);
+ }
+ 
+ static void hisi_i2c_init_recovery_info(struct hisi_i2c_controller *ctlr)
+@@ -511,7 +538,8 @@ static void hisi_i2c_init_recovery_info(struct hisi_i2c_controller *ctlr)
+ 	if (acpi_disabled)
+ 		return;
+ 
+-	if (!adev || !acpi_has_method(adev->handle, HISI_I2C_PIN_MUX_METHOD))
++	if (!adev || !acpi_has_method(adev->handle, HISI_I2C_PIN_MUX_METHOD) ||
++	    !acpi_has_method(adev->handle, HISI_I2C_SOFT_RESET_METHOD))
+ 		return;
+ 
+ 	gpio = devm_gpiod_get_optional(ctlr->dev, "scl", GPIOD_OUT_HIGH);
+-- 
+2.43.0
+

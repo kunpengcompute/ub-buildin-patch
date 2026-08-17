@@ -1,0 +1,173 @@
+From 02a3ac4eb8074696fe3e5249ccd1c9053dde1347 Mon Sep 17 00:00:00 2001
+From: Lei Gong <gonglei25@huawei.com>
+Date: Thu, 21 Aug 2025 11:05:08 +0800
+Subject: [PATCH 952/960] downstream: iommu/ummu-core: support iommu ksva mode
+
+This patch integrated iommu_sva_bind_device_isolated and iommu_perm_ops
+to provide a safely ksva mode.
+
+The ksva is not supported in the current iommu  framework because it
+handled the whole kernel address space to the device, which caused
+security/ safety issues.
+
+With the isolated address space id and  permission operations, we can
+restrict each device in ksva mode to access different range of
+kernel address space.
+
+Programming model:
+1. Enable the KSVA  via `iommu_dev_enable_feature(IOMMU_DEV_FEAT_KSVA)`.
+2. Create the bond by calling `iommu_ksva_bind_device()`.
+3. Get the PASID by `iommu_sva_get_priv_pasid()`.
+4. Assign the PASID to the device.
+5. To stop the device's access, call `iommu_ksva_unbind_device()`.
+6. Disable the KSVA via `iommu_dev_disable_feature(IOMMU_DEV_FEAT_KSVA)`.
+
+Signed-off-by: Yuhao Zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Lei Gong <gonglei25@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64            |  1 +
+ config.aarch64-64k        |  1 +
+ drivers/iommu/iommu-sva.c | 56 +++++++++++++++++++++++++++++++++++++++
+ include/linux/iommu.h     | 16 +++++++++++
+ 4 files changed, 74 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 7271457af5b7..6dd46e2790a7 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -8724,6 +8724,7 @@ CONFIG_OF_IOMMU=y
+ CONFIG_IOMMU_DMA=y
+ CONFIG_IOMMU_SVA=y
+ CONFIG_IOMMUFD=m
++CONFIG_IOMMU_KSVA=y
+ CONFIG_ROCKCHIP_IOMMU=y
+ # CONFIG_SUN50I_IOMMU is not set
+ CONFIG_TEGRA_IOMMU_SMMU=y
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 9de0481c7972..4a91ef320e08 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -8709,6 +8709,7 @@ CONFIG_OF_IOMMU=y
+ CONFIG_IOMMU_DMA=y
+ CONFIG_IOMMU_SVA=y
+ CONFIG_IOMMUFD=m
++CONFIG_IOMMU_KSVA=y
+ CONFIG_ROCKCHIP_IOMMU=y
+ # CONFIG_SUN50I_IOMMU is not set
+ CONFIG_TEGRA_IOMMU_SMMU=y
+diff --git a/drivers/iommu/iommu-sva.c b/drivers/iommu/iommu-sva.c
+index 10e9f2612fde..97cf5fe8949f 100644
+--- a/drivers/iommu/iommu-sva.c
++++ b/drivers/iommu/iommu-sva.c
+@@ -321,6 +321,8 @@ static struct iommu_domain *iommu_sva_domain_alloc(struct device *dev,
+ 	domain->iopf_handler = iommu_sva_iopf_handler;
+ #ifdef CONFIG_IOMMU_KSVA
+ 	domain->isolated_pasid = IOMMU_NO_PASID;
++	if (iommu_is_ksva_domain(domain))
++		domain->iopf_handler = NULL;
+ #endif
+ 
+ 	return domain;
+@@ -421,6 +423,54 @@ void iommu_sva_unbind_device_isolated(struct iommu_sva *handle)
+ }
+ EXPORT_SYMBOL_GPL(iommu_sva_unbind_device_isolated);
+ 
++/**
++ * iommu_ksva_bind_device() - Create a bond for the kernel address space and a
++ *			      device.
++ * @dev: the device to bind
++ * @data: driver-specific data for this binding
++ *
++ * This function lets devices safely access the kernel address space by an
++ * isolated pasid provided by iommu_sva_bind_device_ioslated. The access is
++ * protected by permisson grant operations.
++ *
++ * On error, returns an ERR_PTR value.
++ */
++struct iommu_sva *iommu_ksva_bind_device(struct device *dev, void *data)
++{
++	const struct iommu_perm_ops *perm_ops;
++	struct iommu_sva *handle;
++
++	handle = iommu_sva_bind_device_isolated(dev, &init_mm, data);
++	if (IS_ERR(handle))
++		return handle;
++
++	perm_ops = handle->handle.domain->perm_ops;
++	if (!perm_ops || !perm_ops->grant || !perm_ops->ungrant) {
++		iommu_ksva_unbind_device(handle);
++		return ERR_PTR(-EOPNOTSUPP);
++	}
++
++	return handle;
++}
++EXPORT_SYMBOL_GPL(iommu_ksva_bind_device);
++
++/**
++ * iommu_ksva_unbind_device() - Remove a ksva bond created with isolated bond
++ * @handle: the handle returned by iommu_ksva_bind_device()
++ *
++ * Release the bond and related private pasid.
++ */
++void iommu_ksva_unbind_device(struct iommu_sva *handle)
++{
++	struct iommu_domain *domain = handle->handle.domain;
++
++	if (WARN_ON(domain->mm != &init_mm))
++		return;
++
++	iommu_sva_unbind_device_isolated(handle);
++}
++EXPORT_SYMBOL_GPL(iommu_ksva_unbind_device);
++
+ u32 iommu_sva_get_isolated_pasid(struct iommu_sva *handle)
+ {
+ 	struct iommu_domain *domain = handle->handle.domain;
+@@ -479,4 +529,10 @@ int iommu_sva_ungrant(struct iommu_sva *sva, void *va, size_t size,
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(iommu_sva_ungrant);
++
++bool iommu_is_ksva_domain(struct iommu_domain *domain)
++{
++	return domain->mm == &init_mm;
++}
++EXPORT_SYMBOL_GPL(iommu_is_ksva_domain);
+ #endif
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index 0374e31eecb3..00fff6afb5a1 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -1840,6 +1840,10 @@ int iommu_sva_grant(struct iommu_sva *sva, void *va, size_t size, int perm,
+ 		    void *cookie);
+ int iommu_sva_ungrant(struct iommu_sva *sva, void *va, size_t size,
+ 		      void *cookie);
++struct iommu_sva *iommu_ksva_bind_device(struct device *dev, void *data);
++void iommu_ksva_unbind_device(struct iommu_sva *handle);
++bool iommu_is_ksva_domain(struct iommu_domain *domain);
++
+ static inline void iommu_plb_sync_all(struct iommu_domain *domain)
+ {
+ 	if (domain->perm_ops && domain->perm_ops->plb_sync_all)
+@@ -1878,5 +1882,17 @@ static inline int iommu_sva_ungrant(struct iommu_sva *sva, void *va,
+ static inline void iommu_plb_sync_all(struct iommu_domain *domain) {}
+ static inline void iommu_plb_sync(struct iommu_domain *domain,
+ 				struct iommu_plb_gather *plb_gather) {}
++
++static inline struct iommu_sva *iommu_ksva_bind_device(struct device *dev,
++						       void *data)
++{
++	return ERR_PTR(-ENODEV);
++}
++
++static inline void iommu_ksva_unbind_device(struct iommu_sva *handle) {}
++static inline bool iommu_is_ksva_domain(struct iommu_domain *domain)
++{
++	return false;
++}
+ #endif /* CONFIG_IOMMU_KSVA */
+ #endif /* __LINUX_IOMMU_H */
+-- 
+2.43.0
+

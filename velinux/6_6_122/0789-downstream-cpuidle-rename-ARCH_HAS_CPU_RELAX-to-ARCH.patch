@@ -1,0 +1,124 @@
+From 30ab288dc8a253dd872dc8745b7c91a62eb49f8c Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:45 +0800
+Subject: [PATCH 789/960] downstream: cpuidle: rename ARCH_HAS_CPU_RELAX to
+ ARCH_HAS_OPTIMIZED_POLL
+
+ARCH_HAS_CPU_RELAX is defined on architectures that provide an
+primitive (via cpu_relax()) that can be used as part of a polling
+mechanism -- one that would be cheaper than spinning in a tight
+loop.
+
+However, recent changes in poll_idle() mean that a higher level
+primitive -- smp_cond_load_relaxed() is used for polling. This would
+in-turn use cpu_relax() or an architecture specific implementation.
+On ARM64 in particular this turns into a WFE which waits on a store
+to a cacheline instead of a busy poll.
+
+Accordingly condition the polling drivers on ARCH_HAS_OPTIMIZED_POLL
+instead of ARCH_HAS_CPU_RELAX. While at it, make both intel-idle
+and cpuidle-haltpoll explicitly depend on ARCH_HAS_CPU_RELAX.
+
+Suggested-by: Will Deacon <will@kernel.org>
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/x86/Kconfig              | 2 +-
+ drivers/acpi/processor_idle.c | 4 ++--
+ drivers/cpuidle/Kconfig       | 2 +-
+ drivers/cpuidle/Makefile      | 2 +-
+ drivers/idle/Kconfig          | 1 +
+ include/linux/cpuidle.h       | 2 +-
+ 6 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index 9b6cd8bddaa6..c95d46782eff 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -370,7 +370,7 @@ config ARCH_MAY_HAVE_PC_FDC
+ config GENERIC_CALIBRATE_DELAY
+ 	def_bool y
+ 
+-config ARCH_HAS_CPU_RELAX
++config ARCH_HAS_OPTIMIZED_POLL
+ 	def_bool y
+ 
+ config ARCH_HIBERNATION_POSSIBLE
+diff --git a/drivers/acpi/processor_idle.c b/drivers/acpi/processor_idle.c
+index b524cf27213d..2f6ebe7f5f90 100644
+--- a/drivers/acpi/processor_idle.c
++++ b/drivers/acpi/processor_idle.c
+@@ -35,7 +35,7 @@
+ #include <asm/cpu.h>
+ #endif
+ 
+-#define ACPI_IDLE_STATE_START	(IS_ENABLED(CONFIG_ARCH_HAS_CPU_RELAX) ? 1 : 0)
++#define ACPI_IDLE_STATE_START	(IS_ENABLED(CONFIG_ARCH_HAS_OPTIMIZED_POLL) ? 1 : 0)
+ 
+ static unsigned int max_cstate __read_mostly = ACPI_PROCESSOR_MAX_POWER;
+ module_param(max_cstate, uint, 0400);
+@@ -786,7 +786,7 @@ static int acpi_processor_setup_cstates(struct acpi_processor *pr)
+ 	if (max_cstate == 0)
+ 		max_cstate = 1;
+ 
+-	if (IS_ENABLED(CONFIG_ARCH_HAS_CPU_RELAX)) {
++	if (IS_ENABLED(CONFIG_ARCH_HAS_OPTIMIZED_POLL)) {
+ 		cpuidle_poll_state_init(drv);
+ 		count = 1;
+ 	} else {
+diff --git a/drivers/cpuidle/Kconfig b/drivers/cpuidle/Kconfig
+index cac5997dca50..75f6e176bbc8 100644
+--- a/drivers/cpuidle/Kconfig
++++ b/drivers/cpuidle/Kconfig
+@@ -73,7 +73,7 @@ endmenu
+ 
+ config HALTPOLL_CPUIDLE
+ 	tristate "Halt poll cpuidle driver"
+-	depends on X86 && KVM_GUEST
++	depends on X86 && KVM_GUEST && ARCH_HAS_OPTIMIZED_POLL
+ 	select CPU_IDLE_GOV_HALTPOLL
+ 	default y
+ 	help
+diff --git a/drivers/cpuidle/Makefile b/drivers/cpuidle/Makefile
+index d103342b7cfc..f29dfd1525b0 100644
+--- a/drivers/cpuidle/Makefile
++++ b/drivers/cpuidle/Makefile
+@@ -7,7 +7,7 @@ obj-y += cpuidle.o driver.o governor.o sysfs.o governors/
+ obj-$(CONFIG_ARCH_NEEDS_CPU_IDLE_COUPLED) += coupled.o
+ obj-$(CONFIG_DT_IDLE_STATES)		  += dt_idle_states.o
+ obj-$(CONFIG_DT_IDLE_GENPD)		  += dt_idle_genpd.o
+-obj-$(CONFIG_ARCH_HAS_CPU_RELAX)	  += poll_state.o
++obj-$(CONFIG_ARCH_HAS_OPTIMIZED_POLL)	  += poll_state.o
+ obj-$(CONFIG_HALTPOLL_CPUIDLE)		  += cpuidle-haltpoll.o
+ 
+ ##################################################################################
+diff --git a/drivers/idle/Kconfig b/drivers/idle/Kconfig
+index 6707d2539fc4..6f9b1d48fede 100644
+--- a/drivers/idle/Kconfig
++++ b/drivers/idle/Kconfig
+@@ -4,6 +4,7 @@ config INTEL_IDLE
+ 	depends on CPU_IDLE
+ 	depends on X86
+ 	depends on CPU_SUP_INTEL
++	depends on ARCH_HAS_OPTIMIZED_POLL
+ 	help
+ 	  Enable intel_idle, a cpuidle driver that includes knowledge of
+ 	  native Intel hardware idle features.  The acpi_idle driver
+diff --git a/include/linux/cpuidle.h b/include/linux/cpuidle.h
+index 3183aeb7f5b4..7e7e58a17b07 100644
+--- a/include/linux/cpuidle.h
++++ b/include/linux/cpuidle.h
+@@ -275,7 +275,7 @@ static inline void cpuidle_coupled_parallel_barrier(struct cpuidle_device *dev,
+ }
+ #endif
+ 
+-#if defined(CONFIG_CPU_IDLE) && defined(CONFIG_ARCH_HAS_CPU_RELAX)
++#if defined(CONFIG_CPU_IDLE) && defined(CONFIG_ARCH_HAS_OPTIMIZED_POLL)
+ void cpuidle_poll_state_init(struct cpuidle_driver *drv);
+ #else
+ static inline void cpuidle_poll_state_init(struct cpuidle_driver *drv) {}
+-- 
+2.43.0
+

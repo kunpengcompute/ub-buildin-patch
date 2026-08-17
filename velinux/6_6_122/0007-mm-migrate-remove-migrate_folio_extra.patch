@@ -1,0 +1,119 @@
+From 43d76c9cdf35b7e7e794c30fec5d28abc735ef56 Mon Sep 17 00:00:00 2001
+From: Kefeng Wang <wangkefeng.wang@huawei.com>
+Date: Fri, 24 May 2024 13:28:42 +0800
+Subject: [PATCH 007/960] mm: migrate: remove migrate_folio_extra()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit 940d6683c79950b21b3762124eabfa9b2f6fee96 upstream.
+
+migrate_folio_extra() is only called in migrate.c now, convert it a static
+function and take a new src_private argument which could be shared by
+migrate_folio() and filemap_migrate_folio() to simplify code a bit.
+
+Link: https://lkml.kernel.org/r/20240524052843.182275-5-wangkefeng.wang@huawei.com
+Signed-off-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Reviewed-by: Jane Chu <jane.chu@oracle.com>
+Cc: Alistair Popple <apopple@nvidia.com>
+Cc: Benjamin LaHaise <bcrl@kvack.org>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Hugh Dickins <hughd@google.com>
+Cc: Jérôme Glisse <jglisse@redhat.com>
+Cc: Jiaqi Yan <jiaqiyan@google.com>
+Cc: Matthew Wilcox (Oracle) <willy@infradead.org>
+Cc: Miaohe Lin <linmiaohe@huawei.com>
+Cc: Muchun Song <muchun.song@linux.dev>
+Cc: Naoya Horiguchi <nao.horiguchi@gmail.com>
+Cc: Tony Luck <tony.luck@intel.com>
+Cc: Vishal Moola (Oracle) <vishal.moola@gmail.com>
+Cc: Zi Yan <ziy@nvidia.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/migrate.h |  2 --
+ mm/migrate.c            | 33 +++++++++++----------------------
+ 2 files changed, 11 insertions(+), 24 deletions(-)
+
+diff --git a/include/linux/migrate.h b/include/linux/migrate.h
+index 711dd9412561..7b6b8153be0e 100644
+--- a/include/linux/migrate.h
++++ b/include/linux/migrate.h
+@@ -63,8 +63,6 @@ extern const char *migrate_reason_names[MR_TYPES];
+ #ifdef CONFIG_MIGRATION
+ 
+ void putback_movable_pages(struct list_head *l);
+-int migrate_folio_extra(struct address_space *mapping, struct folio *dst,
+-		struct folio *src, enum migrate_mode mode, int extra_count);
+ int migrate_folio(struct address_space *mapping, struct folio *dst,
+ 		struct folio *src, enum migrate_mode mode);
+ int migrate_pages(struct list_head *l, new_folio_t new, free_folio_t free,
+diff --git a/mm/migrate.c b/mm/migrate.c
+index f0e4398e3d36..3267613ca050 100644
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -654,18 +654,19 @@ EXPORT_SYMBOL(folio_migrate_copy);
+  *                    Migration functions
+  ***********************************************************/
+ 
+-int migrate_folio_extra(struct address_space *mapping, struct folio *dst,
+-		struct folio *src, enum migrate_mode mode, int extra_count)
++static int __migrate_folio(struct address_space *mapping, struct folio *dst,
++			   struct folio *src, void *src_private,
++			   enum migrate_mode mode)
+ {
+ 	int rc;
+ 
+-	BUG_ON(folio_test_writeback(src));	/* Writeback must be complete */
+-
+-	rc = folio_migrate_mapping(mapping, dst, src, extra_count);
+-
++	rc = folio_migrate_mapping(mapping, dst, src, 0);
+ 	if (rc != MIGRATEPAGE_SUCCESS)
+ 		return rc;
+ 
++	if (src_private)
++		folio_attach_private(dst, folio_detach_private(src));
++
+ 	if (mode != MIGRATE_SYNC_NO_COPY)
+ 		folio_migrate_copy(dst, src);
+ 	else
+@@ -686,9 +687,10 @@ int migrate_folio_extra(struct address_space *mapping, struct folio *dst,
+  * Folios are locked upon entry and exit.
+  */
+ int migrate_folio(struct address_space *mapping, struct folio *dst,
+-		struct folio *src, enum migrate_mode mode)
++		  struct folio *src, enum migrate_mode mode)
+ {
+-	return migrate_folio_extra(mapping, dst, src, mode, 0);
++	BUG_ON(folio_test_writeback(src));	/* Writeback must be complete */
++	return __migrate_folio(mapping, dst, src, NULL, mode);
+ }
+ EXPORT_SYMBOL(migrate_folio);
+ 
+@@ -842,20 +844,7 @@ EXPORT_SYMBOL_GPL(buffer_migrate_folio_norefs);
+ int filemap_migrate_folio(struct address_space *mapping,
+ 		struct folio *dst, struct folio *src, enum migrate_mode mode)
+ {
+-	int ret;
+-
+-	ret = folio_migrate_mapping(mapping, dst, src, 0);
+-	if (ret != MIGRATEPAGE_SUCCESS)
+-		return ret;
+-
+-	if (folio_get_private(src))
+-		folio_attach_private(dst, folio_detach_private(src));
+-
+-	if (mode != MIGRATE_SYNC_NO_COPY)
+-		folio_migrate_copy(dst, src);
+-	else
+-		folio_migrate_flags(dst, src);
+-	return MIGRATEPAGE_SUCCESS;
++	return __migrate_folio(mapping, dst, src, folio_get_private(src), mode);
+ }
+ EXPORT_SYMBOL_GPL(filemap_migrate_folio);
+ 
+-- 
+2.43.0
+

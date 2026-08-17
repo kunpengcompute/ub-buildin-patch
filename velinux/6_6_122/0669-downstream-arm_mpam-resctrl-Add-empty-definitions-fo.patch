@@ -1,0 +1,44 @@
+From f519096bcebdcdfe9e3fac46a7076e614eb2423e Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:21 +0800
+Subject: [PATCH 669/960] downstream: arm_mpam: resctrl: Add empty definitions
+ for fine-grained enables
+
+resctrl has individual hooks to separately enable and disable the
+closid/partid and rmid/pmg context switching code.
+
+For MPAM this is all the same thing, as the value in struct task_struct
+is used to cache the value that should be written to hardware.
+arm64's context switching code is enabled once MPAM is usable, but
+doesn't touch the hardware unless the value has changed.
+
+Resctrl doesn't need to ask. Add empty definitions for these hoooks.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/arm_mpam.h | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index b81f18267a72..387cebfdfff7 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -87,4 +87,13 @@ static inline int resctrl_arch_measure_l3_residency(void *_plr) { return 0; }
+ static inline int resctrl_arch_measure_cycles_lat_fn(void *_plr) { return 0; }
+ static inline u64 resctrl_arch_get_prefetch_disable_bits(void) { return 0; }
+ 
++/*
++ * The CPU configuration for MPAM is cheap to write, and is only written if it
++ * has changed. No need for fine grained enables.
++ */
++static inline void resctrl_arch_enable_mon(void) { }
++static inline void resctrl_arch_disable_mon(void) { }
++static inline void resctrl_arch_enable_alloc(void) { }
++static inline void resctrl_arch_disable_alloc(void) { }
++
+ #endif /* __LINUX_ARM_MPAM_H */
+-- 
+2.43.0
+

@@ -1,0 +1,127 @@
+From 5e7a9d0cdb66895874ba9279190f442c6c172847 Mon Sep 17 00:00:00 2001
+From: Jinjie Ruan <ruanjinjie@huawei.com>
+Date: Tue, 30 Jan 2024 12:38:58 +0000
+Subject: [PATCH 504/960] downstream: irqchip/gic-v3: Fix hard LOCKUP caused by
+ NMI being masked
+
+When handling an exception, both daif and allint will be set by hardware.
+In __gic_handle_irq_from_irqson(), it only consider the Pseudo-NMI by
+clear daif.I and daif.F and set PMR to GIC_PRIO_IRQOFF to enable Pseudo-NMI
+and mask IRQ.
+
+If the hardwire NMI is enabled, it should also clear allint to enable
+hardware NMI and mask IRQ before handle a IRQ, otherwise the allint will
+be set in softirq context and local_irq_enable() can not enable IRQ, and
+watchdog NMI can not enter too which will cause below hard LOCKUP.
+
+And in gic_handle_irq(), it only consider the Pseudo-NMI when an exception
+has been taken from a context with IRQs disabled. So add a
+gic_supports_nmi() helper which consider both Pseudo-NMI and hardware NMI.
+And define PSR_ALLINT_BIT bit and update interrupts_enabled() as well as
+fast_interrupts_enabled() to consider the ALLINT bit.
+
+	watchdog: Watchdog detected hard LOCKUP on cpu 1
+	Modules linked in:
+	Sending NMI from CPU 0 to CPUs 1:
+	Kernel panic - not syncing: Hard LOCKUP
+	CPU: 0 PID: 0 Comm: swapper/0 Not tainted 6.6.0-gec40ec8c5e9f #295
+	Hardware name: linux,dummy-virt (DT)
+	Call trace:
+	 dump_backtrace+0x98/0xf8
+	 show_stack+0x20/0x38
+	 dump_stack_lvl+0x48/0x60
+	 dump_stack+0x18/0x28
+	 panic+0x384/0x3e0
+	 nmi_panic+0x94/0xa0
+	 watchdog_hardlockup_check+0x1bc/0x1c8
+	 watchdog_buddy_check_hardlockup+0x68/0x80
+	 watchdog_timer_fn+0x88/0x2f8
+	 __hrtimer_run_queues+0x17c/0x368
+	 hrtimer_run_queues+0xd4/0x158
+	 update_process_times+0x3c/0xc0
+	 tick_periodic+0x44/0xc8
+	 tick_handle_periodic+0x3c/0xb0
+	 arch_timer_handler_virt+0x3c/0x58
+	 handle_percpu_devid_irq+0x90/0x248
+	 generic_handle_domain_irq+0x34/0x58
+	 gic_handle_irq+0x58/0x110
+	 call_on_irq_stack+0x24/0x58
+	 do_interrupt_handler+0x88/0x98
+	 el1_interrupt+0x40/0xc0
+	 el1h_64_irq_handler+0x24/0x30
+	 el1h_64_irq+0x64/0x68
+	 default_idle_call+0x5c/0x160
+	 do_idle+0x220/0x288
+	 cpu_startup_entry+0x40/0x50
+	 rest_init+0xf0/0xf8
+	 arch_call_rest_init+0x18/0x20
+	 start_kernel+0x520/0x668
+	 __primary_switched+0xbc/0xd0
+
+Fixes: dd8b74f04223 ("arm64/nmi: Manage masking for superpriority interrupts along with DAIF")
+Signed-off-by: Jinjie Ruan <ruanjinjie@huawei.com>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/ptrace.h      | 5 +++--
+ arch/arm64/include/uapi/asm/ptrace.h | 1 +
+ drivers/irqchip/irq-gic-v3.c         | 5 +++++
+ 3 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/include/asm/ptrace.h b/arch/arm64/include/asm/ptrace.h
+index 47ec58031f11..81bb2cb17d85 100644
+--- a/arch/arm64/include/asm/ptrace.h
++++ b/arch/arm64/include/asm/ptrace.h
+@@ -240,10 +240,11 @@ static inline void forget_syscall(struct pt_regs *regs)
+ 		true)
+ 
+ #define interrupts_enabled(regs)			\
+-	(!((regs)->pstate & PSR_I_BIT) && irqs_priority_unmasked(regs))
++	(!((regs)->pstate & PSR_ALLINT_BIT) && !((regs)->pstate & PSR_I_BIT) && \
++	 irqs_priority_unmasked(regs))
+ 
+ #define fast_interrupts_enabled(regs) \
+-	(!((regs)->pstate & PSR_F_BIT))
++	(!((regs)->pstate & PSR_ALLINT_BIT) && !(regs)->pstate & PSR_F_BIT)
+ 
+ static inline unsigned long user_stack_pointer(struct pt_regs *regs)
+ {
+diff --git a/arch/arm64/include/uapi/asm/ptrace.h b/arch/arm64/include/uapi/asm/ptrace.h
+index 7fa2f7036aa7..8a125a1986be 100644
+--- a/arch/arm64/include/uapi/asm/ptrace.h
++++ b/arch/arm64/include/uapi/asm/ptrace.h
+@@ -48,6 +48,7 @@
+ #define PSR_D_BIT	0x00000200
+ #define PSR_BTYPE_MASK	0x00000c00
+ #define PSR_SSBS_BIT	0x00001000
++#define PSR_ALLINT_BIT	0x00002000
+ #define PSR_PAN_BIT	0x00400000
+ #define PSR_UAO_BIT	0x00800000
+ #define PSR_DIT_BIT	0x01000000
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 4d2d673b0e38..86a13df82f71 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -151,6 +151,7 @@ enum gic_intid_range {
+ };
+ 
+ #ifdef CONFIG_ARM64
++#include <asm/nmi.h>
+ #include <asm/cpufeature.h>
+ 
+ static inline bool has_v3_3_nmi(void)
+@@ -870,6 +871,10 @@ static void __gic_handle_irq_from_irqson(struct pt_regs *regs)
+ 	if (gic_prio_masking_enabled()) {
+ 		gic_pmr_mask_irqs();
+ 		gic_arch_enable_irqs();
++	} else if (has_v3_3_nmi()) {
++#ifdef CONFIG_ARM64_NMI
++		_allint_clear();
++#endif
+ 	}
+ 
+ 	if (!is_nmi)
+-- 
+2.43.0
+

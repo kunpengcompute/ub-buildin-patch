@@ -1,0 +1,206 @@
+From f46f4607a1bdaa46ed367ae2895696c6eeb07944 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:02 +0800
+Subject: [PATCH 527/960] downstream: irqchip/gic-v4.1: Extend VSGI command to
+ support the new vPPI
+
+In HiSilicon implementation, we reuse the *VSGI* command to set the
+configuration of a specified vPPI and optionally clear its pending
+state. A bit odd, but keeping the smallest change in HW level is safe.
+
+The vINTID field has been therefore extended to [36:32], carefully
+encode it to respect the new requirement. Note that _only_ vtimer
+interrupt is supported at the moment!
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3-its.c   | 46 ++++++++++++++++++++++++++++++
+ drivers/irqchip/irq-gic-v3.c       | 30 -------------------
+ include/linux/irqchip/arm-gic-v3.h | 30 +++++++++++++++++++
+ 3 files changed, 76 insertions(+), 30 deletions(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index e18a88fcbc91..3eb28fc5baf5 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -229,6 +229,21 @@ static DEFINE_PER_CPU(struct its_node *, local_4_1_its);
+ 
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+ #define is_vtimer_irqbypass(its)	(!!((its)->version & GITS_VERSION_VTIMER))
++
++/* Fetch it from gtdt->virtual_timer_interrupt. */
++#define is_vtimer_irq(irq)	((irq) == 27)
++
++static inline bool is_its_vsgi_cmd_valid(struct its_node *its, u8 hwirq)
++{
++	if (__get_intid_range(hwirq) == SGI_RANGE)
++		return true;
++
++	/* For PPI range, only vtimer interrupt is supported atm. */
++	if (is_vtimer_irq(hwirq) && is_vtimer_irqbypass(its))
++		return true;
++
++	return false;
++}
+ #endif
+ 
+ #define ITS_ITT_ALIGN		SZ_256
+@@ -767,6 +782,18 @@ static void its_encode_sgi_intid(struct its_cmd_block *cmd, u8 sgi)
+ 	its_mask_encode(&cmd->raw_cmd[0], sgi, 35, 32);
+ }
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++static void its_encode_sgi_intid_extension(struct its_cmd_block *cmd, u8 sgi)
++{
++	/*
++	 * We reuse the VSGI command in this implementation to configure
++	 * the vPPI or clear its pending state. The vINTID field has been
++	 * therefore extended to [36:32].
++	 */
++	its_mask_encode(&cmd->raw_cmd[0], sgi, 36, 32);
++}
++#endif
++
+ static void its_encode_sgi_priority(struct its_cmd_block *cmd, u8 prio)
+ {
+ 	its_mask_encode(&cmd->raw_cmd[0], prio >> 4, 23, 20);
+@@ -1172,7 +1199,14 @@ static struct its_vpe *its_build_vsgi_cmd(struct its_node *its,
+ 
+ 	its_encode_cmd(cmd, GITS_CMD_VSGI);
+ 	its_encode_vpeid(cmd, desc->its_vsgi_cmd.vpe->vpe_id);
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	if (!is_vtimer_irqbypass(its))
++		its_encode_sgi_intid(cmd, desc->its_vsgi_cmd.sgi);
++	else
++		its_encode_sgi_intid_extension(cmd, desc->its_vsgi_cmd.sgi);
++#else
+ 	its_encode_sgi_intid(cmd, desc->its_vsgi_cmd.sgi);
++#endif
+ 	its_encode_sgi_priority(cmd, desc->its_vsgi_cmd.priority);
+ 	its_encode_sgi_group(cmd, desc->its_vsgi_cmd.group);
+ 	its_encode_sgi_clear(cmd, desc->its_vsgi_cmd.clear);
+@@ -4449,6 +4483,14 @@ static void its_configure_sgi(struct irq_data *d, bool clear)
+ {
+ 	struct its_vpe *vpe = irq_data_get_irq_chip_data(d);
+ 	struct its_cmd_desc desc;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	struct its_node *its = find_4_1_its();
++
++	if (!its || !is_its_vsgi_cmd_valid(its, d->hwirq)) {
++		pr_err("ITS: %s failed\n", __func__);
++		return;
++	}
++#endif
+ 
+ 	desc.its_vsgi_cmd.vpe = vpe;
+ 	desc.its_vsgi_cmd.sgi = d->hwirq;
+@@ -4462,7 +4504,11 @@ static void its_configure_sgi(struct irq_data *d, bool clear)
+ 	 * destination VPE is mapped there. Since we map them eagerly at
+ 	 * activation time, we're pretty sure the first GICv4.1 ITS will do.
+ 	 */
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	its_send_single_vcommand(its, its_build_vsgi_cmd, &desc);
++#else
+ 	its_send_single_vcommand(find_4_1_its(), its_build_vsgi_cmd, &desc);
++#endif
+ }
+ 
+ static void its_sgi_mask_irq(struct irq_data *d)
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 90f94f8733cf..b85a1213ea31 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -140,16 +140,6 @@ static DEFINE_PER_CPU(bool, has_rss);
+ /* Our default, arbitrary priority value. Linux only uses one anyway. */
+ #define DEFAULT_PMR_VALUE	0xf0
+ 
+-enum gic_intid_range {
+-	SGI_RANGE,
+-	PPI_RANGE,
+-	SPI_RANGE,
+-	EPPI_RANGE,
+-	ESPI_RANGE,
+-	LPI_RANGE,
+-	__INVALID_RANGE__
+-};
+-
+ #ifdef CONFIG_ARM64
+ #include <asm/nmi.h>
+ #include <asm/cpufeature.h>
+@@ -165,26 +155,6 @@ static inline bool has_v3_3_nmi(void)
+ }
+ #endif
+ 
+-static enum gic_intid_range __get_intid_range(irq_hw_number_t hwirq)
+-{
+-	switch (hwirq) {
+-	case 0 ... 15:
+-		return SGI_RANGE;
+-	case 16 ... 31:
+-		return PPI_RANGE;
+-	case 32 ... 1019:
+-		return SPI_RANGE;
+-	case EPPI_BASE_INTID ... (EPPI_BASE_INTID + 63):
+-		return EPPI_RANGE;
+-	case ESPI_BASE_INTID ... (ESPI_BASE_INTID + 1023):
+-		return ESPI_RANGE;
+-	case 8192 ... GENMASK(23, 0):
+-		return LPI_RANGE;
+-	default:
+-		return __INVALID_RANGE__;
+-	}
+-}
+-
+ #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+ phys_addr_t get_gicr_paddr(int cpu)
+ {
+diff --git a/include/linux/irqchip/arm-gic-v3.h b/include/linux/irqchip/arm-gic-v3.h
+index 9b2be027941b..14c3f1a47301 100644
+--- a/include/linux/irqchip/arm-gic-v3.h
++++ b/include/linux/irqchip/arm-gic-v3.h
+@@ -677,6 +677,36 @@ static inline bool gic_enable_sre(void)
+ 	return !!(val & ICC_SRE_EL1_SRE);
+ }
+ 
++enum gic_intid_range {
++	SGI_RANGE,
++	PPI_RANGE,
++	SPI_RANGE,
++	EPPI_RANGE,
++	ESPI_RANGE,
++	LPI_RANGE,
++	__INVALID_RANGE__
++};
++
++static inline enum gic_intid_range __get_intid_range(irq_hw_number_t hwirq)
++{
++	switch (hwirq) {
++	case 0 ... 15:
++		return SGI_RANGE;
++	case 16 ... 31:
++		return PPI_RANGE;
++	case 32 ... 1019:
++		return SPI_RANGE;
++	case EPPI_BASE_INTID ... (EPPI_BASE_INTID + 63):
++		return EPPI_RANGE;
++	case ESPI_BASE_INTID ... (ESPI_BASE_INTID + 1023):
++		return ESPI_RANGE;
++	case 8192 ... GENMASK(23, 0):
++		return LPI_RANGE;
++	default:
++		return __INVALID_RANGE__;
++	}
++}
++
+ #endif
+ 
+ #endif
+-- 
+2.43.0
+

@@ -1,0 +1,139 @@
+From bf536fa1281c9d38c8e563247b23269c3db1366d Mon Sep 17 00:00:00 2001
+From: Zi Yan <ziy@nvidia.com>
+Date: Wed, 20 Mar 2024 14:02:13 -0400
+Subject: [PATCH 038/960] mm: page_alloc: set migratetype inside
+ move_freepages()
+
+commit f37c0f6876a8eabe1477c87860460bc181f6cdbb upstream.
+
+This avoids changing migratetype after move_freepages() or
+move_freepages_block(), which is error prone.  It also prepares for
+upcoming changes to fix move_freepages() not moving free pages partially
+in the range.
+
+Link: https://lkml.kernel.org/r/20240320180429.678181-9-hannes@cmpxchg.org
+Signed-off-by: Zi Yan <ziy@nvidia.com>
+Signed-off-by: Johannes Weiner <hannes@cmpxchg.org>
+Reviewed-by: Vlastimil Babka <vbabka@suse.cz>
+Tested-by: Baolin Wang <baolin.wang@linux.alibaba.com>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: "Huang, Ying" <ying.huang@intel.com>
+Cc: Mel Gorman <mgorman@techsingularity.net>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/page_alloc.c     | 27 +++++++++++++--------------
+ mm/page_isolation.c |  7 +++----
+ 2 files changed, 16 insertions(+), 18 deletions(-)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index c90699190ebc..c6179a043821 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -1629,9 +1629,8 @@ static inline struct page *__rmqueue_cma_fallback(struct zone *zone,
+ #endif
+ 
+ /*
+- * Move the free pages in a range to the freelist tail of the requested type.
+- * Note that start_page and end_pages are not aligned on a pageblock
+- * boundary. If alignment is required, use move_freepages_block()
++ * Change the type of a block and move all its free pages to that
++ * type's freelist.
+  */
+ static int move_freepages(struct zone *zone, unsigned long start_pfn,
+ 			  unsigned long end_pfn, int migratetype)
+@@ -1641,6 +1640,9 @@ static int move_freepages(struct zone *zone, unsigned long start_pfn,
+ 	unsigned int order;
+ 	int pages_moved = 0;
+ 
++	VM_WARN_ON(start_pfn & (pageblock_nr_pages - 1));
++	VM_WARN_ON(start_pfn + pageblock_nr_pages - 1 != end_pfn);
++
+ 	for (pfn = start_pfn; pfn <= end_pfn;) {
+ 		page = pfn_to_page(pfn);
+ 		if (!PageBuddy(page)) {
+@@ -1658,6 +1660,8 @@ static int move_freepages(struct zone *zone, unsigned long start_pfn,
+ 		pages_moved += 1 << order;
+ 	}
+ 
++	set_pageblock_migratetype(pfn_to_page(start_pfn), migratetype);
++
+ 	return pages_moved;
+ }
+ 
+@@ -1885,7 +1889,6 @@ steal_suitable_fallback(struct zone *zone, struct page *page,
+ 	if (free_pages + alike_pages >= (1 << (pageblock_order-1)) ||
+ 			page_group_by_mobility_disabled) {
+ 		move_freepages(zone, start_pfn, end_pfn, start_type);
+-		set_pageblock_migratetype(page, start_type);
+ 		return __rmqueue_smallest(zone, order, start_type);
+ 	}
+ 
+@@ -1955,12 +1958,10 @@ static void reserve_highatomic_pageblock(struct page *page, struct zone *zone)
+ 	/* Yoink! */
+ 	mt = get_pageblock_migratetype(page);
+ 	/* Only reserve normal pageblocks (i.e., they can merge with others) */
+-	if (migratetype_is_mergeable(mt)) {
+-		if (move_freepages_block(zone, page, MIGRATE_HIGHATOMIC) != -1) {
+-			set_pageblock_migratetype(page, MIGRATE_HIGHATOMIC);
++	if (migratetype_is_mergeable(mt))
++		if (move_freepages_block(zone, page,
++					 MIGRATE_HIGHATOMIC) != -1)
+ 			zone->nr_reserved_highatomic += pageblock_nr_pages;
+-		}
+-	}
+ 
+ out_unlock:
+ 	spin_unlock_irqrestore(&zone->lock, flags);
+@@ -2039,7 +2040,6 @@ static bool unreserve_highatomic_pageblock(const struct alloc_context *ac,
+ 			 * not fail on zone boundaries.
+ 			 */
+ 			WARN_ON_ONCE(ret == -1);
+-			set_pageblock_migratetype(page, ac->migratetype);
+ 			if (ret > 0) {
+ 				spin_unlock_irqrestore(&zone->lock, flags);
+ 				return ret;
+@@ -2796,10 +2796,9 @@ int __isolate_free_page(struct page *page, unsigned int order)
+ 			 * Only change normal pageblocks (i.e., they can merge
+ 			 * with others)
+ 			 */
+-			if (migratetype_is_mergeable(mt) &&
+-			    move_freepages_block(zone, page,
+-						 MIGRATE_MOVABLE) != -1)
+-				set_pageblock_migratetype(page, MIGRATE_MOVABLE);
++			if (migratetype_is_mergeable(mt))
++				move_freepages_block(zone, page,
++						     MIGRATE_MOVABLE);
+ 		}
+ 	}
+ 
+diff --git a/mm/page_isolation.c b/mm/page_isolation.c
+index e9415cdc35a9..21c7d7492e64 100644
+--- a/mm/page_isolation.c
++++ b/mm/page_isolation.c
+@@ -188,7 +188,6 @@ static int set_migratetype_isolate(struct page *page, int migratetype, int isol_
+ 			return -EBUSY;
+ 		}
+ 		__mod_zone_freepage_state(zone, -nr_pages, mt);
+-		set_pageblock_migratetype(page, MIGRATE_ISOLATE);
+ 		zone->nr_isolate_pageblock++;
+ 		spin_unlock_irqrestore(&zone->lock, flags);
+ 		return 0;
+@@ -262,10 +261,10 @@ static void unset_migratetype_isolate(struct page *page, int migratetype)
+ 		 */
+ 		WARN_ON_ONCE(nr_pages == -1);
+ 		__mod_zone_freepage_state(zone, nr_pages, migratetype);
+-	}
+-	set_pageblock_migratetype(page, migratetype);
+-	if (isolated_page)
++	} else {
++		set_pageblock_migratetype(page, migratetype);
+ 		__putback_isolated_page(page, order, migratetype);
++	}
+ 	zone->nr_isolate_pageblock--;
+ out:
+ 	spin_unlock_irqrestore(&zone->lock, flags);
+-- 
+2.43.0
+

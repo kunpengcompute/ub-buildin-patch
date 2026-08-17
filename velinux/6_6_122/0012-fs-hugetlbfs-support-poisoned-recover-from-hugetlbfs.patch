@@ -1,0 +1,81 @@
+From 0065bea566361d740076acc57d65cb93cd4b7d89 Mon Sep 17 00:00:00 2001
+From: Kefeng Wang <wangkefeng.wang@huawei.com>
+Date: Wed, 26 Jun 2024 16:53:27 +0800
+Subject: [PATCH 012/960] fs: hugetlbfs: support poisoned recover from
+ hugetlbfs_migrate_folio()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit f00b295b9b61bb332b4f5951f479ab3aaeada5b8 upstream.
+
+This is similar to __migrate_folio(), use folio_mc_copy() in HugeTLB folio
+migration to avoid panic when copy from poisoned folio.
+
+Link: https://lkml.kernel.org/r/20240626085328.608006-6-wangkefeng.wang@huawei.com
+Signed-off-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Cc: Alistair Popple <apopple@nvidia.com>
+Cc: Benjamin LaHaise <bcrl@kvack.org>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Hugh Dickins <hughd@google.com>
+Cc: Jane Chu <jane.chu@oracle.com>
+Cc: Jérôme Glisse <jglisse@redhat.com>
+Cc: Jiaqi Yan <jiaqiyan@google.com>
+Cc: Lance Yang <ioworker0@gmail.com>
+Cc: Matthew Wilcox (Oracle) <willy@infradead.org>
+Cc: Miaohe Lin <linmiaohe@huawei.com>
+Cc: Muchun Song <muchun.song@linux.dev>
+Cc: Naoya Horiguchi <nao.horiguchi@gmail.com>
+Cc: Oscar Salvador <osalvador@suse.de>
+Cc: Tony Luck <tony.luck@intel.com>
+Cc: Vishal Moola (Oracle) <vishal.moola@gmail.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/hugetlbfs/inode.c |  5 +----
+ mm/migrate.c         | 10 ++++++++--
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/fs/hugetlbfs/inode.c b/fs/hugetlbfs/inode.c
+index 70899d0e995c..8120f340f3d6 100644
+--- a/fs/hugetlbfs/inode.c
++++ b/fs/hugetlbfs/inode.c
+@@ -1157,10 +1157,7 @@ static int hugetlbfs_migrate_folio(struct address_space *mapping,
+ 		hugetlb_set_folio_subpool(src, NULL);
+ 	}
+ 
+-	if (mode != MIGRATE_SYNC_NO_COPY)
+-		folio_migrate_copy(dst, src);
+-	else
+-		folio_migrate_flags(dst, src);
++	folio_migrate_flags(dst, src);
+ 
+ 	return MIGRATEPAGE_SUCCESS;
+ }
+diff --git a/mm/migrate.c b/mm/migrate.c
+index 3167f30e3409..0b0a4cb533c1 100644
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -532,10 +532,16 @@ int migrate_huge_page_move_mapping(struct address_space *mapping,
+ 				   struct folio *dst, struct folio *src)
+ {
+ 	XA_STATE(xas, &mapping->i_pages, folio_index(src));
+-	int expected_count;
++	int rc, expected_count = folio_expected_refs(mapping, src);
++
++	if (folio_ref_count(src) != expected_count)
++		return -EAGAIN;
++
++	rc = folio_mc_copy(dst, src);
++	if (unlikely(rc))
++		return rc;
+ 
+ 	xas_lock_irq(&xas);
+-	expected_count = folio_expected_refs(mapping, src);
+ 	if (!folio_ref_freeze(src, expected_count)) {
+ 		xas_unlock_irq(&xas);
+ 		return -EAGAIN;
+-- 
+2.43.0
+

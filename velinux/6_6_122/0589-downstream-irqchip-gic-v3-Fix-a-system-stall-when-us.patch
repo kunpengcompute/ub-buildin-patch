@@ -1,0 +1,58 @@
+From 6c5739eb90c6df0587855d5114c46fd97bc1395a Mon Sep 17 00:00:00 2001
+From: Jinjie Ruan <ruanjinjie@huawei.com>
+Date: Thu, 26 Jun 2025 13:59:21 +0800
+Subject: [PATCH 589/960] downstream: irqchip/gic-v3: Fix a system stall when
+ using pseudo NMI with CONFIG_ARM64_NMI closed
+
+A system stall occurrs when using pseudo NMI with CONFIG_ARM64_NMI closed.
+If the hardware supports FEAT_NMI, the ALLINT bit in pstate may set or
+clear on exception trap whether the software enables it or not, so it is
+not safe to use it to check interrupts_enabled() or
+fast_interrupts_enabled() when FEAT_NMI not enabled in kernel, so
+recover it.
+
+After applying this patch, the system stall not happen again on hardware
+with FEAT_NMI feature.
+
+Fixes: eefea6156921 ("irqchip/gic-v3: Fix hard LOCKUP caused by NMI being masked")
+Signed-off-by: Jinjie Ruan <ruanjinjie@huawei.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/ptrace.h      | 5 ++---
+ arch/arm64/include/uapi/asm/ptrace.h | 1 -
+ 2 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/include/asm/ptrace.h b/arch/arm64/include/asm/ptrace.h
+index 81bb2cb17d85..a90ae87ebec5 100644
+--- a/arch/arm64/include/asm/ptrace.h
++++ b/arch/arm64/include/asm/ptrace.h
+@@ -240,11 +240,10 @@ static inline void forget_syscall(struct pt_regs *regs)
+ 		true)
+ 
+ #define interrupts_enabled(regs)			\
+-	(!((regs)->pstate & PSR_ALLINT_BIT) && !((regs)->pstate & PSR_I_BIT) && \
+-	 irqs_priority_unmasked(regs))
++	(!((regs)->pstate & PSR_I_BIT) && irqs_priority_unmasked(regs))
+ 
+ #define fast_interrupts_enabled(regs) \
+-	(!((regs)->pstate & PSR_ALLINT_BIT) && !(regs)->pstate & PSR_F_BIT)
++	(!(regs)->pstate & PSR_F_BIT)
+ 
+ static inline unsigned long user_stack_pointer(struct pt_regs *regs)
+ {
+diff --git a/arch/arm64/include/uapi/asm/ptrace.h b/arch/arm64/include/uapi/asm/ptrace.h
+index 8a125a1986be..7fa2f7036aa7 100644
+--- a/arch/arm64/include/uapi/asm/ptrace.h
++++ b/arch/arm64/include/uapi/asm/ptrace.h
+@@ -48,7 +48,6 @@
+ #define PSR_D_BIT	0x00000200
+ #define PSR_BTYPE_MASK	0x00000c00
+ #define PSR_SSBS_BIT	0x00001000
+-#define PSR_ALLINT_BIT	0x00002000
+ #define PSR_PAN_BIT	0x00400000
+ #define PSR_UAO_BIT	0x00800000
+ #define PSR_DIT_BIT	0x01000000
+-- 
+2.43.0
+

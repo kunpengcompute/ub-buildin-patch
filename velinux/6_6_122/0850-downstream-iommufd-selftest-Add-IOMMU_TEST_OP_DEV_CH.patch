@@ -1,0 +1,150 @@
+From f22141b26e39d3702df780ada0009b94ca657a43 Mon Sep 17 00:00:00 2001
+From: Nicolin Chen <nicolinc@nvidia.com>
+Date: Thu, 18 Jan 2024 14:49:59 -0800
+Subject: [PATCH 850/960] downstream: iommufd/selftest: Add
+ IOMMU_TEST_OP_DEV_CHECK_CACHE test command
+
+Similar to IOMMU_TEST_OP_MD_CHECK_IOTLB verifying a mock_domain's iotlb,
+IOMMU_TEST_OP_DEV_CHECK_CACHE will be used to verify a mock_dev's cache.
+
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/iommufd_test.h          |  5 ++++
+ drivers/iommu/iommufd/selftest.c              | 22 +++++++++++++++++
+ tools/testing/selftests/iommu/iommufd.c       |  7 +++++-
+ tools/testing/selftests/iommu/iommufd_utils.h | 24 +++++++++++++++++++
+ 4 files changed, 57 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/iommufd/iommufd_test.h b/drivers/iommu/iommufd/iommufd_test.h
+index 46558f83e734..a6b7a163f636 100644
+--- a/drivers/iommu/iommufd/iommufd_test.h
++++ b/drivers/iommu/iommufd/iommufd_test.h
+@@ -23,6 +23,7 @@ enum {
+ 	IOMMU_TEST_OP_DIRTY,
+ 	IOMMU_TEST_OP_MD_CHECK_IOTLB,
+ 	IOMMU_TEST_OP_TRIGGER_IOPF,
++	IOMMU_TEST_OP_DEV_CHECK_CACHE,
+ };
+ 
+ enum {
+@@ -140,6 +141,10 @@ struct iommu_test_cmd {
+ 			__u32 perm;
+ 			__u64 addr;
+ 		} trigger_iopf;
++		struct {
++			__u32 id;
++			__u32 cache;
++		} check_dev_cache;
+ 	};
+ 	__u32 last;
+ };
+diff --git a/drivers/iommu/iommufd/selftest.c b/drivers/iommu/iommufd/selftest.c
+index 46f5efdcacee..0c2a8e49b9d5 100644
+--- a/drivers/iommu/iommufd/selftest.c
++++ b/drivers/iommu/iommufd/selftest.c
+@@ -1131,6 +1131,24 @@ static int iommufd_test_md_check_iotlb(struct iommufd_ucmd *ucmd,
+ 	return rc;
+ }
+ 
++static int iommufd_test_dev_check_cache(struct iommufd_ucmd *ucmd, u32 idev_id,
++					unsigned int cache_id, u32 cache)
++{
++	struct iommufd_device *idev;
++	struct mock_dev *mdev;
++	int rc = 0;
++
++	idev = iommufd_get_device(ucmd, idev_id);
++	if (IS_ERR(idev))
++		return PTR_ERR(idev);
++	mdev = container_of(idev->dev, struct mock_dev, dev);
++
++	if (cache_id > MOCK_DEV_CACHE_ID_MAX || mdev->cache[cache_id] != cache)
++		rc = -EINVAL;
++	iommufd_put_object(ucmd->ictx, &idev->obj);
++	return rc;
++}
++
+ struct selftest_access {
+ 	struct iommufd_access *access;
+ 	struct file *file;
+@@ -1640,6 +1658,10 @@ int iommufd_test(struct iommufd_ucmd *ucmd)
+ 		return iommufd_test_md_check_iotlb(ucmd, cmd->id,
+ 						   cmd->check_iotlb.id,
+ 						   cmd->check_iotlb.iotlb);
++	case IOMMU_TEST_OP_DEV_CHECK_CACHE:
++		return iommufd_test_dev_check_cache(ucmd, cmd->id,
++						    cmd->check_dev_cache.id,
++						    cmd->check_dev_cache.cache);
+ 	case IOMMU_TEST_OP_CREATE_ACCESS:
+ 		return iommufd_test_create_access(ucmd, cmd->id,
+ 						  cmd->create_access.flags);
+diff --git a/tools/testing/selftests/iommu/iommufd.c b/tools/testing/selftests/iommu/iommufd.c
+index 75016a4e3495..61c052f1af8f 100644
+--- a/tools/testing/selftests/iommu/iommufd.c
++++ b/tools/testing/selftests/iommu/iommufd.c
+@@ -222,6 +222,8 @@ FIXTURE_SETUP(iommufd_ioas)
+ 	for (i = 0; i != variant->mock_domains; i++) {
+ 		test_cmd_mock_domain(self->ioas_id, &self->stdev_id,
+ 				     &self->hwpt_id, &self->device_id);
++		test_cmd_dev_check_cache_all(self->device_id,
++					     IOMMU_TEST_DEV_CACHE_DEFAULT);
+ 		self->base_iova = MOCK_APERTURE_START;
+ 	}
+ }
+@@ -1386,9 +1388,12 @@ FIXTURE_SETUP(iommufd_mock_domain)
+ 
+ 	ASSERT_GE(ARRAY_SIZE(self->hwpt_ids), variant->mock_domains);
+ 
+-	for (i = 0; i != variant->mock_domains; i++)
++	for (i = 0; i != variant->mock_domains; i++) {
+ 		test_cmd_mock_domain(self->ioas_id, &self->stdev_ids[i],
+ 				     &self->hwpt_ids[i], &self->idev_ids[i]);
++		test_cmd_dev_check_cache_all(self->idev_ids[0],
++					     IOMMU_TEST_DEV_CACHE_DEFAULT);
++	}
+ 	self->hwpt_id = self->hwpt_ids[0];
+ 
+ 	self->mmap_flags = MAP_SHARED | MAP_ANONYMOUS;
+diff --git a/tools/testing/selftests/iommu/iommufd_utils.h b/tools/testing/selftests/iommu/iommufd_utils.h
+index 5b17d7b2ac5c..3ae6cb5eed7d 100644
+--- a/tools/testing/selftests/iommu/iommufd_utils.h
++++ b/tools/testing/selftests/iommu/iommufd_utils.h
+@@ -234,6 +234,30 @@ static int _test_cmd_hwpt_alloc(int fd, __u32 device_id, __u32 pt_id, __u32 ft_i
+ 			test_cmd_hwpt_check_iotlb(hwpt_id, i, expected);       \
+ 	})
+ 
++#define test_cmd_dev_check_cache(device_id, cache_id, expected)                \
++	({                                                                     \
++		struct iommu_test_cmd test_cmd = {                             \
++			.size = sizeof(test_cmd),                              \
++			.op = IOMMU_TEST_OP_DEV_CHECK_CACHE,                   \
++			.id = device_id,                                       \
++			.check_dev_cache = {                                   \
++				.id = cache_id,                                \
++				.cache = expected,                             \
++			},                                                     \
++		};                                                             \
++		ASSERT_EQ(0, ioctl(self->fd,                                   \
++				   _IOMMU_TEST_CMD(                            \
++					   IOMMU_TEST_OP_DEV_CHECK_CACHE),     \
++				   &test_cmd));                                \
++	})
++
++#define test_cmd_dev_check_cache_all(device_id, expected)                      \
++	({                                                                     \
++		int c;                                                         \
++		for (c = 0; c < MOCK_DEV_CACHE_NUM; c++)                       \
++			test_cmd_dev_check_cache(device_id, c, expected);      \
++	})
++
+ static int _test_cmd_hwpt_invalidate(int fd, __u32 hwpt_id, void *reqs,
+ 				     uint32_t data_type, uint32_t lreq,
+ 				     uint32_t *nreqs)
+-- 
+2.43.0
+

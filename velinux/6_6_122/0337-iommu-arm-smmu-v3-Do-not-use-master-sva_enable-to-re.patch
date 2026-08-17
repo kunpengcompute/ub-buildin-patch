@@ -1,0 +1,129 @@
+From b921da042470594b8f5d22a27d888ba9dbee3c43 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Tue, 25 Jun 2024 09:37:37 -0300
+Subject: [PATCH 337/960] iommu/arm-smmu-v3: Do not use master->sva_enable to
+ restrict attaches
+
+commit be7c90de39fdebdba4f9cce7575b71c6b2506ea0 upstream.
+
+We no longer need a master->sva_enable to control what attaches are
+allowed. Instead we can tell if the attach is legal based on the current
+configuration of the master.
+
+Keep track of the number of valid CD entries for SSID's in the cd_table
+and if the cd_table has been installed in the STE directly so we know what
+the configuration is.
+
+The attach logic is then made into:
+ - SVA bind, check if the CD is installed
+ - RID attach of S2, block if SSIDs are used
+ - RID attach of IDENTITY/BLOCKING, block if SSIDs are used
+
+arm_smmu_set_pasid() is already checking if it is possible to setup a CD
+entry, at this patch it means the RID path already set a STE pointing at
+the CD table.
+
+Tested-by: Nicolin Chen <nicolinc@nvidia.com>
+Reviewed-by: Nicolin Chen <nicolinc@nvidia.com>
+Reviewed-by: Jerry Snitselaar <jsnitsel@redhat.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Link: https://lore.kernel.org/r/6-v9-5cd718286059+79186-smmuv3_newapi_p2b_jgg@nvidia.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 24 ++++++++++-----------
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h |  7 ++++++
+ 2 files changed, 19 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 85196dfb86c3..096e3efdcb57 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -1286,6 +1286,8 @@ void arm_smmu_write_cd_entry(struct arm_smmu_master *master, int ssid,
+ 			     struct arm_smmu_cd *cdptr,
+ 			     const struct arm_smmu_cd *target)
+ {
++	bool target_valid = target->data[0] & cpu_to_le64(CTXDESC_CD_0_V);
++	bool cur_valid = cdptr->data[0] & cpu_to_le64(CTXDESC_CD_0_V);
+ 	struct arm_smmu_cd_writer cd_writer = {
+ 		.writer = {
+ 			.ops = &arm_smmu_cd_writer_ops,
+@@ -1294,6 +1296,13 @@ void arm_smmu_write_cd_entry(struct arm_smmu_master *master, int ssid,
+ 		.ssid = ssid,
+ 	};
+ 
++	if (ssid != IOMMU_NO_PASID && cur_valid != target_valid) {
++		if (cur_valid)
++			master->cd_table.used_ssids--;
++		else
++			master->cd_table.used_ssids++;
++	}
++
+ 	arm_smmu_write_entry(&cd_writer.writer, cdptr->data, target->data);
+ }
+ 
+@@ -2737,16 +2746,6 @@ static int arm_smmu_attach_dev(struct iommu_domain *domain, struct device *dev)
+ 	state.master = master = dev_iommu_priv_get(dev);
+ 	smmu = master->smmu;
+ 
+-	/*
+-	 * Checking that SVA is disabled ensures that this device isn't bound to
+-	 * any mm, and can be safely detached from its old domain. Bonds cannot
+-	 * be removed concurrently since we're holding the group mutex.
+-	 */
+-	if (arm_smmu_master_sva_enabled(master)) {
+-		dev_err(dev, "cannot attach - SVA enabled\n");
+-		return -EBUSY;
+-	}
+-
+ 	mutex_lock(&smmu_domain->init_mutex);
+ 
+ 	if (!smmu_domain->smmu) {
+@@ -2762,7 +2761,8 @@ static int arm_smmu_attach_dev(struct iommu_domain *domain, struct device *dev)
+ 		cdptr = arm_smmu_alloc_cd_ptr(master, IOMMU_NO_PASID);
+ 		if (!cdptr)
+ 			return -ENOMEM;
+-	}
++	} else if (arm_smmu_ssids_in_use(&master->cd_table))
++		return -EBUSY;
+ 
+ 	/*
+ 	 * Prevent arm_smmu_share_asid() from trying to change the ASID
+@@ -2835,7 +2835,7 @@ static int arm_smmu_attach_dev_ste(struct iommu_domain *domain,
+ 		.old_domain = iommu_get_domain_for_dev(dev),
+ 	};
+ 
+-	if (arm_smmu_master_sva_enabled(master))
++	if (arm_smmu_ssids_in_use(&master->cd_table))
+ 		return -EBUSY;
+ 
+ 	/*
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+index 6330d50b5fd7..2d5292a75a1c 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+@@ -602,12 +602,19 @@ struct arm_smmu_ctx_desc_cfg {
+ 	dma_addr_t			cdtab_dma;
+ 	struct arm_smmu_l1_ctx_desc	*l1_desc;
+ 	unsigned int			num_l1_ents;
++	unsigned int			used_ssids;
+ 	u8				in_ste;
+ 	u8				s1fmt;
+ 	/* log2 of the maximum number of CDs supported by this table */
+ 	u8				s1cdmax;
+ };
+ 
++/* True if the cd table has SSIDS > 0 in use. */
++static inline bool arm_smmu_ssids_in_use(struct arm_smmu_ctx_desc_cfg *cd_table)
++{
++	return cd_table->used_ssids;
++}
++
+ struct arm_smmu_s2_cfg {
+ 	u16				vmid;
+ };
+-- 
+2.43.0
+

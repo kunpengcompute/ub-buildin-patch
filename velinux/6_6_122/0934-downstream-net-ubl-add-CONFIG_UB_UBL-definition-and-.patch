@@ -1,0 +1,95 @@
+From 194fc311cca7dd17e00b1167419527f5222748e1 Mon Sep 17 00:00:00 2001
+From: Fengyan Mu <mufengyan@huawei.com>
+Date: Wed, 24 Sep 2025 16:39:23 +0800
+Subject: [PATCH 934/960] downstream: net: ubl: add CONFIG_UB_UBL definition
+ and UBL interface
+
+This patch adds UB link interfaces to support it.
+
+UB is a new interconnection protocol that defines its own Layer 2 protocol.
+The format of a complete UB packet is as follows. UBL HDR includes UB LINK,
+CC and NPI. UB LINK replaces Ether header in packets. The UB Network header
+consists of CC, NPI, and traditional Network packet headers.
+
+|<-------- UBL HDR --------->|
++--------------+------+------+---------+-----------+---------+
+|    UB LINK   |  CC  |  NPI | Network | TPH / TAH | Payload |
++--------------+------+------+---------+-----------+---------+
+               |<----- UB Network ---->|
+
+- UB LINK: Format specified by the data link layer of the UB LINK.
+- CC: Congestion Control.
+- NPI: Network Partition Identifier.
+- Network: Traditinal L3 Header.
+
+At network layer, the UB Network Header is encapsulated. However,
+the packet type cannot be known by parsing packet from user, which
+leads to restrictions on the use of socket.
+
+This patch adds sw_ctype field to indicate the packet type. As shown
+in the following figure, the sw_ctype field will be add at the header
+of packet before entering the dirver.
+
++----------+----+-----+---------+-----------+---------+
+| sw_ctype | CC | NPI | Network | TPH / TAH | Payload |
++----------+----+-----+---------+-----------+---------+
+
+-sw_ctype: L3 Header type.
+
+When packets are sent to hardware, the sw_ctype field will be deleted
+and the original packet will be restored.
+
++----+-----+---------+-----------+---------+
+| CC | NPI | Network | TPH / TAH | Payload |
++----+-----+---------+-----------+---------+
+
+Signed-off-by: Fengyan Mu <mufengyan@huawei.com>
+Signed-off-by: Haiqing Fang <fanghaiqing@huawei.com>
+Signed-off-by: Junxin Chen <chenjunxin1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ drivers/net/Kconfig           | 1 +
+ include/uapi/linux/if_arp.h   | 2 ++
+ include/uapi/linux/if_ether.h | 1 +
+ 3 files changed, 4 insertions(+)
+
+diff --git a/drivers/net/Kconfig b/drivers/net/Kconfig
+index af0da4bb429b..5bf8c89ac5c4 100644
+--- a/drivers/net/Kconfig
++++ b/drivers/net/Kconfig
+@@ -502,6 +502,7 @@ source "drivers/net/fddi/Kconfig"
+ 
+ source "drivers/net/hippi/Kconfig"
+ 
++
+ source "drivers/net/ipa/Kconfig"
+ 
+ config NET_SB1000
+diff --git a/include/uapi/linux/if_arp.h b/include/uapi/linux/if_arp.h
+index 4783af9fe520..ed514ed01268 100644
+--- a/include/uapi/linux/if_arp.h
++++ b/include/uapi/linux/if_arp.h
+@@ -43,6 +43,8 @@
+ #define ARPHRD_EUI64	27		/* EUI-64                       */
+ #define ARPHRD_INFINIBAND 32		/* InfiniBand			*/
+ 
++#define ARPHRD_UB	38		/* Unified bus			*/
++
+ /* Dummy types for non ARP hardware */
+ #define ARPHRD_SLIP	256
+ #define ARPHRD_CSLIP	257
+diff --git a/include/uapi/linux/if_ether.h b/include/uapi/linux/if_ether.h
+index 69e0457eb200..065ca4e2d3c4 100644
+--- a/include/uapi/linux/if_ether.h
++++ b/include/uapi/linux/if_ether.h
+@@ -159,6 +159,7 @@
+ #define ETH_P_MCTP	0x00FA		/* Management component transport
+ 					 * protocol packets
+ 					 */
++#define ETH_P_UB	0x0100		/* Network control packet of Unified Bus */
+ 
+ /*
+  *	This is an Ethernet frame header.
+-- 
+2.43.0
+

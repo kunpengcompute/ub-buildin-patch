@@ -1,0 +1,36 @@
+From 54767ecd435a17f1ba36a3250846fecff67741da Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:20 +0800
+Subject: [PATCH 668/960] downstream: arm_mpam: resctrl: Add empty definitions
+ for pseudo lock
+
+Pseudo lock isn't supported on arm64. Add empty definitions of the
+functions arm64 doesn't implement. Because the Kconfig option is not
+selected, none of these will be called.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/arm_mpam.h | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index 32d15f4e666a..b81f18267a72 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -80,4 +80,11 @@ struct rdt_resource;
+ void *resctrl_arch_mon_ctx_alloc(struct rdt_resource *r, int evtid);
+ void resctrl_arch_mon_ctx_free(struct rdt_resource *r, int evtid, void *ctx);
+ 
++/* Pseudo lock is not supported by MPAM */
++static inline int resctrl_arch_pseudo_lock_fn(void *_plr) { return 0; }
++static inline int resctrl_arch_measure_l2_residency(void *_plr) { return 0; }
++static inline int resctrl_arch_measure_l3_residency(void *_plr) { return 0; }
++static inline int resctrl_arch_measure_cycles_lat_fn(void *_plr) { return 0; }
++static inline u64 resctrl_arch_get_prefetch_disable_bits(void) { return 0; }
++
+ #endif /* __LINUX_ARM_MPAM_H */
+-- 
+2.43.0
+

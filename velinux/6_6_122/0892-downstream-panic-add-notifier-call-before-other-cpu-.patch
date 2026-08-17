@@ -1,0 +1,67 @@
+From 972d3cdd49525924804eb8d5a46f6cd9201c2a59 Mon Sep 17 00:00:00 2001
+From: Tong Tiangen <tongtiangen@huawei.com>
+Date: Mon, 2 Sep 2024 15:27:13 +0800
+Subject: [PATCH 892/960] downstream: panic: add notifier call before other cpu
+ shutdown
+
+Add an atomic notifier call before other cpu shutdown and modules can use
+this to perform related work that depends on other cpu not shutdown.
+
+The modules can determine whether panic_notifier_list is triggered
+according to crash_kexec_post_notifiers, so export symbol it.
+
+Signed-off-by: Tong Tiangen <tongtiangen@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/panic_notifier.h | 1 +
+ kernel/panic.c                 | 6 ++++++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/include/linux/panic_notifier.h b/include/linux/panic_notifier.h
+index 41e32483d7a7..30aedcadbe84 100644
+--- a/include/linux/panic_notifier.h
++++ b/include/linux/panic_notifier.h
+@@ -6,6 +6,7 @@
+ #include <linux/types.h>
+ 
+ extern struct atomic_notifier_head panic_notifier_list;
++extern struct atomic_notifier_head panic_early_notifier_list;
+ 
+ extern bool crash_kexec_post_notifiers;
+ 
+diff --git a/kernel/panic.c b/kernel/panic.c
+index 2abebcc65240..7be1971d8f87 100644
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -58,6 +58,7 @@ static int pause_on_oops;
+ static int pause_on_oops_flag;
+ static DEFINE_SPINLOCK(pause_on_oops_lock);
+ bool crash_kexec_post_notifiers;
++EXPORT_SYMBOL_GPL(crash_kexec_post_notifiers);
+ int panic_on_warn __read_mostly;
+ unsigned long panic_on_taint;
+ bool panic_on_taint_nousertaint = false;
+@@ -76,8 +77,10 @@ EXPORT_SYMBOL_GPL(panic_timeout);
+ unsigned long panic_print;
+ 
+ ATOMIC_NOTIFIER_HEAD(panic_notifier_list);
++ATOMIC_NOTIFIER_HEAD(panic_early_notifier_list);
+ 
+ EXPORT_SYMBOL(panic_notifier_list);
++EXPORT_SYMBOL(panic_early_notifier_list);
+ 
+ #ifdef CONFIG_SYSCTL
+ static struct ctl_table kern_panic_table[] = {
+@@ -347,6 +350,9 @@ void panic(const char *fmt, ...)
+ 	 */
+ 	kgdb_panic(buf);
+ 
++	/* Run any panic handlers before cpu shutdown. */
++	atomic_notifier_call_chain(&panic_early_notifier_list, 0, buf);
++
+ 	/*
+ 	 * If we have crashed and we have a crash kernel loaded let it handle
+ 	 * everything else.
+-- 
+2.43.0
+

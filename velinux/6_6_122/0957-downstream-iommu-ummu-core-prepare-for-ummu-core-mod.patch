@@ -1,0 +1,146 @@
+From 603f348b26081c55900fee840bb0ef1a161b3b46 Mon Sep 17 00:00:00 2001
+From: Liu Shixin <liushixin2@huawei.com>
+Date: Sat, 25 Jul 2026 17:03:23 +0800
+Subject: [PATCH 957/960] downstream: iommu/ummu-core: prepare for ummu-core
+ module
+
+Extend struct ummu_core_ops and struct ummu_core_device.
+Add a new list core_device_list.
+
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ .../iommu/hisilicon/ummu-core/core_common.c   |  3 ++
+ .../hisilicon/ummu-core/ummu_core_priv.h      |  1 +
+ include/linux/ummu_core.h                     | 50 +++++++++++++++++++
+ 3 files changed, 54 insertions(+)
+
+diff --git a/drivers/iommu/hisilicon/ummu-core/core_common.c b/drivers/iommu/hisilicon/ummu-core/core_common.c
+index 884feb5b381b..a696c5bd02e3 100644
+--- a/drivers/iommu/hisilicon/ummu-core/core_common.c
++++ b/drivers/iommu/hisilicon/ummu-core/core_common.c
+@@ -10,6 +10,9 @@
+ 
+ #include "ummu_core_priv.h"
+ 
++LIST_HEAD(core_device_list);
++EXPORT_SYMBOL_NS_GPL(core_device_list, UMMU_CORE_INTERNAL);
++
+ struct ummu_core_device *global_core_device;
+ EXPORT_SYMBOL_NS_GPL(global_core_device, UMMU_CORE_INTERNAL);
+ 
+diff --git a/drivers/iommu/hisilicon/ummu-core/ummu_core_priv.h b/drivers/iommu/hisilicon/ummu-core/ummu_core_priv.h
+index 2a6befdcc702..5e76414e299e 100644
+--- a/drivers/iommu/hisilicon/ummu-core/ummu_core_priv.h
++++ b/drivers/iommu/hisilicon/ummu-core/ummu_core_priv.h
+@@ -15,6 +15,7 @@
+ /* private definition */
+ extern struct ummu_core_device *global_core_device;
+ extern struct mutex global_device_lock;
++extern struct list_head core_device_list;
+ 
+ /* private interfaces */
+ void ummu_flush_cached_eid(struct ummu_core_device *core_device);
+diff --git a/include/linux/ummu_core.h b/include/linux/ummu_core.h
+index 47ee1dce56e3..74ed202d1d89 100644
+--- a/include/linux/ummu_core.h
++++ b/include/linux/ummu_core.h
+@@ -10,6 +10,7 @@
+ #include <linux/iommu.h>
+ #include <linux/uuid.h>
+ #include <linux/xarray.h>
++#include <linux/property.h>
+ 
+ #define eid_t u128
+ 
+@@ -19,32 +20,64 @@ enum eid_type {
+ 	EID_TYPE_MAX,
+ };
+ 
++enum tid_alloc_mode {
++	TID_ALLOC_TRANSPARENT = 0,
++	TID_ALLOC_ASSIGNED = 1,
++	TID_ALLOC_NORMAL = 2,
++};
++
++enum ummu_mapt_mode {
++	MAPT_MODE_TABLE = 0,
++	MAPT_MODE_ENTRY,
++	MAPT_MODE_END,
++};
++
+ struct iova_slot;
++struct ummu_tid_manager;
+ struct ummu_base_domain;
+ struct ummu_core_device;
+ 
++struct ummu_tid_param {
++	struct device *device;
++	enum ummu_mapt_mode mode;
++	enum tid_alloc_mode alloc_mode;
++	u32 assign_tid;
++};
++
++struct tdev_attr {
++	const char *name;
++	enum dev_dma_attr dma_attr;
++	u8 *priv;
++	u32 priv_len;
++};
++
+ /**
+  * struct ummu_core_ops - ummu ops for normal use, expand from iommu_ops.
+  * @add_eid: Add EID to the UMMU device.
+  * @del_eid: Add EID to the UMMU device.
++ * @tdev_support_attr: Check whether the UMMU device supports the tdev attribute.
+  */
+ struct ummu_core_ops {
+ 	int (*add_eid)(struct ummu_core_device *dev, guid_t *guid, eid_t eid,
+ 		       enum eid_type type);
+ 	void (*del_eid)(struct ummu_core_device *dev, guid_t *guid, eid_t eid,
+ 			enum eid_type type);
++	bool (*tdev_support_attr)(struct ummu_core_device *dev, struct tdev_attr *attr);
+ };
+ 
+ /**
+  * ummu-core defined iommu device type
+  * @list: used to link all ummu-core devices
++ * @tid_manager: tid domain manager.
+  * @iommu: iommu prototype
+  * @ops: ummu-core defined iommu operations
+  */
+ struct ummu_core_device {
+ 	struct list_head list;
++	struct ummu_tid_manager *tid_manager;
+ 	struct iommu_device iommu;
+ 	const struct ummu_core_ops *ops;
++	struct device *ummu_core_root;
+ };
+ 
+ struct ummu_base_domain {
+@@ -54,6 +87,23 @@ struct ummu_base_domain {
+ 	struct list_head list;
+ 	u32 tid;
+ };
++struct tid_ops {
++	struct ummu_tid_manager *(*alloc_tid_manager)(
++		struct ummu_core_device *core_device, u32 min_tid,
++		u32 max_tid);
++	void (*free_tid_manager)(struct ummu_tid_manager *manager);
++	int (*alloc_tid)(struct ummu_tid_manager *manager,
++			 struct ummu_tid_param *param, u32 *tidp);
++	void (*free_tid)(struct ummu_tid_manager *manager, u32 tid);
++};
++
++struct ummu_tid_manager {
++	const struct tid_ops *ops;
++	struct xarray token_ids;
++	u32 min_tid;
++	u32 max_tid;
++	void *tid_data;
++};
+ 
+ static inline struct ummu_core_device *to_ummu_core(struct iommu_device *iommu)
+ {
+-- 
+2.43.0
+

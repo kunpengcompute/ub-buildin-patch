@@ -1,0 +1,59 @@
+From 3ac4f5181f15cb3096590bf6e2d8e91b93fd7733 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Mon, 23 Mar 2026 20:09:08 +0800
+Subject: [PATCH 916/960] downstream: coredump: skip coredump during critical
+ error if task facing critical RAS
+
+After a critical RAS event is triggered, user data for this task becomes
+inaccessible.
+
+In critical error scenarios, user memory as a whole becomes
+inaccessible, and therefore, the coredump must be skipped.
+Furthermore, dump_vma_snapshot performs a copy operation
+specifically on those VMA(s) that are considered "potentially"
+containing an ELF header. This process involves multiple accesses
+to user memory.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/coredump.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/fs/coredump.c b/fs/coredump.c
+index af7f656b9850..1dbed00251ff 100644
+--- a/fs/coredump.c
++++ b/fs/coredump.c
+@@ -616,6 +616,9 @@ void do_coredump(const kernel_siginfo_t *siginfo)
+ 
+ 	audit_core_dumps(siginfo->si_signo);
+ 
++	if (mm_is_critical_error(mm))
++		goto fail;
++
+ 	binfmt = mm->binfmt;
+ 	if (!binfmt || !binfmt->core_dump)
+ 		goto fail;
+@@ -1298,6 +1301,18 @@ static bool dump_vma_snapshot(struct coredump_params *cprm)
+ 		if (m->dump_size == DUMP_SIZE_MAYBE_ELFHDR_PLACEHOLDER) {
+ 			char elfmag[SELFMAG];
+ 
++			/*
++			 * When a critical fault is triggered, the process might have already passed
++			 * the initial checks in do_coredump. Since this path potentially involves
++			 * multiple accesses to user memory in a loop, if the mm is marked as
++			 * critical, we should skip the operation directly, release resources, and
++			 * return failure.
++			 */
++			if (mm_is_critical_error(mm)) {
++				free_vma_snapshot(cprm);
++				return false;
++			}
++
+ 			if (copy_from_user(elfmag, (void __user *)m->start, SELFMAG) ||
+ 					memcmp(elfmag, ELFMAG, SELFMAG) != 0) {
+ 				m->dump_size = 0;
+-- 
+2.43.0
+

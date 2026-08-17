@@ -1,0 +1,818 @@
+From 08c99b5395f3fc3bc02899ae7d87a9a35cb0403c Mon Sep 17 00:00:00 2001
+From: Yu Liao <liaoyu15@huawei.com>
+Date: Mon, 1 Jan 2024 06:32:40 +0800
+Subject: [PATCH 484/960] downstream: cpuinspect: add CPU-inspect
+ infrastructure
+
+This adds the CPU-inspect infrastructure. CPU-inspect is designed to
+provide a framework for early detection of SDC by proactively executing
+CPU inspection test cases.
+
+Silent Data Corruption (SDC), sometimes referred to as Silent Data Error
+(SDE), is an industry-wide issue impacting not only long-protected memory,
+storage, and networking, but also computer CPUs. As with software issues,
+hardware-induced SDC can contribute to data loss and corruption. An SDC
+occurs when an impacted CPU inadvertently causes errors in the data it
+processes. For example, an impacted CPU might miscalculate data (i.e.,
+1+1=3). There may be no indication of these computational errors unless the
+software systematically checks for errors [1].
+
+SDC issues have been around for many years, but as chips have become more
+advanced and compact in size, the transistors and lines have become so tiny
+that small electrical fluctuations can cause errors. Most of these errors
+are caused by defects during manufacturing and are screened out by the
+vendors; others are caught by hardware error detection or correction.
+However, some errors go undetected by hardware; therefore only detection
+software can protect against such errors [1].
+
+[1] https://support.google.com/cloud/answer/10759085
+
+To use CPU-inspect, you need to load at least one inspector (the driver
+that specifically executes the CPU inspection code)
+
+Here is an example using CPU-inspect:
+
+	# Set the cpumask of CPU-inspect to 10-20
+	echo 10-20 > /sys/devices/system/cpu/cpuinspect/cpumask
+	# set the max cpu utility of inspectiono threads to 50%
+	echo 50 > /sys/devices/system/cpu/cpuinspect/cpu_utility
+	# start the CPU inspection task
+	echo 1 > /sys/devices/system/cpu/cpuinspect/start_patrol
+	# Check the result to see if some faulty cpu are found
+	cat /sys/devices/system/cpu/cpuinspect/result
+
+In addition to being readable, the 'result' file in cpuinspect can also be
+polled. The user that use poll() to monitor 'result' will return when a
+faulty CPU is found or the inspection task is completed.
+
+Signed-off-by: Yu Liao <liaoyu15@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Conflicts:
+	drivers/Kconfig
+[ Context conflicts. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/Kconfig                 |   2 +
+ drivers/Makefile                |   1 +
+ drivers/cpuinspect/Kconfig      |  13 ++
+ drivers/cpuinspect/Makefile     |   6 +
+ drivers/cpuinspect/cpuinspect.c | 170 ++++++++++++++++++++
+ drivers/cpuinspect/cpuinspect.h |  46 ++++++
+ drivers/cpuinspect/inspector.c  | 124 ++++++++++++++
+ drivers/cpuinspect/sysfs.c      | 276 ++++++++++++++++++++++++++++++++
+ include/linux/cpuinspect.h      |  40 +++++
+ 9 files changed, 678 insertions(+)
+ create mode 100644 drivers/cpuinspect/Kconfig
+ create mode 100644 drivers/cpuinspect/Makefile
+ create mode 100644 drivers/cpuinspect/cpuinspect.c
+ create mode 100644 drivers/cpuinspect/cpuinspect.h
+ create mode 100644 drivers/cpuinspect/inspector.c
+ create mode 100644 drivers/cpuinspect/sysfs.c
+ create mode 100644 include/linux/cpuinspect.h
+
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index a7360580ff35..34b420bd19fc 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -245,6 +245,8 @@ source "drivers/hte/Kconfig"
+ 
+ source "drivers/cdx/Kconfig"
+ 
++source "drivers/cpuinspect/Kconfig"
++
+ source "drivers/bytedance/Kconfig"
+ 
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 16e3cc1ca8cc..3b38b735ac14 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -133,6 +133,7 @@ obj-$(CONFIG_EISA)		+= eisa/
+ obj-$(CONFIG_PM_OPP)		+= opp/
+ obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
+ obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
++obj-$(CONFIG_CPU_INSPECT)	+= cpuinspect/
+ obj-y				+= mmc/
+ obj-y				+= ufs/
+ obj-$(CONFIG_MEMSTICK)		+= memstick/
+diff --git a/drivers/cpuinspect/Kconfig b/drivers/cpuinspect/Kconfig
+new file mode 100644
+index 000000000000..548412ba3578
+--- /dev/null
++++ b/drivers/cpuinspect/Kconfig
+@@ -0,0 +1,13 @@
++# SPDX-License-Identifier: GPL-2.0-only
++menu "CPU Inspect"
++
++config CPU_INSPECT
++	tristate "CPU inspect support"
++	depends on SYSFS && 64BIT
++	default n
++	help
++	  CPU-inspect is designed to provide a framework for early detection
++	  of SDC by proactively executing CPU inspection test cases. It
++	  includes modular inspector that can be swapped during runtime.
++
++endmenu
+diff --git a/drivers/cpuinspect/Makefile b/drivers/cpuinspect/Makefile
+new file mode 100644
+index 000000000000..64dcaf3e4e44
+--- /dev/null
++++ b/drivers/cpuinspect/Makefile
+@@ -0,0 +1,6 @@
++# SPDX-License-Identifier: GPL-2.0
++#
++# Makefile for cpuinspect.
++#
++obj-$(CONFIG_CPU_INSPECT) += cpu_inspect.o
++cpu_inspect-y = cpuinspect.o inspector.o sysfs.o
+diff --git a/drivers/cpuinspect/cpuinspect.c b/drivers/cpuinspect/cpuinspect.c
+new file mode 100644
+index 000000000000..33eabe49866a
+--- /dev/null
++++ b/drivers/cpuinspect/cpuinspect.c
+@@ -0,0 +1,170 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * cpuinspect.c - core cpuinspect infrastructure
++ *
++ * Copyright (c) Huawei Technologies Co., Ltd. 2022-2023. All rights reserved.
++ *
++ * Author: Yu Liao <liaoyu15@huawei.com>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ */
++
++#include <linux/kernel.h>
++#include <linux/mutex.h>
++#include <linux/cpu.h>
++#include <linux/cpuinspect.h>
++#include <linux/module.h>
++#include <linux/kthread.h>
++#include <linux/delay.h>
++#include <linux/atomic.h>
++
++#include "cpuinspect.h"
++
++#define CPUINSPECT_SLEEP_TIMEOUT	1000000UL
++/*
++ * The core struct, store the most relevant data for cpuinspect.
++ */
++struct cpuinspect ci_core = {
++	.inspect_times	= 1,
++	.cpu_utility	= 90,
++};
++
++static struct task_struct *cpuinspect_threads[NR_CPUS];
++static atomic_t active_threads_num;
++DECLARE_BITMAP(result, NR_CPUS);
++DEFINE_MUTEX(cpuinspect_lock);
++
++/* inspection thread function */
++static int run_inspector(void *data)
++{
++	unsigned int inspect_times = 0, group, ret;
++	unsigned int cpu = (unsigned long)data;
++	ktime_t start_time, duration;
++	unsigned long sleep_us;
++
++	while (!kthread_should_stop()) {
++		if (inspect_times >= ci_core.inspect_times || !cpu_online(cpu))
++			break;
++
++		for (group = 0; group < curr_cpu_inspector->group_num; group++) {
++			start_time = ktime_get();
++			ret = curr_cpu_inspector->start_inspect(group);
++			if (ret) {
++				set_bit(cpu, result);
++				cpuinspect_result_notify();
++			}
++
++			/*
++			 * Sleep for a while if user set desired cpu utility.
++			 */
++			duration = ktime_get() - start_time;
++			sleep_us = (duration * 100 / ci_core.cpu_utility - duration) / 1000;
++			/*
++			 * During low cpu utility in cpu inspect we might wait a
++			 * while; let's avoid the hung task warning.
++			 */
++			sleep_us = min(sleep_us, CPUINSPECT_SLEEP_TIMEOUT);
++			/*
++			 * Since usleep_range is built on top of hrtimers,
++			 * and we don't want to introduce a large number of
++			 * undesired interrupts, choose a range of 200us
++			 * to balance performance and latency. This can
++			 * cause inspection threads cpu utility is lower
++			 * than required cpu utility. And this also prevents
++			 * soft lockup.
++			 */
++			usleep_range(sleep_us, sleep_us + 200);
++		}
++		inspect_times++;
++	}
++
++	cpuinspect_threads[cpu] = NULL;
++	/*
++	 * When this condition is met, it indicate this is the final cpuinspect
++	 * thread, mark inspect state as 0 and notify user that it has been
++	 * completed.
++	 */
++	if (atomic_dec_and_test(&active_threads_num)) {
++		ci_core.inspect_on = 0;
++		cpuinspect_result_notify();
++	}
++
++	return 0;
++}
++
++int start_inspect_threads(void)
++{
++	unsigned int cpu = 0;
++
++	bitmap_zero(result, NR_CPUS);
++
++	ci_core.inspect_on = 1;
++	for_each_cpu(cpu, &ci_core.inspect_cpumask) {
++		cpuinspect_threads[cpu] = kthread_create_on_node(run_inspector,
++					(void *)(unsigned long)cpu,
++					cpu_to_node(cpu), "cpuinspect/%u", cpu);
++		if (IS_ERR(cpuinspect_threads[cpu])) {
++			cpuinspect_threads[cpu] = NULL;
++			continue;
++		}
++
++		kthread_bind(cpuinspect_threads[cpu], cpu);
++		wake_up_process(cpuinspect_threads[cpu]);
++		atomic_inc(&active_threads_num);
++	}
++
++	/*
++	 * If creating inspection threads for all CPUs in mask fails (or
++	 * inspect_cpumask is empty), notify user, mark the inspection status
++	 * as 0 and simply exit.
++	 */
++	if (unlikely(!atomic_read(&active_threads_num))) {
++		ci_core.inspect_on = 0;
++		cpuinspect_result_notify();
++	}
++
++	return 0;
++}
++
++int stop_inspect_threads(void)
++{
++	unsigned int cpu = 0;
++
++	/* All inspection threads has been stopped */
++	if (atomic_read(&active_threads_num) == 0)
++		return 0;
++
++	for_each_cpu(cpu, &ci_core.inspect_cpumask) {
++		if (cpuinspect_threads[cpu])
++			kthread_stop(cpuinspect_threads[cpu]);
++	}
++
++	return 0;
++}
++
++/**
++ * cpuinspect_init - core initializer
++ */
++static int __init cpuinspect_init(void)
++{
++	cpumask_copy(&ci_core.inspect_cpumask, cpu_all_mask);
++
++	return cpuinspect_add_interface();
++}
++
++static void __exit cpuinspect_exit(void)
++{
++	return cpuinspect_remove_interface();
++}
++
++module_init(cpuinspect_init);
++module_exit(cpuinspect_exit);
++module_param_string(inspector, param_inspector, CPUINSPECT_NAME_LEN, 0444);
++MODULE_LICENSE("GPL");
+diff --git a/drivers/cpuinspect/cpuinspect.h b/drivers/cpuinspect/cpuinspect.h
+new file mode 100644
+index 000000000000..c520cdca4486
+--- /dev/null
++++ b/drivers/cpuinspect/cpuinspect.h
+@@ -0,0 +1,46 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * cpuinspect.h - The internal header file
++ */
++
++#ifndef __DRIVER_CPUINSPECT_H
++#define __DRIVER_CPUINSPECT_H
++
++#define CPUINSPECT_NAME_LEN 16
++
++/* sysfs */
++int cpuinspect_add_interface(void);
++void cpuinspect_remove_interface(void);
++void cpuinspect_result_notify(void);
++
++/* inspect control */
++int start_inspect_threads(void);
++int stop_inspect_threads(void);
++int cpuinspect_is_running(void);
++
++/* switch inspector */
++int cpuinspect_switch_inspector(struct cpu_inspector *insp);
++
++/* for internal use only */
++extern DECLARE_BITMAP(result, NR_CPUS);
++extern struct cpu_inspector *curr_cpu_inspector;
++extern struct mutex cpuinspect_lock;
++extern struct cpuinspect ci_core;
++extern struct list_head cpu_inspectors;
++extern char param_inspector[];
++
++/**
++ * struct cpuinspect - the basic cpuinspect structure
++ * @cpu_utility:	Maximum CPU utilization occupied by the inspection thread.
++ * @inspect_times:	The number of times the inspection code will be executed.
++ * @inspect_cpumask:	cpumask to indicate for which CPUs are involved in inspection.
++ * @inspect_on:		Set if the inspection thread is running.
++ */
++struct cpuinspect {
++	unsigned int	cpu_utility;
++	unsigned long	inspect_times;
++	int		inspect_on;
++	cpumask_t	inspect_cpumask;
++};
++
++#endif /* __DRIVER_CPUINSPECT_H */
+diff --git a/drivers/cpuinspect/inspector.c b/drivers/cpuinspect/inspector.c
+new file mode 100644
+index 000000000000..e56e35ec6325
+--- /dev/null
++++ b/drivers/cpuinspect/inspector.c
+@@ -0,0 +1,124 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * inspector.c - inspector support
++ *
++ * Copyright (c) Huawei Technologies Co., Ltd. 2022-2023. All rights reserved.
++ *
++ * Author: Yu Liao <liaoyu15@huawei.com>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ */
++
++#define pr_fmt(fmt) "CPUINSPECT: " fmt
++
++#include <linux/cpu.h>
++#include <linux/cpuinspect.h>
++#include <linux/mutex.h>
++#include <linux/module.h>
++#include <linux/pm_qos.h>
++
++#include "cpuinspect.h"
++
++
++char param_inspector[CPUINSPECT_NAME_LEN];
++
++LIST_HEAD(cpu_inspectors);
++struct cpu_inspector *curr_cpu_inspector;
++struct cpu_inspector *prev_cpu_inspector;
++
++/**
++ * cpuinspect_find_inspector - finds a inspector of the specified name
++ * @str: the name
++ */
++static struct cpu_inspector *cpuinspect_find_inspector(const char *str)
++{
++	struct cpu_inspector *insp;
++
++	list_for_each_entry(insp, &cpu_inspectors, list)
++		if (!strncasecmp(str, insp->name, CPUINSPECT_NAME_LEN))
++			return insp;
++	return NULL;
++}
++
++/**
++ * cpuinspect_switch_inspector - changes the inspector
++ * @insp: the new target inspector
++ */
++int cpuinspect_switch_inspector(struct cpu_inspector *insp)
++{
++	if (!insp)
++		return -EINVAL;
++
++	if (insp == curr_cpu_inspector)
++		return 0;
++
++	curr_cpu_inspector = insp;
++	pr_info("using inspector %s, group_num: %lu\n", insp->name, insp->group_num);
++
++	return 0;
++}
++
++/**
++ * cpuinspect_register_inspector - registers a inspector
++ * @insp: the inspector
++ */
++int cpuinspect_register_inspector(struct cpu_inspector *insp)
++{
++	int ret = -EEXIST;
++
++	if (!insp)
++		return -EINVAL;
++
++	mutex_lock(&cpuinspect_lock);
++	if (cpuinspect_find_inspector(insp->name) == NULL) {
++		ret = 0;
++		list_add_tail(&insp->list, &cpu_inspectors);
++
++		/*
++		 * We select the inspector if current inspector is NULL or it is
++		 * one specificed by kernel parameter.
++		 */
++		if (!curr_cpu_inspector ||
++		    !strncasecmp(param_inspector, insp->name, CPUINSPECT_NAME_LEN))
++			cpuinspect_switch_inspector(insp);
++	}
++	mutex_unlock(&cpuinspect_lock);
++
++	return ret;
++}
++EXPORT_SYMBOL(cpuinspect_register_inspector);
++
++/**
++ * cpuinspect_unregister_inspector - unregisters a inspector
++ * @insp: the inspector
++ */
++int cpuinspect_unregister_inspector(struct cpu_inspector *insp)
++{
++	if (!insp)
++		return -EINVAL;
++
++	mutex_lock(&cpuinspect_lock);
++	if (curr_cpu_inspector == insp) {
++		if (ci_core.inspect_on) {
++			mutex_unlock(&cpuinspect_lock);
++			return -EBUSY;
++		}
++
++		curr_cpu_inspector = NULL;
++	}
++
++	if (!list_empty(&insp->list))
++		list_del(&insp->list);
++
++	mutex_unlock(&cpuinspect_lock);
++
++	return 0;
++}
++EXPORT_SYMBOL(cpuinspect_unregister_inspector);
+diff --git a/drivers/cpuinspect/sysfs.c b/drivers/cpuinspect/sysfs.c
+new file mode 100644
+index 000000000000..e84a37031d2f
+--- /dev/null
++++ b/drivers/cpuinspect/sysfs.c
+@@ -0,0 +1,276 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * sysfs.c - sysfs support
++ *
++ * Copyright (c) Huawei Technologies Co., Ltd. 2022-2023. All rights reserved.
++ *
++ * Author: Yu Liao <liaoyu15@huawei.com>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ */
++
++#include <linux/kernel.h>
++#include <linux/cpuinspect.h>
++#include <linux/sysfs.h>
++#include <linux/slab.h>
++#include <linux/cpu.h>
++#include <linux/completion.h>
++#include <linux/capability.h>
++#include <linux/device.h>
++#include <linux/kobject.h>
++#include <linux/printk.h>
++#include <linux/bitmap.h>
++
++#include "cpuinspect.h"
++
++static ssize_t available_inspector_show(struct device *dev,
++					struct device_attribute *attr,
++					char *buf)
++{
++	struct cpu_inspector *tmp;
++	ssize_t i = 0;
++
++	list_for_each_entry(tmp, &cpu_inspectors, list) {
++		if (i >= (ssize_t) (PAGE_SIZE - (CPUINSPECT_NAME_LEN + 2)))
++			goto out;
++
++		i += scnprintf(&buf[i], CPUINSPECT_NAME_LEN + 1, "%s ", tmp->name);
++	}
++
++out:
++	i += sprintf(&buf[i], "\n");
++	return i;
++}
++
++static ssize_t current_inspector_show(struct device *dev,
++					struct device_attribute *attr,
++					char *buf)
++{
++	ssize_t ret;
++
++	if (curr_cpu_inspector)
++		ret = sprintf(buf, "%s\n", curr_cpu_inspector->name);
++	else
++		ret = sprintf(buf, "none\n");
++
++	return ret;
++}
++
++static ssize_t current_inspector_store(struct device *dev,
++				      struct device_attribute *attr,
++				      const char *buf, size_t count)
++{
++	char insp_name[CPUINSPECT_NAME_LEN + 1];
++	int ret;
++	struct cpu_inspector *insp;
++
++	ret = sscanf(buf, "%" __stringify(CPUINSPECT_NAME_LEN) "s", insp_name);
++	if (ret != 1)
++		return -EINVAL;
++
++	if (ci_core.inspect_on)
++		return -EBUSY;
++
++	ret = -EINVAL;
++	list_for_each_entry(insp, &cpu_inspectors, list) {
++		if (!strncmp(insp->name, insp_name, CPUINSPECT_NAME_LEN)) {
++			ret = cpuinspect_switch_inspector(insp);
++			break;
++		}
++	}
++
++	return ret ? ret : count;
++}
++
++ssize_t patrol_complete_show(struct device *dev, struct device_attribute *attr,
++			 char *buf)
++{
++	return sprintf(buf, "%d\n", !ci_core.inspect_on);
++}
++
++ssize_t cpu_utility_show(struct device *dev, struct device_attribute *attr,
++			 char *buf)
++{
++	return sprintf(buf, "%u\n", ci_core.cpu_utility);
++}
++
++ssize_t cpu_utility_store(struct device *dev, struct device_attribute *attr,
++			  const char *buf, size_t size)
++{
++	unsigned int cpu_util;
++
++	if (kstrtouint(buf, 10, &cpu_util) || cpu_util < 1 ||  cpu_util > 100)
++		return -EINVAL;
++
++	ci_core.cpu_utility = cpu_util;
++
++	return size;
++}
++
++ssize_t patrol_times_show(struct device *dev, struct device_attribute *attr,
++			 char *buf)
++{
++	return sprintf(buf, "%lu\n", ci_core.inspect_times);
++}
++
++ssize_t patrol_times_store(struct device *dev, struct device_attribute *attr,
++			  const char *buf, size_t size)
++{
++	/*
++	 * It is not allowed to modify patrol times during the CPU
++	 * inspection operation.
++	 */
++	if (ci_core.inspect_on)
++		return -EBUSY;
++
++	if (kstrtoul(buf, 10, &ci_core.inspect_times))
++		return -EINVAL;
++
++	return size;
++}
++
++ssize_t start_patrol_store(struct device *dev, struct device_attribute *attr,
++			  const char *buf, size_t size)
++{
++	bool start_patrol = false;
++
++	if (strtobool(buf, &start_patrol) < 0)
++		return -EINVAL;
++
++	if (!mutex_trylock(&cpuinspect_lock))
++		return -EBUSY;
++
++	/*
++	 * It is not allowed to start the inspection again during the
++	 * inspection process.
++	 */
++	if (start_patrol && (int) start_patrol == ci_core.inspect_on) {
++		mutex_unlock(&cpuinspect_lock);
++		return -EBUSY;
++	}
++
++	if (start_patrol == 0)
++		stop_inspect_threads();
++	else if (curr_cpu_inspector)
++		start_inspect_threads();
++
++	mutex_unlock(&cpuinspect_lock);
++	return size;
++}
++
++static ssize_t result_show(struct device *dev,
++					struct device_attribute *attr,
++					char *buf)
++{
++	return sprintf(buf, "%*pbl\n", nr_cpu_ids, &result);
++}
++
++static ssize_t cpumask_show(struct device *dev,
++					struct device_attribute *attr,
++					char *buf)
++{
++	return sprintf(buf, "%*pbl\n",
++		       cpumask_pr_args(&ci_core.inspect_cpumask));
++}
++
++static ssize_t cpumask_store(struct device *dev,
++				      struct device_attribute *attr,
++				      const char *buf, size_t count)
++{
++	ssize_t err;
++
++	/*
++	 * It is not allowed to modify cpumask during the CPU
++	 * inspection operation.
++	 */
++	if (ci_core.inspect_on)
++		return -EBUSY;
++
++	err = cpulist_parse(buf, &ci_core.inspect_cpumask);
++	if (err)
++		return err;
++
++	return count;
++}
++
++/*
++ * Tell userspace to handle result if one of the following conditions is met:
++ *	- Found fault core
++ *	- Inspection task completed
++ */
++void cpuinspect_result_notify(void)
++{
++	struct device *dev_root = bus_get_dev_root(&cpu_subsys);
++
++	if (dev_root) {
++		sysfs_notify(&dev_root->kobj, "cpuinspect", "result");
++		put_device(dev_root);
++	}
++}
++
++static DEVICE_ATTR_RO(result);
++static DEVICE_ATTR_WO(start_patrol);
++static DEVICE_ATTR_RO(patrol_complete);
++static DEVICE_ATTR_RW(cpu_utility);
++static DEVICE_ATTR_RW(cpumask);
++static DEVICE_ATTR_RW(patrol_times);
++
++/* show and switch inspector */
++static DEVICE_ATTR_RO(available_inspector);
++static DEVICE_ATTR_RW(current_inspector);
++
++
++static struct attribute *cpuinspect_attrs[] = {
++	&dev_attr_result.attr,
++	&dev_attr_start_patrol.attr,
++	&dev_attr_patrol_complete.attr,
++	&dev_attr_cpu_utility.attr,
++	&dev_attr_cpumask.attr,
++	&dev_attr_patrol_times.attr,
++	&dev_attr_available_inspector.attr,
++	&dev_attr_current_inspector.attr,
++	NULL
++};
++
++static struct attribute_group cpuinspect_attr_group = {
++	.attrs = cpuinspect_attrs,
++	.name = "cpuinspect",
++};
++
++/**
++ * cpuinspect_add_interface - add CPU global sysfs attributes
++ * @dev: the target device
++ */
++int cpuinspect_add_interface(void)
++{
++	struct device *dev_root = bus_get_dev_root(&cpu_subsys);
++	int retval;
++
++	if (!dev_root)
++		return -EINVAL;
++
++	retval = sysfs_create_group(&dev_root->kobj, &cpuinspect_attr_group);
++	put_device(dev_root);
++	return retval;
++}
++
++/**
++ * cpuinspect_remove_interface - remove CPU global sysfs attributes
++ * @dev: the target device
++ */
++void cpuinspect_remove_interface(void)
++{
++	struct device *dev_root = bus_get_dev_root(&cpu_subsys);
++
++	if (dev_root) {
++		sysfs_remove_group(&dev_root->kobj, &cpuinspect_attr_group);
++		put_device(dev_root);
++	}
++}
+diff --git a/include/linux/cpuinspect.h b/include/linux/cpuinspect.h
+new file mode 100644
+index 000000000000..596b7d82abb4
+--- /dev/null
++++ b/include/linux/cpuinspect.h
+@@ -0,0 +1,40 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * cpuinspect.h - a generic framework for CPU online inspection
++ *
++ * Copyright (c) 2023 Yu Liao <liaoyu15@huawei.com>
++ */
++
++#ifndef __LINUX_CPUINSPECT_H
++#define __LINUX_CPUINSPECT_H
++
++#include <linux/percpu.h>
++#include <linux/list.h>
++#include <linux/spinlock.h>
++
++#define CPUINSPECT_NAME_LEN 16
++
++/**
++ * struct cpu_inspector - CPU Inspection driver. Inspection code may run in
++ *	kernel, BIOS, trusted OS, etc., and contains many test cases. All test
++ *	cases can be divided into multiple or one group, provied a function
++ *	to start inspection for a specified group.
++ *
++ * @name:		Pointer to inspector name
++ * @list:		List head for registration (internal)
++ * @group_num:		Number of inspection code groups
++ * @start_inspect:	Function to start inspect process, passes group
++ *			number as a argument
++ */
++struct cpu_inspector {
++	const char		name[CPUINSPECT_NAME_LEN];
++	struct list_head	list;
++	unsigned long		group_num;
++
++	int			(*start_inspect)(unsigned int group);
++};
++
++extern int cpuinspect_register_inspector(struct cpu_inspector *insp);
++extern int cpuinspect_unregister_inspector(struct cpu_inspector *insp);
++
++#endif /* __LINUX_CPUINSPECT_H */
+-- 
+2.43.0
+

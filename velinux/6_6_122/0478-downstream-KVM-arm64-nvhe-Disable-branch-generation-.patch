@@ -1,0 +1,127 @@
+From 13d17049b6606d4f53df28f9a5271b88f3ff5f08 Mon Sep 17 00:00:00 2001
+From: Anshuman Khandual <anshuman.khandual@arm.com>
+Date: Thu, 13 Jun 2024 11:47:28 +0530
+Subject: [PATCH 478/960] downstream: KVM: arm64: nvhe: Disable branch
+ generation in nVHE guests
+
+Cc: Marc Zyngier <maz@kernel.org>
+Cc: Oliver Upton <oliver.upton@linux.dev>
+Cc: James Morse <james.morse@arm.com>
+Cc: Suzuki K Poulose <suzuki.poulose@arm.com>
+Cc: Catalin Marinas <catalin.marinas@arm.com>
+Cc: Will Deacon <will@kernel.org>
+Cc: kvmarm@lists.linux.dev
+Cc: linux-arm-kernel@lists.infradead.org
+CC: linux-kernel@vger.kernel.org
+Signed-off-by: Anshuman Khandual <anshuman.khandual@arm.com>
+Signed-off-by: Junhao He <hejunhao3@huawei.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h  |  3 +++
+ arch/arm64/kvm/debug.c             |  5 +++++
+ arch/arm64/kvm/hyp/nvhe/debug-sr.c | 31 ++++++++++++++++++++++++++++++
+ 3 files changed, 39 insertions(+)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index e267c6e39b4f..ee68ccd06788 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -465,6 +465,7 @@ struct kvm_host_data {
+ 		u64 trfcr_el1;
+ 		/* Values of trap registers for the host before guest entry. */
+ 		u64 mdcr_el2;
++		u64 brbcr_el1;
+ 	} host_debug_state;
+ };
+ 
+@@ -730,6 +731,8 @@ struct kvm_vcpu_arch {
+ #define DEBUG_STATE_SAVE_SPE	__vcpu_single_flag(iflags, BIT(5))
+ /* Save TRBE context if active  */
+ #define DEBUG_STATE_SAVE_TRBE	__vcpu_single_flag(iflags, BIT(6))
++/* Save BRBE context if active  */
++#define DEBUG_STATE_SAVE_BRBE	__vcpu_single_flag(iflags, BIT(7))
+ 
+ /* Physical CPU not in supported_cpus */
+ #define ON_UNSUPPORTED_CPU	__vcpu_single_flag(sflags, BIT(2))
+diff --git a/arch/arm64/kvm/debug.c b/arch/arm64/kvm/debug.c
+index 8725291cb00a..99f85d8acbf3 100644
+--- a/arch/arm64/kvm/debug.c
++++ b/arch/arm64/kvm/debug.c
+@@ -335,10 +335,15 @@ void kvm_arch_vcpu_load_debug_state_flags(struct kvm_vcpu *vcpu)
+ 	if (cpuid_feature_extract_unsigned_field(dfr0, ID_AA64DFR0_EL1_TraceBuffer_SHIFT) &&
+ 	    !(read_sysreg_s(SYS_TRBIDR_EL1) & TRBIDR_EL1_P))
+ 		vcpu_set_flag(vcpu, DEBUG_STATE_SAVE_TRBE);
++
++	/* Check if we have BRBE implemented and available at the host */
++	if (cpuid_feature_extract_unsigned_field(dfr0, ID_AA64DFR0_EL1_BRBE_SHIFT))
++		vcpu_set_flag(vcpu, DEBUG_STATE_SAVE_BRBE);
+ }
+ 
+ void kvm_arch_vcpu_put_debug_state_flags(struct kvm_vcpu *vcpu)
+ {
+ 	vcpu_clear_flag(vcpu, DEBUG_STATE_SAVE_SPE);
+ 	vcpu_clear_flag(vcpu, DEBUG_STATE_SAVE_TRBE);
++	vcpu_clear_flag(vcpu, DEBUG_STATE_SAVE_BRBE);
+ }
+diff --git a/arch/arm64/kvm/hyp/nvhe/debug-sr.c b/arch/arm64/kvm/hyp/nvhe/debug-sr.c
+index 53efda0235cf..97e861df1b45 100644
+--- a/arch/arm64/kvm/hyp/nvhe/debug-sr.c
++++ b/arch/arm64/kvm/hyp/nvhe/debug-sr.c
+@@ -79,6 +79,32 @@ static void __debug_restore_trace(u64 trfcr_el1)
+ 	write_sysreg_el1(trfcr_el1, SYS_TRFCR);
+ }
+ 
++static void __debug_save_brbe(u64 *brbcr_el1)
++{
++	*brbcr_el1 = 0;
++
++	/* Check if the BRBE is enabled */
++	if (!(read_sysreg_el1(SYS_BRBCR) & (BRBCR_ELx_E0BRE | BRBCR_ELx_ExBRE)))
++		return;
++
++	/*
++	 * Prohibit branch record generation while we are in guest.
++	 * Since access to BRBCR_EL1 is trapped, the guest can't
++	 * modify the filtering set by the host.
++	 */
++	*brbcr_el1 = read_sysreg_el1(SYS_BRBCR);
++	write_sysreg_el1(0, SYS_BRBCR);
++}
++
++static void __debug_restore_brbe(u64 brbcr_el1)
++{
++	if (!brbcr_el1)
++		return;
++
++	/* Restore BRBE controls */
++	write_sysreg_el1(brbcr_el1, SYS_BRBCR);
++}
++
+ void __debug_save_host_buffers_nvhe(struct kvm_vcpu *vcpu)
+ {
+ 	/* Disable and flush SPE data generation */
+@@ -87,6 +113,9 @@ void __debug_save_host_buffers_nvhe(struct kvm_vcpu *vcpu)
+ 	/* Disable and flush Self-Hosted Trace generation */
+ 	if (vcpu_get_flag(vcpu, DEBUG_STATE_SAVE_TRBE))
+ 		__debug_save_trace(host_data_ptr(host_debug_state.trfcr_el1));
++	/* Disable BRBE branch records */
++	if (vcpu_get_flag(vcpu, DEBUG_STATE_SAVE_BRBE))
++		__debug_save_brbe(host_data_ptr(host_debug_state.brbcr_el1));
+ }
+ 
+ void __debug_switch_to_guest(struct kvm_vcpu *vcpu)
+@@ -100,6 +129,8 @@ void __debug_restore_host_buffers_nvhe(struct kvm_vcpu *vcpu)
+ 		__debug_restore_spe(*host_data_ptr(host_debug_state.pmscr_el1));
+ 	if (vcpu_get_flag(vcpu, DEBUG_STATE_SAVE_TRBE))
+ 		__debug_restore_trace(*host_data_ptr(host_debug_state.trfcr_el1));
++	if (vcpu_get_flag(vcpu, DEBUG_STATE_SAVE_BRBE))
++		__debug_restore_brbe(*host_data_ptr(host_debug_state.brbcr_el1));
+ }
+ 
+ void __debug_switch_to_host(struct kvm_vcpu *vcpu)
+-- 
+2.43.0
+

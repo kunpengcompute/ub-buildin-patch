@@ -1,0 +1,63 @@
+From 22166ce56c7c1c97a453d332983586e552b4e9f9 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Tue, 3 Mar 2026 15:31:57 +0800
+Subject: [PATCH 906/960] downstream: iov_iter: add mc support for
+ copy_page_to_iter
+
+Introduce machine check safe support for copy_page_to_iter.
+Compare to vanila copy_page_to_iter, it will return short copy for
+ITER_KVEC & ITER_BVEC as _copy_mc_to_iter explained.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ lib/iov_iter.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/lib/iov_iter.c b/lib/iov_iter.c
+index d6620eaa9515..0b8fc9831225 100644
+--- a/lib/iov_iter.c
++++ b/lib/iov_iter.c
+@@ -465,10 +465,15 @@ static inline bool page_copy_sane(struct page *page, size_t offset, size_t n)
+ 	return true;
+ }
+ 
++/*
++ * return short copy for ITER_KVEC & ITER_BVEC as _copy_mc_to_iter
++ * explained for iov_iter_is_copy_mc.
++ */
+ size_t copy_page_to_iter(struct page *page, size_t offset, size_t bytes,
+ 			 struct iov_iter *i)
+ {
+ 	size_t res = 0;
++	const bool mc = iov_iter_is_copy_mc(i);
+ 	if (!page_copy_sane(page, offset, bytes))
+ 		return 0;
+ 	if (WARN_ON_ONCE(i->data_source))
+@@ -477,13 +482,20 @@ size_t copy_page_to_iter(struct page *page, size_t offset, size_t bytes,
+ 	offset %= PAGE_SIZE;
+ 	while (1) {
+ 		void *kaddr = kmap_local_page(page);
+-		size_t n = min(bytes, (size_t)PAGE_SIZE - offset);
+-		n = _copy_to_iter(kaddr + offset, n, i);
++		size_t need_copied = min(bytes, (size_t)PAGE_SIZE - offset);
++		size_t n;
++
++		if (!mc)
++			n = _copy_to_iter(kaddr + offset, need_copied, i);
++		else
++			n = _copy_mc_to_iter(kaddr + offset, need_copied, i);
+ 		kunmap_local(kaddr);
+ 		res += n;
+ 		bytes -= n;
+ 		if (!bytes || !n)
+ 			break;
++		if (mc && (n != need_copied))
++			break;
+ 		offset += n;
+ 		if (offset == PAGE_SIZE) {
+ 			page++;
+-- 
+2.43.0
+

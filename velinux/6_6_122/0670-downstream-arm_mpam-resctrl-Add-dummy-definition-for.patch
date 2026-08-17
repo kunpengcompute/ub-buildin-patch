@@ -1,0 +1,40 @@
+From e9db8eee0043c633b2915808f1a78416bd122b6b Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:22 +0800
+Subject: [PATCH 670/960] downstream: arm_mpam: resctrl: Add dummy definition
+ for free running counters
+
+resctrl expects RDT like counters that are free running. MPAM's counters
+don't behave like this as they need a monitor to be allocated first.
+
+Provide the helper that says whether free running counters are supported.
+
+Subsequent patches will make this more intelligent.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/arm_mpam.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index 387cebfdfff7..eec640b1ba22 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -55,6 +55,12 @@ static inline unsigned int resctrl_arch_round_mon_val(unsigned int val)
+ 	return val;
+ }
+ 
++/* MPAM counters requires a monitor to be allocated */
++static inline bool resctrl_arch_event_is_free_running(enum resctrl_event_id evt)
++{
++	return false;
++}
++
+ bool resctrl_arch_alloc_capable(void);
+ bool resctrl_arch_mon_capable(void);
+ bool resctrl_arch_is_llc_occupancy_enabled(void);
+-- 
+2.43.0
+

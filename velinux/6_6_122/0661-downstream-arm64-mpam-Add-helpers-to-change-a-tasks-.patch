@@ -1,0 +1,193 @@
+From 846e456e79078fbe5c4e0001ef0263c6f09c1230 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:13 +0800
+Subject: [PATCH 661/960] downstream: arm64: mpam: Add helpers to change a
+ tasks and cpu mpam partid/pmg values
+
+Care must be taken when modifying the partid and pmg of a task, as
+writing these values may race with the task being scheduled in, and
+reading the modified values.
+
+Add helpers to set the task properties, and the cpu default value,
+and add the plumbing to the mpam driver that lets resctrl use them.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/mpam.h        | 44 +++++++++++++++++++++
+ drivers/platform/mpam/mpam_resctrl.c | 58 ++++++++++++++++++++++++++++
+ include/linux/arm_mpam.h             |  7 ++++
+ 3 files changed, 109 insertions(+)
+
+diff --git a/arch/arm64/include/asm/mpam.h b/arch/arm64/include/asm/mpam.h
+index edae8c98fa28..76062337f1db 100644
+--- a/arch/arm64/include/asm/mpam.h
++++ b/arch/arm64/include/asm/mpam.h
+@@ -6,6 +6,7 @@
+ 
+ #include <linux/arm_mpam.h>
+ #include <linux/bitops.h>
++#include <linux/bitfield.h>
+ #include <linux/init.h>
+ #include <linux/jump_label.h>
+ #include <linux/percpu.h>
+@@ -90,6 +91,35 @@ static inline void __init __enable_mpam_hcr(void)
+  * A value in struct thread_info is used instead of struct task_struct as the
+  * cpu's u64 register format is used, but struct task_struct has two u32'.
+  */
++static inline void mpam_set_cpu_defaults(int cpu, u16 partid_d, u16 partid_i,
++					  u8 pmg_d, u8 pmg_i)
++{
++	u64 default_val;
++
++	default_val = FIELD_PREP(MPAM_SYSREG_PARTID_D, partid_d);
++	default_val |= FIELD_PREP(MPAM_SYSREG_PARTID_I, partid_i);
++	default_val |= FIELD_PREP(MPAM_SYSREG_PMG_D, pmg_d);
++	default_val |= FIELD_PREP(MPAM_SYSREG_PMG_I, pmg_i);
++
++	WRITE_ONCE(per_cpu(arm64_mpam_default, cpu), default_val);
++}
++
++static inline void mpam_set_task_partid_pmg(struct task_struct *tsk,
++					    u16 partid_d, u16 partid_i,
++					    u8 pmg_d, u8 pmg_i)
++{
++#ifdef CONFIG_ARM64_MPAM
++	u64 regval;
++
++	regval = FIELD_PREP(MPAM_SYSREG_PARTID_D, partid_d);
++	regval |= FIELD_PREP(MPAM_SYSREG_PARTID_I, partid_i);
++	regval |= FIELD_PREP(MPAM_SYSREG_PMG_D, pmg_d);
++	regval |= FIELD_PREP(MPAM_SYSREG_PMG_I, pmg_i);
++
++	WRITE_ONCE(task_thread_info(tsk)->mpam_partid_pmg, regval);
++#endif
++}
++
+ static inline u64 mpam_get_regval(struct task_struct *tsk)
+ {
+ #ifdef CONFIG_ARM64_MPAM
+@@ -99,6 +129,20 @@ static inline u64 mpam_get_regval(struct task_struct *tsk)
+ #endif
+ }
+ 
++static inline void resctrl_arch_set_rmid(struct task_struct *tsk, u32 rmid)
++{
++#ifdef CONFIG_ARM64_MPAM
++	u64 regval = mpam_get_regval(tsk);
++
++	regval &= ~MPAM_SYSREG_PMG_D;
++	regval &= ~MPAM_SYSREG_PMG_I;
++	regval |= FIELD_PREP(MPAM_SYSREG_PMG_D, rmid);
++	regval |= FIELD_PREP(MPAM_SYSREG_PMG_I, rmid);
++
++	WRITE_ONCE(task_thread_info(tsk)->mpam_partid_pmg, regval);
++#endif
++}
++
+ static inline void mpam_thread_switch(struct task_struct *tsk)
+ {
+ 	u64 oldregval;
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 075d8739efea..cdfa51af3374 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -8,6 +8,7 @@
+ #include <linux/cpu.h>
+ #include <linux/cpumask.h>
+ #include <linux/errno.h>
++#include <linux/limits.h>
+ #include <linux/list.h>
+ #include <linux/printk.h>
+ #include <linux/rculist.h>
+@@ -92,6 +93,63 @@ u32 resctrl_arch_get_num_closid(struct rdt_resource *ignored)
+ 	return min((u32)mpam_partid_max + 1, (u32)RESCTRL_MAX_CLOSID);
+ }
+ 
++void resctrl_sched_in(struct task_struct *tsk)
++{
++	lockdep_assert_preemption_disabled();
++
++	mpam_thread_switch(tsk);
++}
++
++void resctrl_arch_set_cpu_default_closid_rmid(int cpu, u32 closid, u32 pmg)
++{
++	WARN_ON_ONCE(closid > U16_MAX);
++	WARN_ON_ONCE(pmg > U8_MAX);
++
++	if (!cdp_enabled) {
++		mpam_set_cpu_defaults(cpu, closid, closid, pmg, pmg);
++	} else {
++		/*
++		 * When CDP is enabled, resctrl halves the closid range and we
++		 * use odd/even partid for one closid.
++		 */
++		u32 partid_d = resctrl_get_config_index(closid, CDP_DATA);
++		u32 partid_i = resctrl_get_config_index(closid, CDP_CODE);
++
++		mpam_set_cpu_defaults(cpu, partid_d, partid_i, pmg, pmg);
++	}
++}
++
++void resctrl_arch_sync_cpu_defaults(void *info)
++{
++	struct resctrl_cpu_sync *r = info;
++
++	lockdep_assert_preemption_disabled();
++
++	if (r) {
++		resctrl_arch_set_cpu_default_closid_rmid(smp_processor_id(),
++							 r->closid, r->rmid);
++	}
++
++	resctrl_sched_in(current);
++}
++
++void resctrl_arch_set_closid_rmid(struct task_struct *tsk, u32 closid, u32 rmid)
++{
++
++
++	WARN_ON_ONCE(closid > U16_MAX);
++	WARN_ON_ONCE(rmid > U8_MAX);
++
++	if (!cdp_enabled) {
++		mpam_set_task_partid_pmg(tsk, closid, closid, rmid, rmid);
++	} else {
++		u32 partid_d = resctrl_get_config_index(closid, CDP_DATA);
++		u32 partid_i = resctrl_get_config_index(closid, CDP_CODE);
++
++		mpam_set_task_partid_pmg(tsk, partid_d, partid_i, rmid, rmid);
++	}
++}
++
+ bool resctrl_arch_match_closid(struct task_struct *tsk, u32 closid)
+ {
+ 	u64 regval = mpam_get_regval(tsk);
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index 163a26e1fc21..ab70cd072eb8 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -16,6 +16,8 @@
+  */
+ extern u64 mpam_resctrl_default_group;
+ 
++#include <asm/mpam.h>
++
+ struct mpam_msc;
+ 
+ enum mpam_msc_iface {
+@@ -66,4 +68,9 @@ bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level ignored);
+ int resctrl_arch_set_cdp_enabled(enum resctrl_res_level ignored, bool enable);
+ bool resctrl_arch_match_closid(struct task_struct *tsk, u32 closid);
+ bool resctrl_arch_match_rmid(struct task_struct *tsk, u32 closid, u32 rmid);
++void resctrl_arch_set_cpu_default_closid(int cpu, u32 closid);
++void resctrl_arch_set_closid_rmid(struct task_struct *tsk, u32 closid, u32 rmid);
++void resctrl_arch_set_cpu_default_closid_rmid(int cpu, u32 closid, u32 pmg);
++void resctrl_sched_in(struct task_struct *tsk);
++
+ #endif /* __LINUX_ARM_MPAM_H */
+-- 
+2.43.0
+

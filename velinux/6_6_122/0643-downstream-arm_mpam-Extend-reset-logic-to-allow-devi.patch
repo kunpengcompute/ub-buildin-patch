@@ -1,0 +1,70 @@
+From 1278528f2b3b5391e537060f84f8cf6c2ce9159a Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:57:55 +0800
+Subject: [PATCH 643/960] downstream: arm_mpam: Extend reset logic to allow
+ devices to be reset any time
+
+cpuhp callbacks aren't the only time the MSC configuration may need to
+be reset. Resctrl has an API call to reset a class.
+If an MPAM error interrupt arrives it indicates the driver has
+misprogrammed an MSC. The safest thing to do is reset all the MSCs
+and disable MPAM.
+
+Add a helper to reset RIS via their class. Call this from mpam_disable(),
+which can be scheduled from the error interrupt handler.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c | 34 ++++++++++++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index 8e2fd78817cc..667508f5189e 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -1197,6 +1197,40 @@ static void mpam_enable_once(void)
+ 		READ_ONCE(mpam_partid_max) + 1, mpam_pmg_max + 1);
+ }
+ 
++static void mpam_reset_class(struct mpam_class *class)
++{
++	int idx;
++	struct mpam_msc_ris *ris;
++	struct mpam_component *comp;
++
++	idx = srcu_read_lock(&mpam_srcu);
++	list_for_each_entry_rcu(comp, &class->components, class_list) {
++		list_for_each_entry_rcu(ris, &comp->ris, comp_list) {
++			mutex_lock(&ris->msc->lock);
++			mpam_touch_msc(ris->msc, mpam_reset_ris, ris);
++			mutex_unlock(&ris->msc->lock);
++			ris->in_reset_state = true;
++		}
++	}
++	srcu_read_unlock(&mpam_srcu, idx);
++}
++
++/*
++ * Called in response to an error IRQ.
++ * All of MPAMs errors indicate a software bug, restore any modified
++ * controls to their reset values.
++ */
++void mpam_disable(void)
++{
++	int idx;
++	struct mpam_class *class;
++
++	idx = srcu_read_lock(&mpam_srcu);
++	list_for_each_entry_rcu(class, &mpam_classes, classes_list)
++		mpam_reset_class(class);
++	srcu_read_unlock(&mpam_srcu, idx);
++}
++
+ /*
+  * Enable mpam once all devices have been probed.
+  * Scheduled by mpam_discovery_cpu_online() once all devices have been created.
+-- 
+2.43.0
+

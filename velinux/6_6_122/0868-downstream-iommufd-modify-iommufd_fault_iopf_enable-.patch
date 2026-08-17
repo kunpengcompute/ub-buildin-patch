@@ -1,0 +1,56 @@
+From d750c2ea508f4816e4b5a6378472557fc9561788 Mon Sep 17 00:00:00 2001
+From: Zhangfei Gao <zhangfei.gao@linaro.org>
+Date: Mon, 28 Oct 2024 09:17:08 +0000
+Subject: [PATCH 868/960] downstream: iommufd: modify iommufd_fault_iopf_enable
+ limitation
+
+iommufd_fault_iopf_enable has limitation to PRI on PCI/SRIOV VFs
+because the PRI might be a shared resource and current iommu
+subsystem is not ready to support enabling/disabling PRI on a VF
+without any impact on others.
+
+However, we have devices that appear as PCI but are actually on the
+AMBA bus. These fake PCI devices have PASID capability, support
+stall as well as SRIOV, so remove the limitation for these devices.
+
+Co-developed-by: Lu Baolu <baolu.lu@linux.intel.com>
+Signed-off-by: Lu Baolu <baolu.lu@linux.intel.com>
+Signed-off-by: Zhangfei Gao <zhangfei.gao@linaro.org>
+Reviewed-by: Lu Baolu <baolu.lu@linux.intel.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/fault.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/iommu/iommufd/fault.c b/drivers/iommu/iommufd/fault.c
+index 3922eca15cd6..c4a62c700b19 100644
+--- a/drivers/iommu/iommufd/fault.c
++++ b/drivers/iommu/iommufd/fault.c
+@@ -10,6 +10,7 @@
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+ #include <linux/pci.h>
++#include <linux/pci-ats.h>
+ #include <linux/poll.h>
+ #include <uapi/linux/iommufd.h>
+ 
+@@ -27,8 +28,12 @@ static int iommufd_fault_iopf_enable(struct iommufd_device *idev)
+ 	 * resource between PF and VFs. There is no coordination for this
+ 	 * shared capability. This waits for a vPRI reset to recover.
+ 	 */
+-	if (dev_is_pci(dev) && to_pci_dev(dev)->is_virtfn)
+-		return -EINVAL;
++	if (dev_is_pci(dev)) {
++		struct pci_dev *pdev = to_pci_dev(dev);
++
++		if (pdev->is_virtfn && pci_pri_supported(pdev))
++			return -EINVAL;
++	}
+ 
+ 	mutex_lock(&idev->iopf_lock);
+ 	/* Device iopf has already been on. */
+-- 
+2.43.0
+

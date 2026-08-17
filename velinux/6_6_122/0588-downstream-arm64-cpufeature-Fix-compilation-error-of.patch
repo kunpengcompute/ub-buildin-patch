@@ -1,0 +1,31 @@
+From 68fefdb93abba2fc121f6bcfe7dfadc603f0b512 Mon Sep 17 00:00:00 2001
+From: Jia Qingtong <jiaqingtong@huawei.com>
+Date: Thu, 26 Jun 2025 15:24:26 +0800
+Subject: [PATCH 588/960] downstream: arm64: cpufeature: Fix compilation error
+ of NMI
+
+Fix compilation error of NMI.
+
+Signed-off-by: Jia Qingtong <jiaqingtong@huawei.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/cpufeature.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kernel/cpufeature.c b/arch/arm64/kernel/cpufeature.c
+index 0cc324cf3584..4ba50ff40f6e 100644
+--- a/arch/arm64/kernel/cpufeature.c
++++ b/arch/arm64/kernel/cpufeature.c
+@@ -2924,7 +2924,7 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
+ #ifdef CONFIG_ARM64_NMI
+ 		.cpu_enable = nmi_enable,
+ #endif
+-	};
++	},
+ #ifdef CONFIG_ARM64_TWED
+ 	{
+ 		.desc = "Delayed Trapping of WFE",
+-- 
+2.43.0
+

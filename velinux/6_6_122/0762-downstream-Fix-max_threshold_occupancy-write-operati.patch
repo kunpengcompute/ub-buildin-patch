@@ -1,0 +1,41 @@
+From 34f0ae73414eeea41151aff053e6b5cccf387eb1 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 1 Sep 2025 17:16:52 +0800
+Subject: [PATCH 762/960] downstream: Fix max_threshold_occupancy write
+ operation
+
+Since L2_MON does not support the limbo mechanism, the
+max_threshold_occupancy interface does not allow updates. If a write
+operation is attempted, skip it simply and return nbytes.
+
+Fixes: da5038956e65 ("fs/resctrl: L2_MON does not support the limbo mechanism")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/rdtgroup.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/resctrl/rdtgroup.c b/fs/resctrl/rdtgroup.c
+index da5c44983183..e72023818115 100644
+--- a/fs/resctrl/rdtgroup.c
++++ b/fs/resctrl/rdtgroup.c
+@@ -1198,7 +1198,7 @@ static ssize_t max_threshold_occ_write(struct kernfs_open_file *of,
+ 	int ret;
+ 
+ 	if (r->cache_level != 3)
+-		return 0;
++		goto out;
+ 
+ 	ret = kstrtouint(buf, 0, &bytes);
+ 	if (ret)
+@@ -1209,6 +1209,7 @@ static ssize_t max_threshold_occ_write(struct kernfs_open_file *of,
+ 
+ 	resctrl_rmid_realloc_threshold = resctrl_arch_round_mon_val(bytes);
+ 
++out:
+ 	return nbytes;
+ }
+ 
+-- 
+2.43.0
+

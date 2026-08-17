@@ -1,0 +1,36 @@
+From 0740790229a1ec064202a44eaaf57d1fb27735cf Mon Sep 17 00:00:00 2001
+From: Jiapeng Chong <jiapeng.chong@linux.alibaba.com>
+Date: Fri, 18 Aug 2023 17:26:20 +0800
+Subject: [PATCH 178/960] iommu: Remove duplicate include
+
+commit ccb76c5751634541bfd2222374f46e1dea83d525 upstream.
+
+./drivers/iommu/iommu.c: iommu-priv.h is included more than once.
+
+Reported-by: Abaci Robot <abaci@linux.alibaba.com>
+Closes: https://bugzilla.openanolis.cn/show_bug.cgi?id=6186
+Signed-off-by: Jiapeng Chong <jiapeng.chong@linux.alibaba.com>
+Link: https://lore.kernel.org/r/20230818092620.91748-1-jiapeng.chong@linux.alibaba.com
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommu.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/iommu/iommu.c b/drivers/iommu/iommu.c
+index b9c99d809741..82f995475e6a 100644
+--- a/drivers/iommu/iommu.c
++++ b/drivers/iommu/iommu.c
+@@ -37,7 +37,6 @@
+ #include "iommu-priv.h"
+ 
+ #include "iommu-sva.h"
+-#include "iommu-priv.h"
+ 
+ static struct kset *iommu_group_kset;
+ static DEFINE_IDA(iommu_group_ida);
+-- 
+2.43.0
+

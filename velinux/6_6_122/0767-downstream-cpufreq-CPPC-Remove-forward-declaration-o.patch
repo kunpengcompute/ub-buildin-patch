@@ -1,0 +1,36 @@
+From 3ec33fe103cc34f27fe376a5da1977945b02aa0a Mon Sep 17 00:00:00 2001
+From: Lifeng Zheng <zhenglifeng1@huawei.com>
+Date: Thu, 21 Aug 2025 15:15:59 +0800
+Subject: [PATCH 767/960] downstream: cpufreq: CPPC: Remove forward declaration
+ of hisi_cppc_cpufreq_get_rate()
+
+After commit ae2df912d1a5 ("ACPI: CPPC: Disable FIE if registers in PCC
+regions"), the only place uses hisi_cppc_cpufreq_get_rate() is
+cppc_check_hisi_workaround(), which is after the implementation of
+hisi_cppc_cpufreq_get_rate(). A forward declaration of
+hisi_cppc_cpufreq_get_rate() is unnecessarily.
+
+Fixes: ae2df912d1a5 ("ACPI: CPPC: Disable FIE if registers in PCC regions")
+Signed-off-by: Lifeng Zheng <zhenglifeng1@huawei.com>
+Signed-off-by: Hongye Lin <linhongye@h-partners.com>
+Signed-off-by: heppen <hepeng68@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/cpufreq/cppc_cpufreq.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/cpufreq/cppc_cpufreq.c b/drivers/cpufreq/cppc_cpufreq.c
+index 58bf74f32ca7..d58a4ae31b7c 100644
+--- a/drivers/cpufreq/cppc_cpufreq.c
++++ b/drivers/cpufreq/cppc_cpufreq.c
+@@ -70,7 +70,6 @@ struct cppc_freq_invariance {
+ static DEFINE_PER_CPU(struct cppc_freq_invariance, cppc_freq_inv);
+ static struct kthread_worker *kworker_fie;
+ 
+-static unsigned int hisi_cppc_cpufreq_get_rate(unsigned int cpu);
+ static int cppc_perf_from_fbctrs(struct cppc_cpudata *cpu_data,
+ 				 struct cppc_perf_fb_ctrs *fb_ctrs_t0,
+ 				 struct cppc_perf_fb_ctrs *fb_ctrs_t1);
+-- 
+2.43.0
+

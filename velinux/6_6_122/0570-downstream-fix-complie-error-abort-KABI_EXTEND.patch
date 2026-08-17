@@ -1,0 +1,62 @@
+From 6a865e6d993db4ccec9766ecdf9fa8248efe4e6b Mon Sep 17 00:00:00 2001
+From: Slim6882 <yangjunshuo@huawei.com>
+Date: Sun, 8 Jun 2025 05:43:28 +0800
+Subject: [PATCH 570/960] downstream: fix complie error abort KABI_EXTEND
+
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h  | 4 ++--
+ include/linux/irqchip/arm-gic-v4.h | 4 ++--
+ include/linux/kvm_host.h           | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 8f8e31ba701d..6bd0530260fc 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -619,10 +619,10 @@ struct kvm_vcpu_arch {
+ #endif
+ #ifdef CONFIG_ARM64_HDBSS
+ 	/* HDBSS registers info */
+-	KABI_EXTEND(struct {
++	struct {
+ 		u64 br_el2;
+ 		u64 prod_el2;
+-	} hdbss)
++	} hdbss;
+ #endif
+ 
+ };
+diff --git a/include/linux/irqchip/arm-gic-v4.h b/include/linux/irqchip/arm-gic-v4.h
+index 5c20a89aa09d..b688b85dfc46 100644
+--- a/include/linux/irqchip/arm-gic-v4.h
++++ b/include/linux/irqchip/arm-gic-v4.h
+@@ -34,8 +34,8 @@ struct its_vm {
+ 	 */
+ 	raw_spinlock_t		vmapp_lock;
+ 	u32			vlpi_count[GICv4_ITS_LIST_MAX];
+-	KABI_EXTEND(struct page *vpeid_page)
+-	KABI_EXTEND(bool nassgireq)
++	struct page         *vpeid_page;
++	bool                  nassgireq;
+ };
+ 
+ /* Embedded in kvm_vcpu.arch */
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index cd44b4342cb6..7c38fccba3e4 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -820,7 +820,7 @@ struct kvm {
+ #endif
+ 	char stats_id[KVM_STATS_NAME_SIZE];
+ #ifdef CONFIG_ARM64_HDBSS
+-	KABI_EXTEND(bool enable_hdbss)
++	bool enable_hdbss;
+ #endif
+ };
+ 
+-- 
+2.43.0
+

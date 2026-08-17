@@ -1,0 +1,59 @@
+From a2c9f89b7350bc5219e0c32e8036077b37b8d80e Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Tue, 3 Mar 2026 15:31:59 +0800
+Subject: [PATCH 907/960] downstream: arm64: mm: shmem: support poison recovery
+ from shmem_file_read_iter()
+
+During our test. kernel panic with the following trace:
+
+  Internal error: synchronous external abort: ffffffff96000410 [#1] SMP
+  CPU: 0 PID: 3785 Comm: kworker/u2:4 Not tainted 5.10.0 #21
+  pstate: 20400009 (nzCv daif +PAN -UAO -TCO BTYPE=--)
+  pc : __memcpy+0x100/0x180
+  lr : _copy_to_iter+0x308/0x3a0
+  Call trace:
+   __memcpy+0x100/0x180
+   copy_page_to_iter+0x148/0x200
+   shmem_file_read_iter+0x1ec/0x460
+   __kernel_read+0xfc/0x2b0
+   kernel_read+0x5c/0x80
+   search_binary_handler+0x58/0x354
+   exec_binprm+0x58/0x1d0
+   bprm_execve.part.0+0xe4/0x16c
+   bprm_execve+0x74/0xc0
+   kernel_execve+0x138/0x1a0
+   call_usermodehelper_exec_async+0x13c/0x250
+   ret_from_fork+0x10/0x18
+
+Kernel panic due to UCE happens during page copy.
+
+Similar to other poison recovery, use iov_iter_set_copy_mc() to avoid
+potentially kernel panic during copy page in shmem_file_read_iter(). As
+copy page/folio will return short if copy failed, this kind of error can
+be properly handled after and EFAULT will be return to the caller.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/shmem.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/mm/shmem.c b/mm/shmem.c
+index 3f9d2730a827..1ab102cb3b97 100644
+--- a/mm/shmem.c
++++ b/mm/shmem.c
+@@ -2832,6 +2832,10 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
+ 			 */
+ 			if (!offset)
+ 				folio_mark_accessed(folio);
++
++			if (IS_ENABLED(CONFIG_ARM64) && iov_iter_is_kvec(to))
++				iov_iter_set_copy_mc(to);
++
+ 			/*
+ 			 * Ok, we have the page, and it's up-to-date, so
+ 			 * now we can copy it to user space...
+-- 
+2.43.0
+

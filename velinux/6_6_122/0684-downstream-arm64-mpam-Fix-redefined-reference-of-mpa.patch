@@ -1,0 +1,38 @@
+From 5f445b20ee7f7c3fa78a3312cf21cc76c282b893 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 26 Sep 2024 17:28:18 +0800
+Subject: [PATCH 684/960] downstream: arm64/mpam: Fix redefined reference of
+ 'mpam_detect_is_enabled'
+
+Fix re-defined reference of 'mpam_detect_is_enabled' when CONFIG_ARM64_MPAM
+is enabled.
+
+Fixes: 797c68d3b52d ("arm64/mpam: Check mpam_detect_is_enabled() before accessing MPAM registers")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/cpufeature.h | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/arch/arm64/include/asm/cpufeature.h b/arch/arm64/include/asm/cpufeature.h
+index 0b6bc13430c7..a9256a2aa523 100644
+--- a/arch/arm64/include/asm/cpufeature.h
++++ b/arch/arm64/include/asm/cpufeature.h
+@@ -858,14 +858,7 @@ static inline bool cpus_support_mpam(void)
+ 		cpus_have_final_cap(ARM64_MPAM);
+ }
+ 
+-#ifdef CONFIG_ARM64_MPAM
+ bool mpam_detect_is_enabled(void);
+-#else
+-static inline bool mpam_detect_is_enabled(void)
+-{
+-	return false;
+-}
+-#endif
+ 
+ static inline bool system_supports_lpa2(void)
+ {
+-- 
+2.43.0
+

@@ -1,0 +1,53 @@
+From dd3780603ff47c5e65dee9a8ef03522729f9f8e5 Mon Sep 17 00:00:00 2001
+From: liwei <liwei728@huawei.com>
+Date: Wed, 27 Mar 2024 10:24:33 +0800
+Subject: [PATCH 754/960] downstream: arm64/psci: Add undefined error message
+ printing for psci_x_cpu_on
+
+if the error code returned by the cpu_on interface is not -EPERM, no error
+information is printed. For instance,
+
+ => res.a0 = PSCI_RET_DENIED (-3)
+ => arm_smccc_hvc(function_id, arg0, arg1, arg2, 0, 0, 0, 0, &res)
+ => invoke_psci_fn = __invoke_psci_fn_hvc
+ => __psci_cpu_on(PSCI_FN_NATIVE(0_2, CPU_ON), cpuid, entry_point)
+ => psci_0_2_cpu_on
+ => cpu_psci_cpu_boot
+ => bringup_cpu
+ => cpuhp_invoke_callback
+ => __cpuhp_invoke_callback_range
+ => cpuhp_up_callbacks
+ => cpu_up
+
+When the value of res.a0 is PSCI_RET_DENIED(-3), no information is
+displayed, indicating that the CPU fails to go online.
+
+Signed-off-by: liwei <liwei728@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/psci.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kernel/psci.c b/arch/arm64/kernel/psci.c
+index fabd732d0a2d..48ff9dc8126a 100644
+--- a/arch/arm64/kernel/psci.c
++++ b/arch/arm64/kernel/psci.c
+@@ -40,8 +40,12 @@ static int cpu_psci_cpu_boot(unsigned int cpu)
+ {
+ 	phys_addr_t pa_secondary_entry = __pa_symbol(secondary_entry);
+ 	int err = psci_ops.cpu_on(cpu_logical_map(cpu), pa_secondary_entry);
+-	if (err && err != -EPERM)
+-		pr_err("failed to boot CPU%d (%d)\n", cpu, err);
++	if (err) {
++		if (err != -EPERM)
++			pr_err("failed to boot CPU%d (%d)\n", cpu, err);
++		else
++			pr_err("psci feedback boot CPU%d result(%d) undefined\n", cpu, err);
++	}
+ 
+ 	return err;
+ }
+-- 
+2.43.0
+

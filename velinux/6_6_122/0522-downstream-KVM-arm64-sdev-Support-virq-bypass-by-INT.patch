@@ -1,0 +1,83 @@
+From 41f0ee43c8a0128d3412828b02fa2c25c7f65c96 Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:28 +0800
+Subject: [PATCH 522/960] downstream: KVM: arm64: sdev: Support virq bypass by
+ INT/VSYNC command
+
+We already have the set_irqchip_state() callback which will issue
+INT/VSYNC commands on the physical side when the handled IRQ is
+forwarded to vcpu.  It was intended to be used to handle the guest
+INT command targeting a VLPI.
+
+Let's reuse this hack to set the virtio-pci function's VLPI pending,
+instead of directly writing message data into GITS_TRANSLATER, which
+should only be treated as the Message Address of PCI devices.
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-irqfd.c | 21 +++++++++++++++++++++
+ include/kvm/arm_vgic.h           |  3 +++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-irqfd.c b/arch/arm64/kvm/vgic/vgic-irqfd.c
+index 381b700c7141..f7de55ae55be 100644
+--- a/arch/arm64/kvm/vgic/vgic-irqfd.c
++++ b/arch/arm64/kvm/vgic/vgic-irqfd.c
+@@ -121,6 +121,23 @@ int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e,
+ 	return vgic_its_inject_msi(kvm, &msi);
+ }
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++static int kvm_arch_set_irq_bypass(struct kvm_kernel_irq_routing_entry *e,
++				  struct kvm *kvm)
++{
++	struct kire_data *cache = &e->cache;
++
++	/*
++	 * FIXME: is there any race against the irqfd_update(),
++	 * where the cache data will be updated?
++	 */
++	if (!cache->valid)
++		return -EWOULDBLOCK;
++
++	return shadow_dev_virq_bypass_inject(kvm, e);
++}
++#endif
++
+ /**
+  * kvm_arch_set_irq_inatomic: fast-path for irqfd injection
+  */
+@@ -138,6 +155,10 @@ int kvm_arch_set_irq_inatomic(struct kvm_kernel_irq_routing_entry *e,
+ 		if (!vgic_has_its(kvm))
+ 			break;
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++		if (!kvm_arch_set_irq_bypass(e, kvm))
++			return 0;
++#endif
+ 		kvm_populate_msi(e, &msi);
+ 		return vgic_its_inject_cached_translation(kvm, &msi);
+ 	}
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index 9c20fea176f1..f804210f9596 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -466,6 +466,9 @@ int kvm_shadow_dev_create(struct kvm *kvm, struct kvm_master_dev_info *mdi);
+ void kvm_shadow_dev_delete(struct kvm *kvm, u32 devid);
+ void kvm_shadow_dev_delete_all(struct kvm *kvm);
+ struct shadow_dev *kvm_shadow_dev_get(struct kvm *kvm, struct kvm_msi *msi);
++
++int shadow_dev_virq_bypass_inject(struct kvm *kvm,
++				  struct kvm_kernel_irq_routing_entry *e);
+ #endif
+ 
+ #endif /* __KVM_ARM_VGIC_H */
+-- 
+2.43.0
+

@@ -1,0 +1,42 @@
+From 346acf8b610fd574ff70ae639a784d0114664c43 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 17 Apr 2024 14:56:15 +0800
+Subject: [PATCH 728/960] downstream: arm64: enable CONFIG_ARM64_MPAM in the
+ arm64 config
+
+Support MPAM feature as default in the arm64 configuration.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 1 +
+ config.aarch64-64k | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index ef1c2762d5ee..8b9ce8777b94 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -502,6 +502,7 @@ CONFIG_AS_HAS_LDAPR=y
+ # ARMv8.4 architectural features
+ #
+ CONFIG_ARM64_AMU_EXTN=y
++CONFIG_ARM64_MPAM=y
+ CONFIG_AS_HAS_ARMV8_4=y
+ CONFIG_ARM64_TLB_RANGE=y
+ # end of ARMv8.4 architectural features
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 87506c9d45d3..d21be40b3358 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -504,6 +504,7 @@ CONFIG_AS_HAS_LDAPR=y
+ # ARMv8.4 architectural features
+ #
+ CONFIG_ARM64_AMU_EXTN=y
++CONFIG_ARM64_MPAM=y
+ CONFIG_AS_HAS_ARMV8_4=y
+ CONFIG_ARM64_TLB_RANGE=y
+ # end of ARMv8.4 architectural features
+-- 
+2.43.0
+

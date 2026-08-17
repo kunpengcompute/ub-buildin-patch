@@ -1,0 +1,77 @@
+From 404474be6295cb614fe640c349bc24cbce8265ae Mon Sep 17 00:00:00 2001
+From: Tong Tiangen <tongtiangen@huawei.com>
+Date: Mon, 15 Apr 2024 15:39:27 +0800
+Subject: [PATCH 897/960] downstream: mm/hwpoison: return -EFAULT when copy
+ fail in copy_mc_[user]_highpage()
+
+If hardware errors are encountered during page copying, returning the bytes
+not copied is not meaningful, and the caller cannot do any processing on
+the remaining data. Returning -EFAULT is more reasonable, which represents
+a hardware error encountered during the copying.
+
+Signed-off-by: Tong Tiangen <tongtiangen@huawei.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/highmem.h | 8 ++++----
+ mm/khugepaged.c         | 4 ++--
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/include/linux/highmem.h b/include/linux/highmem.h
+index 22f7cda6c27c..92b96005cb67 100644
+--- a/include/linux/highmem.h
++++ b/include/linux/highmem.h
+@@ -431,8 +431,8 @@ static inline void copy_highpage(struct page *to, struct page *from)
+ /*
+  * If architecture supports machine check exception handling, define the
+  * #MC versions of copy_user_highpage and copy_highpage. They copy a memory
+- * page with #MC in source page (@from) handled, and return the number
+- * of bytes not copied if there was a #MC, otherwise 0 for success.
++ * page with #MC in source page (@from) handled, and return -EFAULT if there
++ * was a #MC, otherwise 0 for success.
+  */
+ static inline int copy_mc_user_highpage(struct page *to, struct page *from,
+ 					unsigned long vaddr, struct vm_area_struct *vma)
+@@ -451,7 +451,7 @@ static inline int copy_mc_user_highpage(struct page *to, struct page *from,
+ 	if (ret)
+ 		memory_failure_queue(page_to_pfn(from), 0);
+ 
+-	return ret;
++	return ret ? -EFAULT : 0;
+ }
+ 
+ static inline int copy_mc_highpage(struct page *to, struct page *from)
+@@ -470,7 +470,7 @@ static inline int copy_mc_highpage(struct page *to, struct page *from)
+ 	if (ret)
+ 		memory_failure_queue(page_to_pfn(from), 0);
+ 
+-	return ret;
++	return ret ? -EFAULT : 0;
+ }
+ #else
+ static inline int copy_mc_user_highpage(struct page *to, struct page *from,
+diff --git a/mm/khugepaged.c b/mm/khugepaged.c
+index 04cb102e34fd..854eb6df63e6 100644
+--- a/mm/khugepaged.c
++++ b/mm/khugepaged.c
+@@ -798,7 +798,7 @@ static int __collapse_huge_page_copy(pte_t *pte,
+ 			continue;
+ 		}
+ 		src_page = pte_page(pteval);
+-		if (copy_mc_user_highpage(page, src_page, _address, vma) > 0) {
++		if (copy_mc_user_highpage(page, src_page, _address, vma)) {
+ 			result = SCAN_COPY_MC;
+ 			break;
+ 		}
+@@ -2046,7 +2046,7 @@ static int collapse_file(struct mm_struct *mm, unsigned long addr,
+ 			index++;
+ 			dst++;
+ 		}
+-		if (copy_mc_highpage(dst, page) > 0) {
++		if (copy_mc_highpage(dst, page)) {
+ 			result = SCAN_COPY_MC;
+ 			goto rollback;
+ 		}
+-- 
+2.43.0
+

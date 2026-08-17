@@ -1,0 +1,192 @@
+From aea7c881b1a4198c838201f8eed12b5a220ae313 Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:22 +0800
+Subject: [PATCH 516/960] downstream: irqchip/gic-v3-its: Introduce the
+ reserved device ID pools
+
+Organize the system-wide unused device IDs to build several device ID
+pools. Use these pools to manage the reserved device IDs which can be
+used by virtual devices (without the actual HW device ID).
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3-its.c | 122 +++++++++++++++++++++++++++++++
+ drivers/misc/Kconfig             |   9 +++
+ 2 files changed, 131 insertions(+)
+
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 0485a0d95262..a804d8b32b39 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -39,6 +39,104 @@
+ 
+ #include "irq-gic-common.h"
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++#include <linux/pci.h>
++
++/* a reserved bus id region */
++struct plat_rsv_buses {
++	u8	start;	/* the first reserved bus id */
++	u8	count;
++};
++
++/*
++ * Build a devid pool per reserved bus id region, where all
++ * device ids should be unused by physical PCI devices.
++ */
++struct rsv_devid_pool {
++	struct list_head	entry;
++
++	struct plat_rsv_buses	buses;
++	u32			start;
++	u32			end;
++
++	raw_spinlock_t		devid_bm_lock;
++	unsigned long		*devid_bm;
++};
++
++static LIST_HEAD(rsv_devid_pools);
++static DEFINE_RAW_SPINLOCK(rsv_devid_pools_lock);
++
++/* Do we have usable rsv_devid_pool? Initialized to be true. */
++static bool rsv_devid_pool_cap = true;
++static u8 rsv_buses_start, rsv_buses_count;
++
++static int __init rsv_buses_start_cfg(char *buf)
++{
++	return kstrtou8(buf, 0, &rsv_buses_start);
++}
++early_param("irqchip.gicv3_rsv_buses_start", rsv_buses_start_cfg);
++
++static int __init rsv_buses_count_cfg(char *buf)
++{
++	return kstrtou8(buf, 0, &rsv_buses_count);
++}
++early_param("irqchip.gicv3_rsv_buses_count", rsv_buses_count_cfg);
++
++static void get_rsv_buses_resource(struct plat_rsv_buses *buses)
++{
++	buses->start = rsv_buses_start;
++	buses->count = rsv_buses_count;
++
++	/*
++	 * FIXME: There is no architectural way to get the *correct*
++	 * reserved bus id info.
++	 *
++	 * The first thought is to increase the GITS_TYPER.Devbits for
++	 * the usage for virtualization, but this will break all
++	 * command layouts with DeviceID as an argument (e.g., INT).
++	 *
++	 * The second way is to decrease the GITS_TYPER.Devids so that
++	 * SW can pick the unused device IDs for use (these IDs should
++	 * actually be supported at HW level, though not exposed).
++	 * *Or* fetch the information with the help of firmware. They
++	 * are essentially the same way.
++	 */
++}
++
++static int probe_devid_pool_one(void)
++{
++	struct rsv_devid_pool *devid_pool;
++
++	devid_pool = kzalloc(sizeof(*devid_pool), GFP_KERNEL);
++	if (!devid_pool)
++		return -ENOMEM;
++
++	get_rsv_buses_resource(&devid_pool->buses);
++	raw_spin_lock_init(&devid_pool->devid_bm_lock);
++
++	devid_pool->start = PCI_DEVID(devid_pool->buses.start, 0);
++	devid_pool->end = PCI_DEVID(devid_pool->buses.start + devid_pool->buses.count, 0);
++
++	if (devid_pool->end == devid_pool->start) {
++		kfree(devid_pool);
++		return -EINVAL;
++	}
++
++	devid_pool->devid_bm = bitmap_zalloc(devid_pool->end - devid_pool->start,
++					     GFP_KERNEL);
++	if (!devid_pool->devid_bm) {
++		kfree(devid_pool);
++		return -ENOMEM;
++	}
++
++	raw_spin_lock(&rsv_devid_pools_lock);
++	list_add(&devid_pool->entry, &rsv_devid_pools);
++	raw_spin_unlock(&rsv_devid_pools_lock);
++
++	return 0;
++}
++#endif
++
+ #define ITS_FLAGS_CMDQ_NEEDS_FLUSHING		(1ULL << 0)
+ #define ITS_FLAGS_WORKAROUND_CAVIUM_22375	(1ULL << 1)
+ #define ITS_FLAGS_WORKAROUND_CAVIUM_23144	(1ULL << 2)
+@@ -201,6 +299,22 @@ static DEFINE_IDA(its_vpeid_ida);
+ #define gic_data_rdist_rd_base()	(gic_data_rdist()->rd_base)
+ #define gic_data_rdist_vlpi_base()	(gic_data_rdist_rd_base() + SZ_128K)
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++/*
++ * Currently we only build *one* devid pool.
++ */
++static int build_devid_pools(void)
++{
++	struct its_node *its;
++
++	its = list_first_entry(&its_nodes, struct its_node, entry);
++	if (readl_relaxed(its->base + GITS_IIDR) != 0x00051736)
++		return -EINVAL;
++
++	return probe_devid_pool_one();
++}
++#endif
++
+ /*
+  * Skip ITSs that have no vLPIs mapped, unless we're on GICv4.1, as we
+  * always have vSGIs mapped.
+@@ -5733,6 +5847,14 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
+ 			rdists->has_vlpis = false;
+ 			pr_err("ITS: Disabling GICv4 support\n");
+ 		}
++
++#ifdef CONFIG_VIRT_PLAT_DEV
++		if (build_devid_pools())
++			rsv_devid_pool_cap = false;
++
++		if (rsv_devid_pool_cap)
++			pr_info("ITS: reserved device id pools enabled\n");
++#endif
+ 	}
+ 
+ 	register_syscore_ops(&its_syscore_ops);
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index cadd4a820c03..ad59859eafdb 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -493,6 +493,15 @@ config HISI_HIKEY_USB
+ 	  switching between the dual-role USB-C port and the USB-A host ports
+ 	  using only one USB controller.
+ 
++config VIRT_PLAT_DEV
++	bool "virt platform device driver"
++        depends on KVM && ARM64 && ARCH_HISI
++        default n
++        help
++          Enable this configuration option to probe the virtual platform device,
++          which created for the Qemu emulated device to implement virtual MSI
++          direct injection.
++
+ config OPEN_DICE
+ 	tristate "Open Profile for DICE driver"
+ 	depends on OF_RESERVED_MEM
+-- 
+2.43.0
+

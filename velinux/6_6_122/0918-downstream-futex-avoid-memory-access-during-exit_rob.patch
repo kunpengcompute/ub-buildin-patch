@@ -1,0 +1,44 @@
+From 70285bc666319de65db11453ac53ef9e5511463d Mon Sep 17 00:00:00 2001
+From: Jiacheng Yu <yujiacheng3@huawei.com>
+Date: Mon, 23 Mar 2026 20:09:10 +0800
+Subject: [PATCH 918/960] downstream: futex: avoid memory access during
+ exit_robust_list if task facing critical RAS
+
+Background:
+After a CRITICAL RAS event is triggered, all user memory for this
+task becomes inaccessible. Accessing faulted memory during thread exit can
+cause further system damage.
+
+Fix:
+Upon detecting a task with CRITICAL RAS event, exit_robust_list returns
+immediately without attempting to access user memory.
+
+Impact:
+Any locks held by the affected thread will remain unavailable
+indefinitely. Threads waiting on these locks will block until
+an alternative wakeup mechanism is triggered.
+
+Signed-off-by: Jiacheng Yu <yujiacheng3@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ kernel/futex/core.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/kernel/futex/core.c b/kernel/futex/core.c
+index f30a93e50f65..46a277c6697b 100644
+--- a/kernel/futex/core.c
++++ b/kernel/futex/core.c
+@@ -789,6 +789,9 @@ static void exit_robust_list(struct task_struct *curr)
+ 	unsigned long futex_offset;
+ 	int rc;
+ 
++	if (mm_is_critical_error(curr->mm))
++		return;
++
+ 	/*
+ 	 * Fetch the list head (which was registered earlier, via
+ 	 * sys_set_robust_list()):
+-- 
+2.43.0
+

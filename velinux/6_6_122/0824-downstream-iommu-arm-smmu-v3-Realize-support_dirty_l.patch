@@ -1,0 +1,49 @@
+From 7461fd935561eb1706dc83fd0ba02a799c563829 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Wed, 10 Jan 2024 19:36:36 +0800
+Subject: [PATCH 824/960] downstream: iommu/arm-smmu-v3: Realize
+ support_dirty_log iommu ops
+
+We have implemented these interfaces required to support iommu
+dirty log tracking. The last step is reporting this feature to
+upper user, then the user can perform higher policy base on it.
+For arm smmuv3, it is equal to ARM_SMMU_FEAT_HD.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: jiaqingtong <jiaqingtong@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 3c574ca98fce..dc880e898b51 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -3523,6 +3523,13 @@ static int arm_smmu_merge_page(struct iommu_domain *domain, unsigned long iova,
+ 	return ret;
+ }
+ 
++static bool arm_smmu_support_dirty_log(struct iommu_domain *domain)
++{
++	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
++
++	return !!(smmu_domain->smmu->features & ARM_SMMU_FEAT_HD);
++}
++
+ static int arm_smmu_switch_dirty_log(struct iommu_domain *domain, bool enable,
+ 				     unsigned long iova, size_t size, int prot)
+ {
+@@ -3737,6 +3744,7 @@ static struct iommu_ops arm_smmu_ops = {
+ #endif
+ 		.iova_to_phys		= arm_smmu_iova_to_phys,
+ 		.enable_nesting		= arm_smmu_enable_nesting,
++		.support_dirty_log	= arm_smmu_support_dirty_log,
+ 		.switch_dirty_log	= arm_smmu_switch_dirty_log,
+ 		.sync_dirty_log		= arm_smmu_sync_dirty_log,
+ 		.clear_dirty_log	= arm_smmu_clear_dirty_log,
+-- 
+2.43.0
+

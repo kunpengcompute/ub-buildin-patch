@@ -1,0 +1,75 @@
+From eb020b5c7c8cd0086e35b9cec196b68a8f5ddaec Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Wed, 27 Mar 2024 10:24:15 +0800
+Subject: [PATCH 738/960] downstream: ACPI: processor: Register all CPUs from
+ acpi_processor_get_info()
+
+To allow ACPI to skip the call to arch_register_cpu() when the _STA
+value indicates the CPU can't be brought online right now, move the
+arch_register_cpu() call into acpi_processor_get_info().
+
+Systems can still be booted with 'acpi=off', or not include an
+ACPI description at all. For these, the CPUs continue to be
+registered by cpu_dev_register_generic().
+
+This moves the CPU register logic back to a subsys_initcall(),
+while the memory nodes will have been registered earlier.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Reviewed-by: Gavin Shan <gshan@redhat.com>
+Tested-by: Miguel Luis <miguel.luis@oracle.com>
+Tested-by: Vishnu Pajjuri <vishnu@os.amperecomputing.com>
+Tested-by: Jianyong Wu <jianyong.wu@arm.com>
+Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Signed-off-by: liwei <liwei728@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/acpi_processor.c | 12 ++++++++++++
+ drivers/base/cpu.c            |  6 +++++-
+ 2 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/acpi/acpi_processor.c b/drivers/acpi/acpi_processor.c
+index ab912aea5e44..de2165562266 100644
+--- a/drivers/acpi/acpi_processor.c
++++ b/drivers/acpi/acpi_processor.c
+@@ -314,6 +314,18 @@ static int acpi_processor_get_info(struct acpi_device *device)
+ 			cpufreq_add_device("acpi-cpufreq");
+ 	}
+ 
++	/*
++	 * Register CPUs that are present. get_cpu_device() is used to skip
++	 * duplicate CPU descriptions from firmware.
++	 */
++	if (!invalid_logical_cpuid(pr->id) && cpu_present(pr->id) &&
++	    !get_cpu_device(pr->id)) {
++		int ret = arch_register_cpu(pr->id);
++
++		if (ret)
++			return ret;
++	}
++
+ 	/*
+ 	 *  Extra Processor objects may be enumerated on MP systems with
+ 	 *  less than the max # of CPUs. They should be ignored _iff
+diff --git a/drivers/base/cpu.c b/drivers/base/cpu.c
+index d780624040f1..d1999889bbe0 100644
+--- a/drivers/base/cpu.c
++++ b/drivers/base/cpu.c
+@@ -553,7 +553,11 @@ static void __init cpu_dev_register_generic(void)
+ {
+ 	int i, ret;
+ 
+-	if (!IS_ENABLED(CONFIG_GENERIC_CPU_DEVICES))
++	/*
++	 * When ACPI is enabled, CPUs are registered via
++	 * acpi_processor_get_info().
++	 */
++	if (!IS_ENABLED(CONFIG_GENERIC_CPU_DEVICES) || !acpi_disabled)
+ 		return;
+ 
+ 	for_each_present_cpu(i) {
+-- 
+2.43.0
+

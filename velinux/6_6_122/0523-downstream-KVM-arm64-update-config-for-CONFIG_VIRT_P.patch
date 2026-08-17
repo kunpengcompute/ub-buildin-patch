@@ -1,0 +1,44 @@
+From 888bfcd078ded600856c354f07593f291dbce2f4 Mon Sep 17 00:00:00 2001
+From: Dongxu Sun <sundongxu3@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:29 +0800
+Subject: [PATCH 523/960] downstream: KVM: arm64: update config for
+ CONFIG_VIRT_PLAT_DEV
+
+set CONFIG_VIRT_PLAT_DEV=y in config.aarch64 and config.aarch64-64k.
+
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 1 +
+ config.aarch64-64k | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 68cbdc285b94..d8772a8e3f09 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -411,6 +411,7 @@ CONFIG_HARDLOCKUP_DETECTOR_PERF=y
+ CONFIG_ARM64_HAFT=y
+ CONFIG_ARCH_HAS_NONLEAF_PMD_YOUNG=y
+ CONFIG_KVM_HISI_VIRT=y
++CONFIG_VIRT_PLAT_DEV=y
+ 
+ CONFIG_ARM64_4K_PAGES=y
+ # CONFIG_ARM64_16K_PAGES is not set
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 235eae609e51..753e9d93528b 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -411,6 +411,7 @@ CONFIG_HARDLOCKUP_DETECTOR_PERF=y
+ CONFIG_ARM64_HAFT=y
+ CONFIG_ARCH_HAS_NONLEAF_PMD_YOUNG=y
+ CONFIG_KVM_HISI_VIRT=y
++CONFIG_VIRT_PLAT_DEV=y
+ 
+ # CONFIG_ARM64_4K_PAGES is not set
+ # CONFIG_ARM64_16K_PAGES is not set
+-- 
+2.43.0
+

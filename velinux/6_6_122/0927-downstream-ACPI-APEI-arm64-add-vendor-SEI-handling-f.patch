@@ -1,0 +1,357 @@
+From 18a9d28c5ff147c634372086c02e9323551d2d15 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Wed, 13 May 2026 16:11:28 +0800
+Subject: [PATCH 927/960] downstream: ACPI/APEI/arm64: add vendor SEI handling
+ for firmware-first RAS
+
+Background:
+SEI (SError Interrupt) is an asynchronous exception on ARM64 systems. In
+firmware-first RAS model, firmware handle SEI errors before the OS,
+recording error information in vendor-specific registers.
+
+Problem:
+When SEI occurs in userspace with Uncorrected Recoverable/Unrecoverable
+AET (Abort Error Type), the kernel currently cannot recover the error
+because it doesn't have access to the error information stored by firmware
+in vendor-specific registers.
+
+Solution:
+Add a vendor handler interface (apei_claim_sei) allowing each SoC vendor
+to implement platform-specific SEI handling.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/Kconfig                   |   7 +-
+ arch/arm64/include/asm/acpi.h        |   2 +
+ arch/arm64/kernel/traps.c            |  16 +++
+ drivers/acpi/apei/apei-internal.h    |   2 +
+ drivers/acpi/apei/ghes-vendor-info.c | 162 ++++++++++++++++++++++++++-
+ drivers/acpi/apei/ghes.c             |   5 +
+ 6 files changed, 192 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index 9dff42e485ac..ec6f0b657373 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -2370,11 +2370,16 @@ config ARM64_PSEUDO_NMI
+ 
+ config ARM64_SYNC_SEI
+ 	bool "Use ESB to Synchronize SEI At Exception Boundary(EXPERIMENTAL)"
+-	depends on ARM64_RAS_EXTN
++	depends on ARM64_RAS_EXTN && ACPI_APEI_GHES_ARMP_VENDOR_INFO
+ 	help
+ 	  For Firmware-First, Use the ESB to synchronize SEI occurs before
+ 	  exception entry from EL0 and exit to EL0.
+ 
++	  SEI is an asynchronous exception that can occur on ARMv8 systems.
++	  When firmware handles SEI first, it analyzes and records the error.
++	  This option allows the OS to retrieve the error record and take
++	  appropriate action, such as killing the affected task.
++
+ 	  if unsure, say N
+ 
+ if ARM64_PSEUDO_NMI
+diff --git a/arch/arm64/include/asm/acpi.h b/arch/arm64/include/asm/acpi.h
+index c07a58b96329..693dc4c7b817 100644
+--- a/arch/arm64/include/asm/acpi.h
++++ b/arch/arm64/include/asm/acpi.h
+@@ -134,9 +134,11 @@ static inline int get_cpu_for_acpi_id(u32 uid)
+ static inline void arch_fix_phys_package_id(int num, u32 slot) { }
+ void __init acpi_init_cpus(void);
+ int apei_claim_sea(struct pt_regs *regs);
++int apei_claim_sei(struct pt_regs *regs);
+ #else
+ static inline void acpi_init_cpus(void) { }
+ static inline int apei_claim_sea(struct pt_regs *regs) { return -ENOENT; }
++static inline int apei_claim_sei(struct pt_regs *regs) { return -ENOENT; }
+ #endif /* CONFIG_ACPI */
+ 
+ #ifdef CONFIG_ARM64_ACPI_PARKING_PROTOCOL
+diff --git a/arch/arm64/kernel/traps.c b/arch/arm64/kernel/traps.c
+index 53dd958d26fe..237af5704664 100644
+--- a/arch/arm64/kernel/traps.c
++++ b/arch/arm64/kernel/traps.c
+@@ -29,6 +29,7 @@
+ #include <linux/kasan.h>
+ #include <linux/ubsan.h>
+ #include <linux/cfi.h>
++#include <linux/acpi.h>
+ 
+ #include <asm/atomic.h>
+ #include <asm/bug.h>
+@@ -48,6 +49,8 @@
+ #include <asm/stacktrace.h>
+ #include <asm/system_misc.h>
+ #include <asm/sysreg.h>
++#include <asm/acpi.h>
++#include <asm/setup.h>
+ 
+ static bool __kprobes __check_eq(unsigned long pstate)
+ {
+@@ -970,6 +973,12 @@ bool arm64_is_fatal_ras_serror(struct pt_regs *regs, unsigned long esr)
+ {
+ 	unsigned long aet = arm64_ras_serror_get_severity(esr);
+ 
++	pr_info_ratelimited(
++		"%s aet: %ld comm: %.20s tgid: %d pid: %d cpu: %d\n",
++		(regs && user_mode(regs)) ? "userspace" : "kernelspace", aet,
++		current->comm, current->tgid, current->pid,
++		raw_smp_processor_id());
++
+ 	switch (aet) {
+ 	case ESR_ELx_AET_CE:	/* corrected error */
+ 	case ESR_ELx_AET_UEO:	/* restartable, not yet consumed */
+@@ -988,7 +997,14 @@ bool arm64_is_fatal_ras_serror(struct pt_regs *regs, unsigned long esr)
+ 		 * Neoverse-N1 #1349291 means a non-KVM SError reported as
+ 		 * Unrecoverable should be treated as Uncontainable. We
+ 		 * call arm64_serror_panic() in both cases.
++		 *
++		 * Add a vendor handler interface (apei_claim_sei) allowing
++		 * each SoC vendor to implement platform-specific SEI handling
++		 * for UER.
+ 		 */
++		if ((aet == ESR_ELx_AET_UER) && !apei_claim_sei(regs))
++			return false;
++
+ 		return true;
+ 
+ 	case ESR_ELx_AET_UC:	/* Uncontainable or Uncategorized error */
+diff --git a/drivers/acpi/apei/apei-internal.h b/drivers/acpi/apei/apei-internal.h
+index 1268cf9cbb05..c2693c322781 100644
+--- a/drivers/acpi/apei/apei-internal.h
++++ b/drivers/acpi/apei/apei-internal.h
+@@ -134,11 +134,13 @@ int apei_osc_setup(void);
+ 
+ #ifdef CONFIG_ACPI_APEI_GHES_ARMP_VENDOR_INFO
+ bool ghes_armp_vendor_critical_error(struct cper_sec_proc_arm *err, bool sync);
++int ghes_armp_vendor_handle_sei(struct pt_regs *regs);
+ #else
+ static inline bool
+ ghes_armp_vendor_critical_error(struct cper_sec_proc_arm *err, bool sync)
+ {
+ 	return false;
+ }
++static inline int ghes_armp_vendor_handle_sei(struct pt_regs *regs) { return -ENOENT; }
+ #endif
+ #endif
+diff --git a/drivers/acpi/apei/ghes-vendor-info.c b/drivers/acpi/apei/ghes-vendor-info.c
+index a7878dfa2ac0..67b89df1bc14 100644
+--- a/drivers/acpi/apei/ghes-vendor-info.c
++++ b/drivers/acpi/apei/ghes-vendor-info.c
+@@ -4,10 +4,19 @@
+  * Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+  */
+ 
++#define pr_fmt(fmt)	"GHES: VENDOR: " fmt
++
+ #include <linux/init.h>
+ #include <linux/acpi.h>
++#include <linux/signal.h>
++#include <linux/task_work.h>
++#include <linux/genalloc.h>
++
+ #include <acpi/ghes.h>
+ #include <acpi/apei.h>
++
++#include <asm/setup.h>
++
+ #include "apei-internal.h"
+ 
+ #define HISI_OEM	BIT(0)
+@@ -57,11 +66,152 @@ static bool ghes_hisi_critical_hw_error(struct cper_sec_proc_arm *err, bool sync
+ 
+ 	return (bool)(vendor_info->err_flag & HISI_VENDOR_CRITICAL_ERR);
+ }
++
++struct sei_task_work {
++	struct callback_head twork;
++	u64 pfn;
++};
++
++static struct gen_pool *hisi_sei_pool;
++
++static int ghes_hisi_sei_init(void)
++{
++	unsigned long addr, len = PAGE_SIZE;
++	int rc;
++
++	if (!IS_ENABLED(CONFIG_ARM64_SYNC_SEI))
++		return 0;
++
++	hisi_sei_pool = gen_pool_create(ilog2(sizeof(struct sei_task_work)), -1);
++	if (!hisi_sei_pool)
++		return -ENOMEM;
++
++	addr = (unsigned long)kzalloc(PAGE_ALIGN(len), GFP_KERNEL);
++	if (!addr)
++		goto err_pool_alloc;
++
++	rc = gen_pool_add(hisi_sei_pool, addr, PAGE_ALIGN(len), -1);
++	if (rc)
++		goto err_pool_add;
++
++	return 0;
++
++err_pool_add:
++	kfree((void *)addr);
++
++err_pool_alloc:
++	gen_pool_destroy(hisi_sei_pool);
++	hisi_sei_pool = NULL;
++
++	pr_warn("%s init failed\n", __func__);
++	return -ENOMEM;
++}
++
++static void hisi_sei_kill_task_work(struct callback_head *twork)
++{
++	struct sei_task_work *ctx = container_of(twork, struct sei_task_work, twork);
++
++	kill_accessing_process(ctx->pfn, MF_ACTION_REQUIRED, true);
++	gen_pool_free(hisi_sei_pool, (unsigned long)ctx, sizeof(*ctx));
++}
++
++/*
++ * Read SEI error address from HiSilicon RAS registers.
++ * - s3_3_c15_c0_1 lower 16 bits combined with s3_3_c15_c0_0 form the error physical address.
++ * - Clear the registers after reading to acknowledge the error.
++ */
++static inline u64 hisi_sei_get_error_pa(void)
++{
++	u64 sw_res_reg0 = read_sysreg(s3_3_c15_c0_0);
++	u64 sw_res_reg1 = read_sysreg(s3_3_c15_c0_1);
++	u64 pa = ((sw_res_reg1 & 0xFFFFUL) << 32) | (sw_res_reg0 & 0xFFFFFFFFUL);
++
++	write_sysreg(0, s3_3_c15_c0_0);
++	write_sysreg(sw_res_reg1 & ~0xFFFFUL, s3_3_c15_c0_1);
++
++	return pa;
++}
++
++/*
++ * Handle fatal SEI error by scheduling a task work to kill the affected process.
++ * @err_pa: The physical address that triggered the SEI.
++ *
++ * This function allocates a task work structure from a pre-allocated pool and
++ * schedules it to run on the current task. The task work will invoke
++ * kill_accessing_process() to send a SIGKILL to the process that has the
++ * error address mapped. This mechanism is used for memory errors in user-space
++ * accessible regions managed by drivers.
++ *
++ * Return: true if task work is successfully scheduled, false otherwise.
++ */
++static bool hisi_sei_kill_task(void)
++{
++	struct sei_task_work *ctx;
++	unsigned long err_pa;
++
++	if (!hisi_sei_pool)
++		return false;
++
++	ctx = (void *)gen_pool_alloc(hisi_sei_pool, sizeof(*ctx));
++	if (!ctx) {
++		pr_warn_ratelimited("alloc task work failed\n");
++		return false;
++	}
++
++	err_pa = hisi_sei_get_error_pa();
++	if (!err_pa) {
++		pr_warn_ratelimited("err pa is not valid\n");
++		gen_pool_free(hisi_sei_pool, (unsigned long)ctx, sizeof(*ctx));
++		return false;
++	}
++
++	ctx->pfn = PHYS_PFN(err_pa);
++	init_task_work(&ctx->twork, hisi_sei_kill_task_work);
++	if (task_work_add(current, &ctx->twork, TWA_RESUME)) {
++		pr_warn_ratelimited("task work add failed\n");
++		gen_pool_free(hisi_sei_pool, (unsigned long)ctx, sizeof(*ctx));
++		return false;
++	}
++	return true;
++}
++
++/*
++ * Handle HiSilicon specific Synchronous External Interrupt (SEI) errors.
++ * @regs: exception registers, NULL if from user space
++ *
++ * This function processes vendor-specific SEI errors for HiSilicon platforms.
++ * For user space errors, it reads the error physical address from RAS registers
++ * and schedules a task work to kill the accessing task. If recovery fails or
++ * the error is from kernel space, the current process is terminated with SIGKILL.
++ *
++ * Return: 0 if SEI is handled, -ENOENT if not applicable or unsupported.
++ */
++static int ghes_hisi_handle_sei(struct pt_regs *regs)
++{
++	if (!IS_ENABLED(CONFIG_ARM64_SYNC_SEI))
++		return -ENOENT;
++
++	if (!arm64_sync_sei_enabled())
++		return -ENOENT;
++
++	if (!current->mm)
++		return -ENOENT;
++
++	if ((!regs || user_mode(regs)) && hisi_sei_kill_task())
++		return 0;
++
++	pr_err("Sending SIGKILL to comm: %s, pid: %d, tgid: %d due to sei not recovered\n",
++	       current->comm, current->pid, current->tgid);
++	force_sig(SIGKILL);
++	return 0;
++}
+ #else
+ static inline bool ghes_hisi_critical_hw_error(struct cper_sec_proc_arm *err, bool sync)
+ {
+ 	return false;
+ }
++static int ghes_hisi_sei_init(void) { return 0; }
++static int ghes_hisi_handle_sei(struct pt_regs *regs) { return -ENOENT; }
+ #endif
+ 
+ bool ghes_armp_vendor_critical_error(struct cper_sec_proc_arm *err, bool sync)
+@@ -72,6 +222,14 @@ bool ghes_armp_vendor_critical_error(struct cper_sec_proc_arm *err, bool sync)
+ 	return false;
+ }
+ 
++int ghes_armp_vendor_handle_sei(struct pt_regs *regs)
++{
++	if (vendor_oem & HISI_OEM)
++		return ghes_hisi_handle_sei(regs);
++
++	return -ENOENT;
++}
++
+ static int __init ghes_check_oem_table(void)
+ {
+ 	struct acpi_table_header *tbl;
+@@ -81,8 +239,10 @@ static int __init ghes_check_oem_table(void)
+ 	if (ACPI_FAILURE(status) || !tbl)
+ 		return -ENODEV;
+ 
+-	if (!memcmp(tbl->oem_id, "HISI  ", ACPI_OEM_ID_SIZE))
++	if (!memcmp(tbl->oem_id, "HISI  ", ACPI_OEM_ID_SIZE)) {
+ 		vendor_oem |= HISI_OEM;
++		ghes_hisi_sei_init();
++	}
+ 
+ 	acpi_put_table(tbl);
+ 	return 0;
+diff --git a/drivers/acpi/apei/ghes.c b/drivers/acpi/apei/ghes.c
+index ea99a29c194c..7f20a49e9053 100644
+--- a/drivers/acpi/apei/ghes.c
++++ b/drivers/acpi/apei/ghes.c
+@@ -1692,3 +1692,8 @@ void ghes_unregister_report_chain(struct notifier_block *nb)
+ 	atomic_notifier_chain_unregister(&ghes_report_chain, nb);
+ }
+ EXPORT_SYMBOL_GPL(ghes_unregister_report_chain);
++
++int apei_claim_sei(struct pt_regs *regs)
++{
++	return ghes_armp_vendor_handle_sei(regs);
++}
+-- 
+2.43.0
+

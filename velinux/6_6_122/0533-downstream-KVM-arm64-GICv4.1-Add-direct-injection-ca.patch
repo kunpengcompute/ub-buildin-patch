@@ -1,0 +1,155 @@
+From ddb238867d8cf2c02d08648849b25d38e49ef67b Mon Sep 17 00:00:00 2001
+From: Zenghui Yu <yuzenghui@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:08 +0800
+Subject: [PATCH 533/960] downstream: KVM: arm64: GICv4.1: Add direct injection
+ capability to PPI registers
+
+Most of the GICv3 emulation code that deals with timer interrupts now
+has to be aware of the HiSilicon direct vtimer capabilities in order
+to benefit from it.
+
+Add such support, keyed on the interrupt having the non-NULL vtimer_info.
+Except for the uaccess save path for ISPENDR0 and ISACTIVER0 registers,
+I haven't taken too much care of the userspace save/restore path yet...
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-mmio.c | 30 +++++++++++++++++++++++-------
+ arch/arm64/kvm/vgic/vgic.h      | 12 ++++++++++++
+ 2 files changed, 35 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-mmio.c b/arch/arm64/kvm/vgic/vgic-mmio.c
+index ff558c05e990..7aca296f9b3f 100644
+--- a/arch/arm64/kvm/vgic/vgic-mmio.c
++++ b/arch/arm64/kvm/vgic/vgic-mmio.c
+@@ -78,7 +78,7 @@ void vgic_mmio_write_group(struct kvm_vcpu *vcpu, gpa_t addr,
+ 
+ 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+ 		irq->group = !!(val & BIT(i));
+-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
++		if (vgic_direct_sgi_or_ppi(irq)) {
+ 			vgic_update_vsgi(irq);
+ 			raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
+ 		} else {
+@@ -125,7 +125,7 @@ void vgic_mmio_write_senable(struct kvm_vcpu *vcpu,
+ 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
+ 
+ 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
++		if (vgic_direct_sgi_or_ppi(irq)) {
+ 			if (!irq->enabled) {
+ 				struct irq_data *data;
+ 
+@@ -174,7 +174,7 @@ void vgic_mmio_write_cenable(struct kvm_vcpu *vcpu,
+ 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
+ 
+ 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+-		if (irq->hw && vgic_irq_is_sgi(irq->intid) && irq->enabled)
++		if (vgic_direct_sgi_or_ppi(irq) && irq->enabled)
+ 			disable_irq_nosync(irq->host_irq);
+ 
+ 		irq->enabled = false;
+@@ -250,7 +250,7 @@ static unsigned long __read_pending(struct kvm_vcpu *vcpu,
+ 		 * for handling of ISPENDR and ICPENDR.
+ 		 */
+ 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
++		if (vgic_direct_sgi_or_ppi(irq)) {
+ 			int err;
+ 
+ 			val = false;
+@@ -320,7 +320,7 @@ void vgic_mmio_write_spending(struct kvm_vcpu *vcpu,
+ 
+ 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+ 
+-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
++		if (vgic_direct_sgi_or_ppi(irq)) {
+ 			/* HW SGI? Ask the GIC to inject it */
+ 			int err;
+ 			err = irq_set_irqchip_state(irq->host_irq,
+@@ -413,7 +413,7 @@ void vgic_mmio_write_cpending(struct kvm_vcpu *vcpu,
+ 
+ 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+ 
+-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
++		if (vgic_direct_sgi_or_ppi(irq)) {
+ 			/* HW SGI? Ask the GIC to clear its pending bit */
+ 			int err;
+ 			err = irq_set_irqchip_state(irq->host_irq,
+@@ -510,12 +510,23 @@ static unsigned long __vgic_mmio_read_active(struct kvm_vcpu *vcpu,
+ 	/* Loop over all IRQs affected by this read */
+ 	for (i = 0; i < len * 8; i++) {
+ 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++		struct vtimer_info *vtimer = irq->vtimer_info;
++		bool state = irq->active;
++
++		if (vtimer)
++			state = vtimer->get_active_stat(vcpu, irq->intid);
++#endif
+ 
+ 		/*
+ 		 * Even for HW interrupts, don't evaluate the HW state as
+ 		 * all the guest is interested in is the virtual state.
+ 		 */
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++		if (state)
++#else
+ 		if (irq->active)
++#endif
+ 			value |= (1U << i);
+ 
+ 		vgic_put_irq(vcpu->kvm, irq);
+@@ -575,6 +586,11 @@ static void vgic_mmio_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *irq,
+ 		 * do here.
+ 		 */
+ 		irq->active = false;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	} else if (irq->vtimer_info) {
++		/* MMIO trap only */
++		irq->vtimer_info->set_active_stat(vcpu, irq->intid, active);
++#endif
+ 	} else {
+ 		u32 model = vcpu->kvm->arch.vgic.vgic_model;
+ 		u8 active_source;
+@@ -718,7 +734,7 @@ void vgic_mmio_write_priority(struct kvm_vcpu *vcpu,
+ 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
+ 		/* Narrow the priority range to what we actually support */
+ 		irq->priority = (val >> (i * 8)) & GENMASK(7, 8 - VGIC_PRI_BITS);
+-		if (irq->hw && vgic_irq_is_sgi(irq->intid))
++		if (vgic_direct_sgi_or_ppi(irq))
+ 			vgic_update_vsgi(irq);
+ 		raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
+ 
+diff --git a/arch/arm64/kvm/vgic/vgic.h b/arch/arm64/kvm/vgic/vgic.h
+index 3fa68827dc89..6d4dd97ff03e 100644
+--- a/arch/arm64/kvm/vgic/vgic.h
++++ b/arch/arm64/kvm/vgic/vgic.h
+@@ -168,6 +168,18 @@ static inline int vgic_its_write_entry_lock(struct vgic_its *its, gpa_t eaddr,
+ 	return vgic_write_guest_lock(kvm, eaddr, &eval, esize);
+ }
+ 
++static inline bool vgic_direct_sgi_or_ppi(struct vgic_irq *irq)
++{
++	bool direct_sgi = irq->hw && vgic_irq_is_sgi(irq->intid);
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	bool direct_ppi = !!(irq->vtimer_info);
++
++	return direct_sgi || direct_ppi;
++#else
++	return direct_sgi
++#endif
++}
++
+ /*
+  * This struct provides an intermediate representation of the fields contained
+  * in the GICH_VMCR and ICH_VMCR registers, such that code exporting the GIC
+-- 
+2.43.0
+

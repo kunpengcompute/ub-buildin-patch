@@ -1,0 +1,64 @@
+From 7b535a1adb9bfb2d350090578653134a7451b269 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:21:58 +0800
+Subject: [PATCH 573/960] downstream: KVM: arm64: vgic-v3: Allow the NMI state
+ to make it into the LRs
+
+Add the new NMI state to the vgic IRQ state, and allow it to
+make it into the LRs. Nothing can set it yet, so no impact
+is expected from this change.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/sysreg.h | 1 +
+ arch/arm64/kvm/vgic/vgic-v3.c   | 5 ++++-
+ include/kvm/arm_vgic.h          | 1 +
+ 3 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/include/asm/sysreg.h b/arch/arm64/include/asm/sysreg.h
+index 5afe6f640d6c..dbb51f9148cd 100644
+--- a/arch/arm64/include/asm/sysreg.h
++++ b/arch/arm64/include/asm/sysreg.h
+@@ -967,6 +967,7 @@
+ #define ICH_LR_VIRTUAL_ID_MASK	((1ULL << 32) - 1)
+ 
+ #define ICH_LR_EOI		(1ULL << 41)
++#define ICH_LR_NMI		(1ULL << 59)
+ #define ICH_LR_GROUP		(1ULL << 60)
+ #define ICH_LR_HW		(1ULL << 61)
+ #define ICH_LR_STATE		(3ULL << 62)
+diff --git a/arch/arm64/kvm/vgic/vgic-v3.c b/arch/arm64/kvm/vgic/vgic-v3.c
+index 3c13ea672c7f..9973167d5b12 100644
+--- a/arch/arm64/kvm/vgic/vgic-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-v3.c
+@@ -181,7 +181,10 @@ void vgic_v3_populate_lr(struct kvm_vcpu *vcpu, struct vgic_irq *irq, int lr)
+ 	if (irq->group)
+ 		val |= ICH_LR_GROUP;
+ 
+-	val |= (u64)irq->priority << ICH_LR_PRIORITY_SHIFT;
++	if (irq->nmi)
++		val |= ICH_LR_NMI;
++	else
++		val |= (u64)irq->priority << ICH_LR_PRIORITY_SHIFT;
+ 
+ 	vcpu->arch.vgic_cpu.vgic_v3.vgic_lr[lr] = val;
+ }
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index fb74673d81ea..29b17967fc23 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -175,6 +175,7 @@ struct vgic_irq {
+ 	bool active;			/* not used for LPIs */
+ 	bool enabled;
+ 	bool hw;			/* Tied to HW IRQ */
++	bool nmi;			/* Configured as NMI */
+ 	struct kref refcount;		/* Used for LPIs */
+ 	u32 hwintid;			/* HW INTID number */
+ 	unsigned int host_irq;		/* linux irq corresponding to hwintid */
+-- 
+2.43.0
+

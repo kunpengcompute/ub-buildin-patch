@@ -1,0 +1,40 @@
+From 56f6bce0daa751a25293c5a23ed2277d424bd942 Mon Sep 17 00:00:00 2001
+From: Sven Peter <sven@svenpeter.dev>
+Date: Sun, 26 Nov 2023 17:20:09 +0100
+Subject: [PATCH 204/960] iommu/apple-dart: Use readl instead of readl_relaxed
+ for consistency
+
+commit 60732292a135e8b8152858f219a563c05e9569e9 upstream.
+
+While the readl_relaxed in apple_dart_suspend is correct the rest of the
+driver uses the non-relaxed variants everywhere and the single
+readl_relaxed is inconsistent and possibly confusing.
+
+Signed-off-by: Sven Peter <sven@svenpeter.dev>
+Acked-by: Hector Martin <marcan@marcan.st>
+Reviewed-by: Neal Gompa <neal@gompa.dev>
+Link: https://lore.kernel.org/r/20231126162009.17934-1-sven@svenpeter.dev
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/apple-dart.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/apple-dart.c b/drivers/iommu/apple-dart.c
+index a4a2ddbbc021..7349df993625 100644
+--- a/drivers/iommu/apple-dart.c
++++ b/drivers/iommu/apple-dart.c
+@@ -1309,7 +1309,7 @@ static __maybe_unused int apple_dart_suspend(struct device *dev)
+ 	unsigned int sid, idx;
+ 
+ 	for (sid = 0; sid < dart->num_streams; sid++) {
+-		dart->save_tcr[sid] = readl_relaxed(dart->regs + DART_TCR(dart, sid));
++		dart->save_tcr[sid] = readl(dart->regs + DART_TCR(dart, sid));
+ 		for (idx = 0; idx < dart->hw->ttbr_count; idx++)
+ 			dart->save_ttbr[sid][idx] =
+ 				readl(dart->regs + DART_TTBR(dart, sid, idx));
+-- 
+2.43.0
+

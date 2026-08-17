@@ -1,0 +1,45 @@
+From 4d41a3eb10999b1d5f68eb0e0bb64ab4e794603e Mon Sep 17 00:00:00 2001
+From: Slim6882 <yangjunshuo@huawei.com>
+Date: Sat, 29 Mar 2025 04:16:30 +0800
+Subject: [PATCH 482/960] downstream: arm64/perf: Enable branch stack sampling
+
+Enable branch stack sampling
+
+Signed-off-by: Junhao He <hejunhao3@huawei.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 2 ++
+ config.aarch64-64k | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 2ed10fd8fdbe..31b76d2e6e07 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -403,6 +403,8 @@ CONFIG_SOCIONEXT_SYNQUACER_PREITS=y
+ CONFIG_HISILICON_ERRATUM_162100125=y
+ # end of ARM errata workarounds via the alternatives framework
+ 
++CONFIG_ARM64_BRBE=y
++
+ CONFIG_ARM64_4K_PAGES=y
+ # CONFIG_ARM64_16K_PAGES is not set
+ # CONFIG_ARM64_64K_PAGES is not set
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 515442c4c353..5b68a0d644a1 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -403,6 +403,8 @@ CONFIG_SOCIONEXT_SYNQUACER_PREITS=y
+ CONFIG_HISILICON_ERRATUM_162100125=y
+ # end of ARM errata workarounds via the alternatives framework
+ 
++CONFIG_ARM64_BRBE=y
++
+ # CONFIG_ARM64_4K_PAGES is not set
+ # CONFIG_ARM64_16K_PAGES is not set
+ CONFIG_ARM64_64K_PAGES=y
+-- 
+2.43.0
+

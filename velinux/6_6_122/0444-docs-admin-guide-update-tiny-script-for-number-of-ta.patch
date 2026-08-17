@@ -1,0 +1,38 @@
+From 0cf5bec9778daaa325faca94bc88d1f9d7fbc988 Mon Sep 17 00:00:00 2001
+From: Randy Dunlap <rdunlap@infradead.org>
+Date: Sun, 15 Feb 2026 22:37:29 -0800
+Subject: [PATCH 444/960] docs: admin-guide: update tiny script for number of
+ taint flags
+
+commit 95c0cd8bee59bc7ccc0d8c3008fec373ce8f0301 upstream.
+
+Account for 2 new taint flags being added by increasing the number of
+bits handled by the tiny show-tainted-flags example script.
+
+Fixes: 8eea4e744758 ("taint: Add TAINT_FWCTL")
+Fixes: 2852ca7fba9f ("panic: Taint kernel if tests are run")
+Signed-off-by: Randy Dunlap <rdunlap@infradead.org>
+Reviewed-by: David Gow <davidgow@google.com>
+Signed-off-by: Jonathan Corbet <corbet@lwn.net>
+Message-ID: <20260216063729.2832770-1-rdunlap@infradead.org>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ Documentation/admin-guide/tainted-kernels.rst | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Documentation/admin-guide/tainted-kernels.rst b/Documentation/admin-guide/tainted-kernels.rst
+index 6a63aede0d86..53394feac758 100644
+--- a/Documentation/admin-guide/tainted-kernels.rst
++++ b/Documentation/admin-guide/tainted-kernels.rst
+@@ -74,7 +74,7 @@ a particular type of taint. It's best to leave that to the aforementioned
+ script, but if you need something quick you can use this shell command to check
+ which bits are set::
+ 
+-	$ for i in $(seq 18); do echo $(($i-1)) $(($(cat /proc/sys/kernel/tainted)>>($i-1)&1));done
++	$ for i in $(seq 20); do echo $(($i-1)) $(($(cat /proc/sys/kernel/tainted)>>($i-1)&1));done
+ 
+ Table for decoding tainted state
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- 
+2.43.0
+

@@ -1,0 +1,95 @@
+From c6935fa2493e9787adc3bdc97847a73f8b6ca99b Mon Sep 17 00:00:00 2001
+From: Benjamin Gray <bgray@linux.ibm.com>
+Date: Wed, 11 Oct 2023 16:37:04 +1100
+Subject: [PATCH 127/960] powerpc: Remove extern from function implementations
+
+commit 419d5d112c2e1e78beda9c3299f71c35141d8dba upstream.
+
+Sparse reports several function implementations annotated with extern.
+This is clearly incorrect, likely just copied from an actual extern
+declaration in another file.
+
+Fix the sparse warnings by removing extern.
+
+Signed-off-by: Benjamin Gray <bgray@linux.ibm.com>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+Link: https://msgid.link/20231011053711.93427-6-bgray@linux.ibm.com
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ arch/powerpc/kernel/iommu.c      | 8 ++++----
+ arch/powerpc/kernel/traps.c      | 4 ++--
+ arch/powerpc/kvm/book3s_64_vio.c | 8 ++++----
+ 3 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/arch/powerpc/kernel/iommu.c b/arch/powerpc/kernel/iommu.c
+index efaca0c6eff9..b53bcf8dd0f5 100644
+--- a/arch/powerpc/kernel/iommu.c
++++ b/arch/powerpc/kernel/iommu.c
+@@ -1074,10 +1074,10 @@ int iommu_tce_check_gpa(unsigned long page_shift, unsigned long gpa)
+ }
+ EXPORT_SYMBOL_GPL(iommu_tce_check_gpa);
+ 
+-extern long iommu_tce_xchg_no_kill(struct mm_struct *mm,
+-		struct iommu_table *tbl,
+-		unsigned long entry, unsigned long *hpa,
+-		enum dma_data_direction *direction)
++long iommu_tce_xchg_no_kill(struct mm_struct *mm,
++			    struct iommu_table *tbl,
++			    unsigned long entry, unsigned long *hpa,
++			    enum dma_data_direction *direction)
+ {
+ 	long ret;
+ 	unsigned long size = 0;
+diff --git a/arch/powerpc/kernel/traps.c b/arch/powerpc/kernel/traps.c
+index 2de7f6dcd32b..11e062b47d3f 100644
+--- a/arch/powerpc/kernel/traps.c
++++ b/arch/powerpc/kernel/traps.c
+@@ -157,7 +157,7 @@ static int die_owner = -1;
+ static unsigned int die_nest_count;
+ static int die_counter;
+ 
+-extern void panic_flush_kmsg_start(void)
++void panic_flush_kmsg_start(void)
+ {
+ 	/*
+ 	 * These are mostly taken from kernel/panic.c, but tries to do
+@@ -170,7 +170,7 @@ extern void panic_flush_kmsg_start(void)
+ 	bust_spinlocks(1);
+ }
+ 
+-extern void panic_flush_kmsg_end(void)
++void panic_flush_kmsg_end(void)
+ {
+ 	kmsg_dump(KMSG_DUMP_PANIC);
+ 	bust_spinlocks(0);
+diff --git a/arch/powerpc/kvm/book3s_64_vio.c b/arch/powerpc/kvm/book3s_64_vio.c
+index 395659f2f4c8..c7623fd4d6d9 100644
+--- a/arch/powerpc/kvm/book3s_64_vio.c
++++ b/arch/powerpc/kvm/book3s_64_vio.c
+@@ -77,8 +77,8 @@ static void kvm_spapr_tce_liobn_put(struct kref *kref)
+ 	call_rcu(&stit->rcu, kvm_spapr_tce_iommu_table_free);
+ }
+ 
+-extern void kvm_spapr_tce_release_iommu_group(struct kvm *kvm,
+-		struct iommu_group *grp)
++void kvm_spapr_tce_release_iommu_group(struct kvm *kvm,
++				       struct iommu_group *grp)
+ {
+ 	int i;
+ 	struct kvmppc_spapr_tce_table *stt;
+@@ -105,8 +105,8 @@ extern void kvm_spapr_tce_release_iommu_group(struct kvm *kvm,
+ 	rcu_read_unlock();
+ }
+ 
+-extern long kvm_spapr_tce_attach_iommu_group(struct kvm *kvm, int tablefd,
+-		struct iommu_group *grp)
++long kvm_spapr_tce_attach_iommu_group(struct kvm *kvm, int tablefd,
++				      struct iommu_group *grp)
+ {
+ 	struct kvmppc_spapr_tce_table *stt = NULL;
+ 	bool found = false;
+-- 
+2.43.0
+

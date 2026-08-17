@@ -1,0 +1,65 @@
+From 677b84e8b2fb4bffeb0247dfae91e8833d1fa1c0 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Wed, 30 Oct 2024 16:03:12 +0000
+Subject: [PATCH 619/960] arm64: head.S: Initialise MPAM EL2 registers and
+ disable traps
+
+commit 23b33d1e168cfcc96666f025beb3bccfcb58403a upstream.
+
+Add code to head.S's el2_setup to detect MPAM and disable any EL2 traps.
+This register resets to an unknown value, setting it to the default
+parititons/pmg before we enable the MMU is the best thing to do.
+
+Kexec/kdump will depend on this if the previous kernel left the CPU
+configured with a restrictive configuration.
+
+If linux is booted at the highest implemented exception level el2_setup
+will clear the enable bit, disabling MPAM.
+
+This code can't be enabled until a subsequent patch adds the Kconfig
+and cpufeature boiler plate.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/el2_setup.h | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/arch/arm64/include/asm/el2_setup.h b/arch/arm64/include/asm/el2_setup.h
+index 6f65322e2fd0..b50b9825d60b 100644
+--- a/arch/arm64/include/asm/el2_setup.h
++++ b/arch/arm64/include/asm/el2_setup.h
+@@ -302,6 +302,21 @@
+ 	msr	spsr_el2, x0
+ .endm
+ 
++.macro __init_el2_mpam
++#ifdef CONFIG_ARM64_MPAM
++	/* Memory Partioning And Monitoring: disable EL2 traps */
++	mrs	x1, id_aa64pfr0_el1
++	ubfx	x0, x1, #ID_AA64PFR0_EL1_MPAM_SHIFT, #4
++	cbz	x0, .Lskip_mpam_\@		// skip if no MPAM
++	msr_s	SYS_MPAM2_EL2, xzr		// use the default partition
++						// and disable lower traps
++	mrs_s	x0, SYS_MPAMIDR_EL1
++	tbz	x0, #17, .Lskip_mpam_\@		// skip if no MPAMHCR reg
++	msr_s	SYS_MPAMHCR_EL2, xzr		// clear TRAP_MPAMIDR_EL1 -> EL2
++.Lskip_mpam_\@:
++#endif /* CONFIG_ARM64_MPAM */
++.endm
++
+ /**
+  * Initialize EL2 registers to sane values. This should be called early on all
+  * cores that were booted in EL2. Note that everything gets initialised as
+@@ -319,6 +334,7 @@
+ 	__init_el2_stage2
+ 	__init_el2_gicv3
+ 	__init_el2_hstr
++	__init_el2_mpam
+ 	__init_el2_nvhe_idregs
+ 	__init_el2_cptr
+ 	__init_el2_fgt
+-- 
+2.43.0
+

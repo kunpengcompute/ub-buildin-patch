@@ -1,0 +1,112 @@
+From e7ddd17c4abdc69dba5de1bec3d84c3aaa5da400 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Tue, 29 Apr 2025 22:49:09 +0800
+Subject: [PATCH 715/960] downstream: arm64/mpam: Refuse cpu offline when L2
+ msc is enabled
+
+When a CPU is brought offline, all registers of volatile msc components
+would loss configuration context.
+
+Because that MPAM driver refuses to set CPU offline when L2 msc is enabled.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  |  6 +++++-
+ drivers/platform/mpam/mpam_internal.h |  2 ++
+ drivers/platform/mpam/mpam_resctrl.c  | 29 +++++++++++++++++++++++++++
+ fs/resctrl/internal.h                 |  1 -
+ 4 files changed, 36 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index d6c3dcc387a7..a55982ee654d 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -1543,9 +1543,13 @@ static int mpam_discovery_cpu_online(unsigned int cpu)
+ 
+ static int mpam_cpu_offline(unsigned int cpu)
+ {
+-	int idx;
++	int ret, idx;
+ 	struct mpam_msc *msc;
+ 
++	ret = mpam_resctrl_prepare_offline();
++	if (ret)
++		return ret;
++
+ 	idx = srcu_read_lock(&mpam_srcu);
+ 	list_for_each_entry_rcu(msc, &mpam_all_msc, glbl_list) {
+ 		if (!cpumask_test_cpu(cpu, &msc->accessibility))
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index 88c98ef9ee37..51e399186e0c 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -586,4 +586,6 @@ void mpam_resctrl_exit(void);
+  */
+ #define MSMON_CAPT_EVNT_NOW    BIT(0)
+ 
++int mpam_resctrl_prepare_offline(void);
++
+ #endif /* MPAM_INTERNAL_H */
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index b14081e8c789..1ae2586847e2 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -905,6 +905,14 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		 */
+ 		if (has_csu && class->type == MPAM_CLASS_CACHE)
+ 			r->mon_capable = true;
++
++		/*
++		 * The power domain of L2 cache msc is shared with the
++		 * core's, which will cause information of the L2 msc to
++		 * be lost when the core enter power down state.
++		 */
++		if (class->level <= 2)
++			r->is_volatile = true;
+ 		break;
+ 
+ 	case RDT_RESOURCE_MBA:
+@@ -1437,6 +1445,27 @@ int mpam_resctrl_online_cpu(unsigned int cpu)
+ 	return 0;
+ }
+ 
++int mpam_resctrl_prepare_offline(void)
++{
++	struct mpam_resctrl_res *res;
++	int i;
++
++	if (resctrl_mounted) {
++		for (i = 0; i < RDT_NUM_RESOURCES; i++) {
++			res = &mpam_resctrl_exports[i];
++
++			if (res->resctrl_res.is_volatile &&
++			   !res->resctrl_res.invisible) {
++				pr_info("%s is working, umount /sys/fs/resctrl first.\n",
++					res->resctrl_res.name);
++				return -EBUSY;
++			}
++		}
++	}
++
++	return 0;
++}
++
+ int mpam_resctrl_offline_cpu(unsigned int cpu)
+ {
+ 	int i;
+diff --git a/fs/resctrl/internal.h b/fs/resctrl/internal.h
+index e1574ca71317..698af63a2803 100644
+--- a/fs/resctrl/internal.h
++++ b/fs/resctrl/internal.h
+@@ -98,7 +98,6 @@ struct rmid_read {
+ };
+ 
+ extern struct list_head resctrl_schema_all;
+-extern bool resctrl_mounted;
+ 
+ enum rdt_group_type {
+ 	RDTCTRL_GROUP = 0,
+-- 
+2.43.0
+

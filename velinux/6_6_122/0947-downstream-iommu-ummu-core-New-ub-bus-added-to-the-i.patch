@@ -1,0 +1,41 @@
+From b06bdf56d96a2baa6b574d81a00134d9f7cc3f75 Mon Sep 17 00:00:00 2001
+From: Lei Gong <gonglei25@huawei.com>
+Date: Fri, 22 Aug 2025 16:18:27 +0800
+Subject: [PATCH 947/960] downstream: iommu/ummu-core: New ub bus added to the
+ iommu framework
+
+To implement the ub feature within the iommu framework, a new
+ub bus has been added to the iommu.c file, enabling ub devices
+to utilize a series of features provided by the iommu framework.
+
+Signed-off-by: Lei Gong <gonglei25@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/iommu/iommu.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/iommu/iommu.c b/drivers/iommu/iommu.c
+index 5f1eef4a334a..79bf39360e74 100644
+--- a/drivers/iommu/iommu.c
++++ b/drivers/iommu/iommu.c
+@@ -32,6 +32,7 @@
+ #include <trace/events/iommu.h>
+ #include <linux/sched/mm.h>
+ #include <linux/msi.h>
++#include <ub/ubus/ubus.h>
+ 
+ #include "dma-iommu.h"
+ #include "iommu-priv.h"
+@@ -163,6 +164,9 @@ static const struct bus_type * const iommu_buses[] = {
+ #ifdef CONFIG_CDX_BUS
+ 	&cdx_bus_type,
+ #endif
++#ifdef CONFIG_UB_UBUS
++	&ub_bus_type,
++#endif
+ };
+ 
+ /*
+-- 
+2.43.0
+

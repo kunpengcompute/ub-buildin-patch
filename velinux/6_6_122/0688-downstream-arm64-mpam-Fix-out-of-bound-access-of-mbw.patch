@@ -1,0 +1,85 @@
+From 184a3bddb5d0f10a0568ef5b5b60bf9ec532e979 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 22 Feb 2025 11:55:11 +0800
+Subject: [PATCH 688/960] downstream: arm64/mpam: Fix out-of-bound access of
+ mbwu_state array
+
+The mbwu_state array is allocated according to the monitor number.
+However when select the monitor the index is encoded by closid and
+rmid, which may exceed the monitor number.
+
+If the KASAN config is enabled, we would find the following error when
+create new monitors:
+BUG: KASAN: slab-use-after-free in mpam_msmon_reset_mbwu+0x3b8/0x450
+Write of size 1 at addr ffff0800c2350fa1 by task kworker/0:0/8
+
+In addition, the statistics of mbwu monitors are cumulative values,
+which are different type with csu monitors, so need to make sure use
+the same monitor between twice readings.
+
+Here we adapt the remainder of rmid to the num_mbwu_mon as a compromise,
+if the mbwu monitor number of system can't support free run mode.
+
+Fixes: dc2005d467b3 ("untested: arm_mpam: resctrl: Add support for mbm counters")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 20 +++++++++++++++++---
+ 1 file changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 0aae0e61f36f..d91baa96bc99 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -336,8 +336,10 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
+ {
+ 	int err;
+ 	u64 cdp_val;
++	u16 num_mbwu_mon;
+ 	struct mon_cfg cfg;
+ 	struct mpam_resctrl_dom *dom;
++	struct mpam_resctrl_res *res;
+ 	u32 mon = *(u32 *)arch_mon_ctx;
+ 	enum mpam_device_features type;
+ 
+@@ -358,8 +360,16 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
+ 	}
+ 
+ 	cfg.mon = mon;
+-	if (cfg.mon == USE_RMID_IDX)
+-		cfg.mon = resctrl_arch_rmid_idx_encode(closid, rmid);
++	if (cfg.mon == USE_RMID_IDX) {
++		/*
++		 * The number of mbwu monitors can't support free run mode,
++		 * adapt the remainder of rmid to the num_mbwu_mon as a
++		 * compromise.
++		 */
++		res = container_of(r, struct mpam_resctrl_res, resctrl_res);
++		num_mbwu_mon = res->class->props.num_mbwu_mon;
++		cfg.mon = resctrl_arch_rmid_idx_encode(closid, rmid) % num_mbwu_mon;
++	}
+ 
+ 	cfg.match_pmg = true;
+ 	cfg.pmg = rmid;
+@@ -386,13 +396,17 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
+ void resctrl_arch_reset_rmid(struct rdt_resource *r, struct rdt_domain *d,
+ 			     u32 closid, u32 rmid, enum resctrl_event_id eventid)
+ {
++	u16 num_mbwu_mon;
+ 	struct mon_cfg cfg;
+ 	struct mpam_resctrl_dom *dom;
++	struct mpam_resctrl_res *res;
+ 
+ 	if (eventid != QOS_L3_MBM_LOCAL_EVENT_ID)
+ 		return;
+ 
+-	cfg.mon = resctrl_arch_rmid_idx_encode(closid, rmid);
++	res = container_of(r, struct mpam_resctrl_res, resctrl_res);
++	num_mbwu_mon = res->class->props.num_mbwu_mon;
++	cfg.mon = resctrl_arch_rmid_idx_encode(closid, rmid) % num_mbwu_mon;
+ 	cfg.match_pmg = true;
+ 	cfg.pmg = rmid;
+ 
+-- 
+2.43.0
+

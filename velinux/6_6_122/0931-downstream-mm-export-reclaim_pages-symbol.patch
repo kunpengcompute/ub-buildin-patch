@@ -1,0 +1,30 @@
+From a9e4e532e58bf6e103011ad0d16d568c357c47f7 Mon Sep 17 00:00:00 2001
+From: Jiming Pang <pangjiming2@huawei.com>
+Date: Tue, 28 Jul 2026 14:11:00 +0800
+Subject: [PATCH 931/960] downstream: mm: export reclaim_pages symbol
+
+Export the reclaim_pages symbol to allow out-of-tree modules to reclaim
+memory pages. This is particularly useful when such modules have the
+capability to identify hot/cold memory pages, enabling them to proactively
+free cold pages via this interface.
+
+Signed-off-by: Jiming Pang <pangjiming2@huawei.com>
+---
+ mm/vmscan.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index c8ffbab89ad8..52701322433e 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -2893,6 +2893,7 @@ unsigned long reclaim_pages(struct list_head *folio_list)
+ 
+ 	return nr_reclaimed;
+ }
++EXPORT_SYMBOL(reclaim_pages);
+ 
+ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
+ 				 struct lruvec *lruvec, struct scan_control *sc)
+-- 
+2.43.0
+

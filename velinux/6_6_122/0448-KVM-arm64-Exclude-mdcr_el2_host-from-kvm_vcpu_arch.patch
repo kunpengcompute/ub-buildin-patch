@@ -1,0 +1,71 @@
+From 7be93d43c0e6da1adeba80e0f7f3a7f57c08f71f Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 27 Feb 2024 08:27:54 +0000
+Subject: [PATCH 448/960] KVM: arm64: Exclude mdcr_el2_host from kvm_vcpu_arch
+
+commit 4bacd723705a6b6c8386daf3d5148aca66135f3c upstream.
+
+As for the rest of the host debug state, the host copy of mdcr_el2
+has little to do in the vcpu, and is better placed in the host_data
+structure.
+
+Reviewed-by : Suzuki K Poulose <suzuki.poulose@arm.com>
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Junhao He <hejunhao3@huawei.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h       | 5 ++---
+ arch/arm64/kvm/hyp/include/hyp/switch.h | 4 ++--
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index a8dc14bc0666..0c0c4ec31101 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -454,6 +454,8 @@ struct kvm_host_data {
+ 		u64 pmscr_el1;
+ 		/* Self-hosted trace */
+ 		u64 trfcr_el1;
++		/* Values of trap registers for the host before guest entry. */
++		u64 mdcr_el2;
+ 	} host_debug_state;
+ };
+ 
+@@ -512,9 +514,6 @@ struct kvm_vcpu_arch {
+ 	u64 hcr_el2;
+ 	u64 mdcr_el2;
+ 
+-	/* Values of trap registers for the host before guest entry. */
+-	u64 mdcr_el2_host;
+-
+ 	/* Exception Information */
+ 	struct kvm_vcpu_fault_info fault;
+ 
+diff --git a/arch/arm64/kvm/hyp/include/hyp/switch.h b/arch/arm64/kvm/hyp/include/hyp/switch.h
+index bc1e167e7176..eae27ab294c6 100644
+--- a/arch/arm64/kvm/hyp/include/hyp/switch.h
++++ b/arch/arm64/kvm/hyp/include/hyp/switch.h
+@@ -194,7 +194,7 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
+ 		vcpu_set_flag(vcpu, PMUSERENR_ON_CPU);
+ 	}
+ 
+-	vcpu->arch.mdcr_el2_host = read_sysreg(mdcr_el2);
++	*host_data_ptr(host_debug_state.mdcr_el2) = read_sysreg(mdcr_el2);
+ 	write_sysreg(vcpu->arch.mdcr_el2, mdcr_el2);
+ 
+ 	if (cpus_have_final_cap(ARM64_HAS_HCX)) {
+@@ -222,7 +222,7 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
+ 
+ static inline void __deactivate_traps_common(struct kvm_vcpu *vcpu)
+ {
+-	write_sysreg(vcpu->arch.mdcr_el2_host, mdcr_el2);
++	write_sysreg(*host_data_ptr(host_debug_state.mdcr_el2), mdcr_el2);
+ 
+ 	write_sysreg(0, hstr_el2);
+ 	if (kvm_arm_support_pmu_v3()) {
+-- 
+2.43.0
+

@@ -1,0 +1,199 @@
+From 3058e396e800469743d4afd7f605324196653c53 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Fri, 24 May 2024 16:29:21 -0300
+Subject: [PATCH 862/960] downstream: iommu/arm-smmu-v3: Use S2FWB for NESTED
+ domains
+
+Force Write Back (FWB) changes how the S2 IOPTE's MemAttr field
+works. When S2FWB is supported and enabled the IOPTE will force cachable
+access to IOMMU_CACHE memory when nesting with a S1 and deny cachable
+access when !IOMMU_CACHE.
+
+When using a single stage of translation, a simple S2 domain, it doesn't
+change things for PCI devices as it is just a different encoding for the
+existing mapping of the IOMMU protection flags to cachability attributes.
+For non-PCI it also changes the combining rules when incoming transactions
+have inconsistent attributes.
+
+However, when used with a nested S1, FWB has the effect of preventing the
+guest from choosing a MemAttr in it's S1 that would cause ordinary DMA to
+bypass the cache. Consistent with KVM we wish to deny the guest the
+ability to become incoherent with cached memory the hypervisor believes is
+cachable so we don't have to flush it.
+
+Allow NESTED domains to be created if the SMMU has S2FWB support and use
+S2FWB for NESTING_PARENTS. This is an additional option to CANWBS.
+
+Reviewed-by: Nicolin Chen <nicolinc@nvidia.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Reviewed-by: Jerry Snitselaar <jsnitsel@redhat.com>
+Tested-by: Nicolin Chen <nicolinc@nvidia.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ .../arm/arm-smmu-v3/arm-smmu-v3-iommufd.c     |  7 +++--
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c   |  8 +++++-
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h   |  3 +++
+ drivers/iommu/io-pgtable-arm.c                | 27 +++++++++++++++----
+ include/linux/io-pgtable.h                    |  2 ++
+ 5 files changed, 39 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
+index 3aa375f5dfe1..94916d06808c 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
+@@ -220,9 +220,12 @@ struct iommufd_viommu *arm_vsmmu_alloc(struct device *dev,
+ 	 * Must support some way to prevent the VM from bypassing the cache
+ 	 * because VFIO currently does not do any cache maintenance. canwbs
+ 	 * indicates the device is fully coherent and no cache maintenance is
+-	 * ever required, even for PCI No-Snoop.
++	 * ever required, even for PCI No-Snoop. S2FWB means the S1 can't make
++	 * things non-coherent using the memattr, but No-Snoop behavior is not
++	 * effected.
+ 	 */
+-	if (!arm_smmu_master_canwbs(master))
++	if (!arm_smmu_master_canwbs(master) &&
++	    !(smmu->features & ARM_SMMU_FEAT_S2FWB))
+ 		return ERR_PTR(-EOPNOTSUPP);
+ 
+ 	vsmmu = iommufd_viommu_alloc(ictx, struct arm_vsmmu, core,
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index bb6a383639d8..939e77e9fa6d 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -1009,7 +1009,8 @@ void arm_smmu_get_ste_used(const __le64 *ent, __le64 *used_bits)
+ 	/* S2 translates */
+ 	if (cfg & BIT(1)) {
+ 		used_bits[1] |=
+-			cpu_to_le64(STRTAB_STE_1_EATS | STRTAB_STE_1_SHCFG);
++			cpu_to_le64(STRTAB_STE_1_S2FWB | STRTAB_STE_1_EATS |
++				    STRTAB_STE_1_SHCFG);
+ 		used_bits[2] |=
+ 			cpu_to_le64(STRTAB_STE_2_S2VMID | STRTAB_STE_2_VTCR |
+ 				    STRTAB_STE_2_S2AA64 | STRTAB_STE_2_S2ENDI |
+@@ -1623,6 +1624,8 @@ void arm_smmu_make_s2_domain_ste(struct arm_smmu_ste *target,
+ 		FIELD_PREP(STRTAB_STE_1_EATS,
+ 			   ats_enabled ? STRTAB_STE_1_EATS_TRANS : 0));
+ 
++	if (pgtbl_cfg->quirks & IO_PGTABLE_QUIRK_ARM_S2FWB)
++		target->data[1] |= cpu_to_le64(STRTAB_STE_1_S2FWB);
+ 	if (smmu->features & ARM_SMMU_FEAT_ATTR_TYPES_OVR)
+ 		target->data[1] |= cpu_to_le64(FIELD_PREP(STRTAB_STE_1_SHCFG,
+ 							  STRTAB_STE_1_SHCFG_INCOMING));
+@@ -2450,6 +2453,9 @@ static int arm_smmu_domain_finalise(struct arm_smmu_domain *smmu_domain,
+ 		pgtbl_cfg.oas = smmu->oas;
+ 		fmt = ARM_64_LPAE_S2;
+ 		finalise_stage_fn = arm_smmu_domain_finalise_s2;
++		if ((smmu->features & ARM_SMMU_FEAT_S2FWB) &&
++		    (flags & IOMMU_HWPT_ALLOC_NEST_PARENT))
++			pgtbl_cfg.quirks |= IO_PGTABLE_QUIRK_ARM_S2FWB;
+ 		break;
+ 	default:
+ 		return -EINVAL;
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+index ad5057d155eb..5753d4255669 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.h
+@@ -61,6 +61,7 @@
+ #define IDR3_BBML0			0
+ #define IDR3_BBML1			1
+ #define IDR3_BBML2			2
++#define IDR3_FWB			(1 << 8)
+ #define IDR3_RIL			(1 << 10)
+ 
+ #define ARM_SMMU_IDR5			0x14
+@@ -270,6 +271,7 @@ static inline u32 arm_smmu_strtab_l2_idx(u32 sid)
+ #define STRTAB_STE_1_S1COR		GENMASK_ULL(5, 4)
+ #define STRTAB_STE_1_S1CSH		GENMASK_ULL(7, 6)
+ 
++#define STRTAB_STE_1_S2FWB		(1UL << 25)
+ #define STRTAB_STE_1_S1STALLD		(1UL << 27)
+ 
+ #define STRTAB_STE_1_EATS		GENMASK_ULL(29, 28)
+@@ -727,6 +729,7 @@ struct arm_smmu_device {
+ #define ARM_SMMU_FEAT_HD		(1 << 22)
+ #define ARM_SMMU_FEAT_BBML1		(1 << 23)
+ #define ARM_SMMU_FEAT_BBML2		(1 << 24)
++#define ARM_SMMU_FEAT_S2FWB		(1 << 26)
+ 	u32				features;
+ 
+ #define ARM_SMMU_OPT_SKIP_PREFETCH	(1 << 0)
+diff --git a/drivers/iommu/io-pgtable-arm.c b/drivers/iommu/io-pgtable-arm.c
+index 1e759677f7cb..106a8088cad1 100644
+--- a/drivers/iommu/io-pgtable-arm.c
++++ b/drivers/iommu/io-pgtable-arm.c
+@@ -107,6 +107,18 @@
+ #define ARM_LPAE_PTE_HAP_FAULT		(((arm_lpae_iopte)0) << 6)
+ #define ARM_LPAE_PTE_HAP_READ		(((arm_lpae_iopte)1) << 6)
+ #define ARM_LPAE_PTE_HAP_WRITE		(((arm_lpae_iopte)2) << 6)
++/*
++ * For !FWB these code to:
++ *  1111 = Normal outer write back cachable / Inner Write Back Cachable
++ *         Permit S1 to override
++ *  0101 = Normal Non-cachable / Inner Non-cachable
++ *  0001 = Device / Device-nGnRE
++ * For S2FWB these code:
++ *  0110 Force Normal Write Back
++ *  0101 Normal* is forced Normal-NC, Device unchanged
++ *  0001 Force Device-nGnRE
++ */
++#define ARM_LPAE_PTE_MEMATTR_FWB_WB	(((arm_lpae_iopte)0x6) << 2)
+ #define ARM_LPAE_PTE_MEMATTR_OIWB	(((arm_lpae_iopte)0xf) << 2)
+ #define ARM_LPAE_PTE_MEMATTR_NC		(((arm_lpae_iopte)0x5) << 2)
+ #define ARM_LPAE_PTE_MEMATTR_DEV	(((arm_lpae_iopte)0x1) << 2)
+@@ -488,12 +500,16 @@ static arm_lpae_iopte arm_lpae_prot_to_pte(struct arm_lpae_io_pgtable *data,
+ 	 */
+ 	if (data->iop.fmt == ARM_64_LPAE_S2 ||
+ 	    data->iop.fmt == ARM_32_LPAE_S2) {
+-		if (prot & IOMMU_MMIO)
++		if (prot & IOMMU_MMIO) {
+ 			pte |= ARM_LPAE_PTE_MEMATTR_DEV;
+-		else if (prot & IOMMU_CACHE)
+-			pte |= ARM_LPAE_PTE_MEMATTR_OIWB;
+-		else
++		} else if (prot & IOMMU_CACHE) {
++			if (data->iop.cfg.quirks & IO_PGTABLE_QUIRK_ARM_S2FWB)
++				pte |= ARM_LPAE_PTE_MEMATTR_FWB_WB;
++			else
++				pte |= ARM_LPAE_PTE_MEMATTR_OIWB;
++		} else {
+ 			pte |= ARM_LPAE_PTE_MEMATTR_NC;
++		}
+ 	} else {
+ 		if (prot & IOMMU_MMIO)
+ 			pte |= (ARM_LPAE_MAIR_ATTR_IDX_DEV
+@@ -1444,7 +1460,8 @@ arm_64_lpae_alloc_pgtable_s2(struct io_pgtable_cfg *cfg, void *cookie)
+ 	/* The NS quirk doesn't apply at stage 2 */
+ 	if (cfg->quirks & ~(IO_PGTABLE_QUIRK_ARM_HD |
+ 			    IO_PGTABLE_QUIRK_ARM_BBML1 |
+-			    IO_PGTABLE_QUIRK_ARM_BBML2))
++			    IO_PGTABLE_QUIRK_ARM_BBML2 |
++			    IO_PGTABLE_QUIRK_ARM_S2FWB))
+ 		return NULL;
+ 
+ 	data = arm_lpae_alloc_pgtable(cfg);
+diff --git a/include/linux/io-pgtable.h b/include/linux/io-pgtable.h
+index a7362f193b36..fe778e8be5c7 100644
+--- a/include/linux/io-pgtable.h
++++ b/include/linux/io-pgtable.h
+@@ -93,6 +93,7 @@ struct io_pgtable_cfg {
+ 	 *
+ 	 * IO_PGTABLE_QUIRK_ARM_BBML2: ARM SMMU supports BBM Level 2 behavior
+ 	 *	when changing block size.
++	 * IO_PGTABLE_QUIRK_ARM_S2FWB: Use the FWB format for the MemAttrs bits
+ 	 */
+ 	#define IO_PGTABLE_QUIRK_ARM_NS			BIT(0)
+ 	#define IO_PGTABLE_QUIRK_NO_PERMS		BIT(1)
+@@ -103,6 +104,7 @@ struct io_pgtable_cfg {
+ 	#define IO_PGTABLE_QUIRK_ARM_HD			BIT(7)
+ 	#define IO_PGTABLE_QUIRK_ARM_BBML1		BIT(8)
+ 	#define IO_PGTABLE_QUIRK_ARM_BBML2		BIT(9)
++	#define IO_PGTABLE_QUIRK_ARM_S2FWB		BIT(10)
+ 	unsigned long			quirks;
+ 	unsigned long			pgsize_bitmap;
+ 	unsigned int			ias;
+-- 
+2.43.0
+

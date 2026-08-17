@@ -1,0 +1,83 @@
+From 79db26a2fb17488138f3c9e9dbbec9138fecfcc6 Mon Sep 17 00:00:00 2001
+From: Robin Murphy <robin.murphy@arm.com>
+Date: Thu, 16 Mar 2023 11:42:16 +0000
+Subject: [PATCH 865/960] downstream: iommu/dma: Support MSIs through nested
+ domains
+
+Currently, iommu-dma is the only place outside of IOMMUFD and drivers
+which might need to be aware of the stage 2 domain encapsulated within
+a nested domain. This would be still the RMR solution where we're using
+host-managed MSIs with an identity mapping at stage 1, where it is
+the underlying stage 2 domain which owns an MSI cookie and holds the
+corresponding dynamic mappings. Hook up the new op to resolve what we
+need from a nested domain.
+
+Signed-off-by: Robin Murphy <robin.murphy@arm.com>
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/dma-iommu.c | 16 +++++++++++++++-
+ include/linux/iommu.h     |  4 ++++
+ 2 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/dma-iommu.c b/drivers/iommu/dma-iommu.c
+index e9d87d8b2c2a..79f4433f69dd 100644
+--- a/drivers/iommu/dma-iommu.c
++++ b/drivers/iommu/dma-iommu.c
+@@ -1805,6 +1805,20 @@ static struct iommu_dma_msi_page *iommu_dma_get_msi_page(struct device *dev,
+ 	return NULL;
+ }
+ 
++/*
++ * Nested domains may not have an MSI cookie or accept mappings, but they may
++ * be related to a domain which does, so we let them tell us what they need.
++ */
++static struct iommu_domain *iommu_dma_get_msi_mapping_domain(struct device *dev)
++{
++	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
++
++	if (domain && domain->type == IOMMU_DOMAIN_NESTED &&
++	    domain->ops && domain->ops->get_msi_mapping_domain)
++		domain = domain->ops->get_msi_mapping_domain(domain);
++	return domain;
++}
++
+ /**
+  * iommu_dma_prepare_msi() - Map the MSI page in the IOMMU domain
+  * @desc: MSI descriptor, will store the MSI page
+@@ -1815,7 +1829,7 @@ static struct iommu_dma_msi_page *iommu_dma_get_msi_page(struct device *dev,
+ int iommu_dma_prepare_msi(struct msi_desc *desc, phys_addr_t msi_addr)
+ {
+ 	struct device *dev = msi_desc_to_dev(desc);
+-	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
++	struct iommu_domain *domain = iommu_dma_get_msi_mapping_domain(dev);
+ 	struct iommu_dma_msi_page *msi_page;
+ 	static DEFINE_MUTEX(msi_prepare_lock); /* see below */
+ 
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index d95200467030..6aeda63ede10 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -707,6 +707,8 @@ struct iommu_ops {
+  * @sync_dirty_log: Sync dirty log from IOMMU into a dirty bitmap
+  * @clear_dirty_log: Clear dirty log of IOMMU by a mask bitmap
+  * @free: Release the domain after use.
++ * @get_msi_mapping_domain: Return the related iommu_domain that should hold the
++ *                          MSI cookie and accept mapping(s).
+  */
+ struct iommu_domain_ops {
+ 	int (*attach_dev)(struct iommu_domain *domain, struct device *dev);
+@@ -751,6 +753,8 @@ struct iommu_domain_ops {
+ 			       unsigned long *bitmap, unsigned long base_iova,
+ 			       unsigned long bitmap_pgshift);
+ 	void (*free)(struct iommu_domain *domain);
++	struct iommu_domain *
++		(*get_msi_mapping_domain)(struct iommu_domain *domain);
+ };
+ 
+ /**
+-- 
+2.43.0
+

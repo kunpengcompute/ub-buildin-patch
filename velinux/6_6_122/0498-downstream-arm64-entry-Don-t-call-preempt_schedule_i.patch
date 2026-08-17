@@ -1,0 +1,42 @@
+From 7af0ab86925a6fd5da36a043bfc36447317e0ee2 Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@kernel.org>
+Date: Mon, 12 Dec 2022 13:43:36 +0000
+Subject: [PATCH 498/960] downstream: arm64/entry: Don't call
+ preempt_schedule_irq() with NMIs masked
+
+As we do for pseudo NMIs don't call preempt_schedule_irq() when
+architechted NMIs are masked. If they are masked then we are calling from
+a preempting context so skip preemption.
+
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kernel/entry-common.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm64/kernel/entry-common.c b/arch/arm64/kernel/entry-common.c
+index 5e8204d250b4..60051ba0cf21 100644
+--- a/arch/arm64/kernel/entry-common.c
++++ b/arch/arm64/kernel/entry-common.c
+@@ -246,6 +246,15 @@ static void __sched arm64_preempt_schedule_irq(void)
+ 	if (READ_ONCE(current_thread_info()->preempt_count) != 0)
+ 		return;
+ 
++	/*
++	 * Architected NMIs are unmasked prior to handling regular
++	 * IRQs and masked while handling FIQs. If ALLINT is set then
++	 * we are in a NMI or other preempting context so skip
++	 * preemption.
++	 */
++	if (system_uses_nmi() && (read_sysreg_s(SYS_ALLINT) & ALLINT_ALLINT))
++		return;
++
+ 	/*
+ 	 * DAIF.DA are cleared at the start of IRQ/FIQ handling, and when GIC
+ 	 * priority masking is used the GIC irqchip driver will clear DAIF.IF
+-- 
+2.43.0
+

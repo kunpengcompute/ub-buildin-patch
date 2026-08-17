@@ -1,0 +1,80 @@
+From 29a6220e7d8269df340a64fc7cb910861d7123dd Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Wed, 3 Jan 2024 11:27:22 -0400
+Subject: [PATCH 252/960] iommufd/selftest: Check the bus type during probe
+
+commit 47f2bd2ff382e5fe766b1322e354558a8da4a470 upstream.
+
+This relied on the probe function only being invoked by the bus type mock
+was registered on. The removal of the bus ops broke this assumption and
+the probe could be called on non-mock bus types like PCI.
+
+Check the bus type directly in probe.
+
+Fixes: 17de3f5fdd35 ("iommu: Retire bus ops")
+Link: https://lore.kernel.org/r/0-v1-82d59f7eab8c+40c-iommufd_mock_bus_jgg@nvidia.com
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/selftest.c | 28 +++++++++++++++-------------
+ 1 file changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/iommu/iommufd/selftest.c b/drivers/iommu/iommufd/selftest.c
+index 9aa3fe8ac41f..0cd0e5d41791 100644
+--- a/drivers/iommu/iommufd/selftest.c
++++ b/drivers/iommu/iommufd/selftest.c
+@@ -25,6 +25,19 @@ static struct iommu_domain_ops domain_nested_ops;
+ 
+ size_t iommufd_test_memory_limit = 65536;
+ 
++struct mock_bus_type {
++	struct bus_type bus;
++	struct notifier_block nb;
++};
++
++static struct mock_bus_type iommufd_mock_bus_type = {
++	.bus = {
++		.name = "iommufd_mock",
++	},
++};
++
++static atomic_t mock_dev_num;
++
+ enum {
+ 	MOCK_DIRTY_TRACK = 1,
+ 	MOCK_IO_PAGE_SIZE = PAGE_SIZE / 2,
+@@ -452,6 +465,8 @@ static struct iommu_device mock_iommu_device = {
+ 
+ static struct iommu_device *mock_probe_device(struct device *dev)
+ {
++	if (dev->bus != &iommufd_mock_bus_type.bus)
++		return ERR_PTR(-ENODEV);
+ 	return &mock_iommu_device;
+ }
+ 
+@@ -591,19 +606,6 @@ get_md_pagetable_nested(struct iommufd_ucmd *ucmd, u32 mockpt_id,
+ 	return hwpt;
+ }
+ 
+-struct mock_bus_type {
+-	struct bus_type bus;
+-	struct notifier_block nb;
+-};
+-
+-static struct mock_bus_type iommufd_mock_bus_type = {
+-	.bus = {
+-		.name = "iommufd_mock",
+-	},
+-};
+-
+-static atomic_t mock_dev_num;
+-
+ static void mock_dev_release(struct device *dev)
+ {
+ 	struct mock_dev *mdev = container_of(dev, struct mock_dev, dev);
+-- 
+2.43.0
+

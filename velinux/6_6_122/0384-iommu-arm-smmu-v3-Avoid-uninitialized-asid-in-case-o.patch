@@ -1,0 +1,46 @@
+From f5b254503e2e95bdc1b207b6f9fc7675251c6a5b Mon Sep 17 00:00:00 2001
+From: Mostafa Saleh <smostafa@google.com>
+Date: Tue, 4 Jun 2024 18:52:18 +0000
+Subject: [PATCH 384/960] iommu/arm-smmu-v3: Avoid uninitialized asid in case
+ of error
+
+commit d3867e7148318e12b5d69b64950622f5ed06fe86 upstream.
+
+Static checker is complaining about the ASID possibly set uninitialized.
+This only happens in case of error and this value would be ignored anyway.
+
+A simple fix would be just to initialize the local variable to zero,
+this path will only be reached on the first attach to a domain where
+the CD is already initialized to zero.
+This avoids having to bloat the function with an error path.
+
+Closes: https://lore.kernel.org/linux-iommu/849e3d77-0a3c-43c4-878d-a0e061c8cd61@moroto.mountain/T/#u
+Reported-by: Dan Carpenter <dan.carpenter@linaro.org>
+Signed-off-by: Mostafa Saleh <smostafa@google.com>
+Fixes: 04905c17f648 ("iommu/arm-smmu-v3: Build the whole CD in arm_smmu_make_s1_cd()")
+Reviewed-by: Jason Gunthorpe <jgg@nvidia.com>
+Link: https://lore.kernel.org/r/20240604185218.2602058-1-smostafa@google.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index a49e9591ef69..b5ac33a059a5 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -2328,7 +2328,7 @@ static int arm_smmu_domain_finalise_s1(struct arm_smmu_device *smmu,
+ 				       struct arm_smmu_domain *smmu_domain)
+ {
+ 	int ret;
+-	u32 asid;
++	u32 asid = 0;
+ 	struct arm_smmu_ctx_desc *cd = &smmu_domain->cd;
+ 
+ 	/* Prevent SVA from modifying the ASID until it is written to the CD */
+-- 
+2.43.0
+

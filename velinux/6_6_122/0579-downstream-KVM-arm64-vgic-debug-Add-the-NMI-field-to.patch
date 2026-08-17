@@ -1,0 +1,61 @@
+From e44641bb3d862d5e2d9044e28520c08ae9ffdb79 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:04 +0800
+Subject: [PATCH 579/960] downstream: KVM: arm64: vgic-debug: Add the NMI field
+ to the debug output
+
+Add the per-INTID NMI state to the vgic-state file.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-debug.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-debug.c b/arch/arm64/kvm/vgic/vgic-debug.c
+index 20fed597531b..340f960a1154 100644
+--- a/arch/arm64/kvm/vgic/vgic-debug.c
++++ b/arch/arm64/kvm/vgic/vgic-debug.c
+@@ -155,7 +155,7 @@ static void print_dist_state(struct seq_file *s, struct vgic_dist *dist)
+ 
+ 	seq_printf(s, "P=pending_latch, L=line_level, A=active\n");
+ 	seq_printf(s, "E=enabled, H=hw, C=config (level=1, edge=0)\n");
+-	seq_printf(s, "G=group\n");
++	seq_printf(s, "G=group, N=NMI\n");
+ }
+ 
+ static void print_header(struct seq_file *s, struct vgic_irq *irq,
+@@ -170,8 +170,8 @@ static void print_header(struct seq_file *s, struct vgic_irq *irq,
+ 	}
+ 
+ 	seq_printf(s, "\n");
+-	seq_printf(s, "%s%2d TYP   ID TGT_ID PLAEHCG     HWID   TARGET SRC PRI VCPU_ID\n", hdr, id);
+-	seq_printf(s, "----------------------------------------------------------------\n");
++	seq_printf(s, "%s%2d TYP   ID TGT_ID PLAEHCGN     HWID   TARGET SRC PRI VCPU_ID\n", hdr, id);
++	seq_printf(s, "-----------------------------------------------------------------\n");
+ }
+ 
+ static void print_irq_state(struct seq_file *s, struct vgic_irq *irq,
+@@ -204,7 +204,7 @@ static void print_irq_state(struct seq_file *s, struct vgic_irq *irq,
+ 
+ 	seq_printf(s, "       %s %4d "
+ 		      "    %2d "
+-		      "%d%d%d%d%d%d%d "
++		      "%d%d%d%d%d%d%d%d "
+ 		      "%8d "
+ 		      "%8x "
+ 		      " %2x "
+@@ -220,6 +220,7 @@ static void print_irq_state(struct seq_file *s, struct vgic_irq *irq,
+ 			irq->hw,
+ 			irq->config == VGIC_CONFIG_LEVEL,
+ 			irq->group,
++			irq->nmi,
+ 			irq->hwintid,
+ 			irq->mpidr,
+ 			irq->source,
+-- 
+2.43.0
+

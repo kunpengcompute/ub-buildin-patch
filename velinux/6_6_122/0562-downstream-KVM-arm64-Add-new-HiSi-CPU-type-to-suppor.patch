@@ -1,0 +1,46 @@
+From dfd871b086ea8c64d19b53ed0d39af04bd4fefe1 Mon Sep 17 00:00:00 2001
+From: yangjinqian <yangjinqian1@huawei.com>
+Date: Thu, 27 Mar 2025 15:55:55 +0800
+Subject: [PATCH 562/960] downstream: KVM: arm64: Add new HiSi CPU type to
+ support DVMBM
+
+Add new HiSi CPU type HIP12 for supporting DVMBM.
+Function kvm_get_pg_cfg() is used to get configuration
+for translating logic cluster id to physical cluster id
+which is not needed by hip12, so skip it for hip12.
+
+Signed-off-by: yangjinqian <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: gongzt <gongzhengtang@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hisilicon/hisi_virt.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index 728b3b61dc94..d95b96ee7237 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -159,7 +159,8 @@ static void hardware_disable_dvmbm(void *data)
+ 
+ bool hisi_dvmbm_supported(void)
+ {
+-	if (cpu_type != HI_IP10 && cpu_type != HI_IP10C)
++	if (cpu_type != HI_IP10 && cpu_type != HI_IP10C &&
++	    cpu_type != HI_IP12)
+ 		return false;
+ 
+ 	if (!is_kernel_in_hyp_mode()) {
+@@ -519,6 +520,9 @@ void kvm_get_pg_cfg(void)
+ 	u64 mn_phy_base;
+ 	u32 val;
+ 
++	if (cpu_type == HI_IP12)
++		return;
++
+ 	socket_num = kvm_get_socket_num();
+ 	die_num = kvm_get_die_num();
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,46 @@
+From 5653321cbc3586cec4d74e49b0477255a5cc11d8 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Mon, 23 Mar 2026 20:09:12 +0800
+Subject: [PATCH 920/960] downstream: arm64: enable ras critical related
+ configs by default
+
+Enable CONFIG_ACPI_APEI_GHES_ARMP_VENDOR_INFO &
+CONFIG_ACPI_APEI_RAS_CRITICAL by default.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 2 ++
+ config.aarch64-64k | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 1d099db295bd..bc404b5867a2 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -672,6 +672,8 @@ CONFIG_ACPI_NUMA=y
+ CONFIG_HAVE_ACPI_APEI=y
+ CONFIG_ACPI_APEI=y
+ CONFIG_ACPI_APEI_GHES=y
++CONFIG_ACPI_APEI_GHES_ARMP_VENDOR_INFO=y
++CONFIG_ACPI_APEI_RAS_CRITICAL=y
+ CONFIG_ACPI_APEI_PCIEAER=y
+ CONFIG_ACPI_APEI_SEA=y
+ CONFIG_ACPI_APEI_MEMORY_FAILURE=y
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 531a7d7b221b..a8d8434c567b 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -674,6 +674,8 @@ CONFIG_ACPI_NUMA=y
+ CONFIG_HAVE_ACPI_APEI=y
+ CONFIG_ACPI_APEI=y
+ CONFIG_ACPI_APEI_GHES=y
++CONFIG_ACPI_APEI_GHES_ARMP_VENDOR_INFO=y
++CONFIG_ACPI_APEI_RAS_CRITICAL=y
+ CONFIG_ACPI_APEI_PCIEAER=y
+ CONFIG_ACPI_APEI_SEA=y
+ CONFIG_ACPI_APEI_MEMORY_FAILURE=y
+-- 
+2.43.0
+

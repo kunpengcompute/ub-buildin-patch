@@ -1,0 +1,53 @@
+From a3470f02618266c1504a37a644327d39bcc6b7f9 Mon Sep 17 00:00:00 2001
+From: Kefeng Wang <wangkefeng.wang@huawei.com>
+Date: Tue, 19 Aug 2025 19:42:25 +0800
+Subject: [PATCH 902/960] downstream: mm: memory-failure: remove task_struct
+ from kill_accessing_process()
+
+The argument task_struct isn't used in kill_accessing_process(), remove it.
+
+Signed-off-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/memory-failure.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/mm/memory-failure.c b/mm/memory-failure.c
+index 2318a497c0dd..612c5724d44a 100644
+--- a/mm/memory-failure.c
++++ b/mm/memory-failure.c
+@@ -862,10 +862,10 @@ static const struct mm_walk_ops hwpoison_walk_ops = {
+  * is proper in most cases, but it could be wrong when the application
+  * process has multiple entries mapping the error page.
+  */
+-static int kill_accessing_process(struct task_struct *p, unsigned long pfn,
+-				  int flags)
++static int kill_accessing_process(unsigned long pfn, int flags)
+ {
+ 	int ret;
++	struct task_struct *p = current;
+ 	struct hwpoison_walk priv = {
+ 		.pfn = pfn,
+ 	};
+@@ -2065,7 +2065,7 @@ static int try_memory_failure_hugetlb(unsigned long pfn, int flags, int *hugetlb
+ 		pr_err("%#lx: already hardware poisoned\n", pfn);
+ 		if (flags & MF_ACTION_REQUIRED) {
+ 			folio = page_folio(p);
+-			res = kill_accessing_process(current, folio_pfn(folio), flags);
++			res = kill_accessing_process(folio_pfn(folio), flags);
+ 		}
+ 		return res;
+ 	} else if (res == -EBUSY) {
+@@ -2243,7 +2243,7 @@ int memory_failure(unsigned long pfn, int flags)
+ 		pr_err("%#lx: already hardware poisoned\n", pfn);
+ 		res = -EHWPOISON;
+ 		if (flags & MF_ACTION_REQUIRED)
+-			res = kill_accessing_process(current, pfn, flags);
++			res = kill_accessing_process(pfn, flags);
+ 		if (flags & MF_COUNT_INCREASED)
+ 			put_page(p);
+ 		goto unlock_mutex;
+-- 
+2.43.0
+

@@ -1,0 +1,170 @@
+From e4796ee877ada0743e4dacfe9f4aa67c9c70d335 Mon Sep 17 00:00:00 2001
+From: YeBiaoXiang <yebiaoxiang@huawei.com>
+Date: Sat, 15 Feb 2025 15:40:42 +0800
+Subject: [PATCH 941/960] downstream: iommu: Fix kabi breakage due to opening
+ KVM_PINNED_VMID
+
+Turning on CONFIG_HAVE_KVM_PINNED_VMID will cause kabi breakage,
+The previous commit use KABI_REPLACE cannot completely solve the
+kabi change, this patch use KABI_RESERVE(8) to fixes it.
+
+Signed-off-by: YeBiaoXiang <yebiaoxiang@huawei.com>
+Signed-off-by: yuhao_zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/iommu/amd/iommu.c                   |  1 -
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c |  2 +-
+ drivers/iommu/intel/iommu.c                 |  1 -
+ drivers/iommu/iommufd/hw_pagetable.c        | 33 ++++++++++++++++-----
+ drivers/iommu/iommufd/selftest.c            |  1 -
+ include/linux/iommu.h                       |  6 +++-
+ 6 files changed, 31 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/iommu/amd/iommu.c b/drivers/iommu/amd/iommu.c
+index f851cf7d6327..e9b320a31772 100644
+--- a/drivers/iommu/amd/iommu.c
++++ b/drivers/iommu/amd/iommu.c
+@@ -2232,7 +2232,6 @@ static struct iommu_domain *amd_iommu_domain_alloc(unsigned int type)
+ static struct iommu_domain *
+ amd_iommu_domain_alloc_user(struct device *dev, u32 flags,
+ 			    struct iommu_domain *parent,
+-			    struct kvm *kvm,
+ 			    const struct iommu_user_data *user_data)
+ 
+ {
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 1f7df3c0c5a8..55635f39d488 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -4012,7 +4012,7 @@ static struct iommu_ops arm_smmu_ops = {
+ 	.hw_info		= arm_smmu_hw_info,
+ 	.domain_alloc_paging    = arm_smmu_domain_alloc_paging,
+ 	.domain_alloc_sva       = arm_smmu_sva_domain_alloc,
+-	.domain_alloc_user	= arm_smmu_domain_alloc_user,
++	.domain_alloc_user_v2	= arm_smmu_domain_alloc_user,
+ 	.probe_device		= arm_smmu_probe_device,
+ 	.release_device		= arm_smmu_release_device,
+ 	.device_group		= arm_smmu_device_group,
+diff --git a/drivers/iommu/intel/iommu.c b/drivers/iommu/intel/iommu.c
+index aee7bd885170..60dd4c34e56e 100644
+--- a/drivers/iommu/intel/iommu.c
++++ b/drivers/iommu/intel/iommu.c
+@@ -4009,7 +4009,6 @@ static struct iommu_domain *intel_iommu_domain_alloc(unsigned type)
+ static struct iommu_domain *
+ intel_iommu_domain_alloc_user(struct device *dev, u32 flags,
+ 			      struct iommu_domain *parent,
+-			      struct kvm *kvm,
+ 			      const struct iommu_user_data *user_data)
+ {
+ 	struct device_domain_info *info = dev_iommu_priv_get(dev);
+diff --git a/drivers/iommu/iommufd/hw_pagetable.c b/drivers/iommu/iommufd/hw_pagetable.c
+index af2a8d700a30..e928e2b8e674 100644
+--- a/drivers/iommu/iommufd/hw_pagetable.c
++++ b/drivers/iommu/iommufd/hw_pagetable.c
+@@ -118,7 +118,8 @@ iommufd_hwpt_paging_alloc(struct iommufd_ctx *ictx, struct iommufd_ioas *ioas,
+ 
+ 	lockdep_assert_held(&ioas->mutex);
+ 
+-	if ((flags || user_data) && !ops->domain_alloc_user)
++	if ((flags || user_data) &&
++		(!ops->domain_alloc_user && !ops->domain_alloc_user_v2))
+ 		return ERR_PTR(-EOPNOTSUPP);
+ 	if (flags & ~valid_flags)
+ 		return ERR_PTR(-EOPNOTSUPP);
+@@ -140,7 +141,16 @@ iommufd_hwpt_paging_alloc(struct iommufd_ctx *ictx, struct iommufd_ioas *ioas,
+ 
+ 	if (ops->domain_alloc_user) {
+ 		hwpt->domain = ops->domain_alloc_user(idev->dev, flags, NULL,
+-						      ictx->kvm, user_data);
++						      user_data);
++		if (IS_ERR(hwpt->domain)) {
++			rc = PTR_ERR(hwpt->domain);
++			hwpt->domain = NULL;
++			goto out_abort;
++		}
++		hwpt->domain->owner = ops;
++	} else if (ops->domain_alloc_user_v2) {
++		hwpt->domain = ops->domain_alloc_user_v2(idev->dev, flags, NULL,
++							 ictx->kvm, user_data);
+ 		if (IS_ERR(hwpt->domain)) {
+ 			rc = PTR_ERR(hwpt->domain);
+ 			hwpt->domain = NULL;
+@@ -224,8 +234,8 @@ iommufd_hwpt_nested_alloc(struct iommufd_ctx *ictx,
+ 	struct iommufd_hw_pagetable *hwpt;
+ 	int rc;
+ 
+-	if ((flags & ~IOMMU_HWPT_FAULT_ID_VALID) ||
+-	    !user_data->len || !ops->domain_alloc_user)
++	if ((flags & ~IOMMU_HWPT_FAULT_ID_VALID) || !user_data->len ||
++		(!ops->domain_alloc_user && !ops->domain_alloc_user_v2))
+ 		return ERR_PTR(-EOPNOTSUPP);
+ 	if (parent->auto_domain || !parent->nest_parent ||
+ 	    parent->common.domain->owner != ops)
+@@ -240,10 +250,17 @@ iommufd_hwpt_nested_alloc(struct iommufd_ctx *ictx,
+ 	refcount_inc(&parent->common.obj.users);
+ 	hwpt_nested->parent = parent;
+ 
+-	hwpt->domain = ops->domain_alloc_user(idev->dev,
+-					      flags & ~IOMMU_HWPT_FAULT_ID_VALID,
+-					      parent->common.domain,
+-					      ictx->kvm, user_data);
++	if (ops->domain_alloc_user) {
++		hwpt->domain = ops->domain_alloc_user(idev->dev,
++						      flags & ~IOMMU_HWPT_FAULT_ID_VALID,
++						      parent->common.domain, user_data);
++	} else {
++		hwpt->domain = ops->domain_alloc_user_v2(idev->dev,
++							 flags & ~IOMMU_HWPT_FAULT_ID_VALID,
++							 parent->common.domain,
++							 ictx->kvm, user_data);
++	}
++
+ 	if (IS_ERR(hwpt->domain)) {
+ 		rc = PTR_ERR(hwpt->domain);
+ 		hwpt->domain = NULL;
+diff --git a/drivers/iommu/iommufd/selftest.c b/drivers/iommu/iommufd/selftest.c
+index 1f748800f845..0c2a8e49b9d5 100644
+--- a/drivers/iommu/iommufd/selftest.c
++++ b/drivers/iommu/iommufd/selftest.c
+@@ -381,7 +381,6 @@ mock_domain_alloc_nested(struct iommu_domain *parent, u32 flags,
+ static struct iommu_domain *
+ mock_domain_alloc_user(struct device *dev, u32 flags,
+ 		       struct iommu_domain *parent,
+-		       struct kvm *kvm,
+ 		       const struct iommu_user_data *user_data)
+ {
+ 	bool has_dirty_flag = flags & IOMMU_HWPT_ALLOC_DIRTY_TRACKING;
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index 0dd24a45f1bd..78fb514c33b3 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -7,6 +7,7 @@
+ #ifndef __LINUX_IOMMU_H
+ #define __LINUX_IOMMU_H
+ 
++#include <linux/kvm_host.h>
+ #include <linux/scatterlist.h>
+ #include <linux/device.h>
+ #include <linux/types.h>
+@@ -630,7 +631,7 @@ struct iommu_ops {
+ 	struct iommu_domain *(*domain_alloc)(unsigned iommu_domain_type);
+ 	struct iommu_domain *(*domain_alloc_user)(
+ 		     struct device *dev, u32 flags, struct iommu_domain *parent,
+-		     struct kvm *kvm, const struct iommu_user_data *user_data);
++		     const struct iommu_user_data *user_data);
+ 	struct iommu_domain *(*domain_alloc_paging)(struct device *dev);
+ 
+ 	struct iommu_device *(*probe_device)(struct device *dev);
+@@ -669,6 +670,9 @@ struct iommu_ops {
+ 	struct iommufd_viommu *(*viommu_alloc)(
+ 			struct device *dev, struct iommu_domain *parent_domain,
+ 			struct iommufd_ctx *ictx, unsigned int viommu_type);
++	struct iommu_domain *(*domain_alloc_user_v2)(
++			struct device *dev, u32 flags, struct iommu_domain *parent,
++			struct kvm *kvm, const struct iommu_user_data *user_data);
+ };
+ 
+ /**
+-- 
+2.43.0
+

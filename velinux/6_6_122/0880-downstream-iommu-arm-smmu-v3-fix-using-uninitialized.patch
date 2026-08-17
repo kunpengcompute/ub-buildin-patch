@@ -1,0 +1,60 @@
+From 0ebf7c40b94c8855e3b31569fde3f5ff729a5f2d Mon Sep 17 00:00:00 2001
+From: Zhang Zekun <zhangzekun11@huawei.com>
+Date: Mon, 22 Apr 2024 15:18:44 +0800
+Subject: [PATCH 880/960] downstream: iommu/arm-smmu-v3: fix using
+ uninitialized or unchecked symbol
+
+In arm_smmu_ecmdq_probe(), the parameter pre_addr is used in the loop
+but it is not initialed yet. Also, the parameter "ecmdq" is used before
+check if it is NULL.
+
+Signed-off-by: Zhang Zekun <zhangzekun11@huawei.com>
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+Signed-off-by: Zhang Guangzhi <zhangguangzhi3@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 969802f327c0..3a3ead10450e 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -4786,7 +4786,7 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
+ 	int ret, cpu;
+ 	u32 i, nump, numq, gap;
+ 	u32 reg, shift_increment;
+-	u64 addr, smmu_dma_base;
++	u64 addr, smmu_dma_base, val, pre_addr;
+ 	void __iomem *cp_regs, *cp_base;
+ 
+ 	/* IDR6 */
+@@ -4804,8 +4804,6 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
+ 		return -ENOMEM;
+ 
+ 	for (i = 0; i < nump; i++) {
+-		u64 val, pre_addr;
+-
+ 		val = readq_relaxed(cp_regs + 32 * i);
+ 		if (!(val & ECMDQ_CP_PRESET)) {
+ 			iounmap(cp_regs);
+@@ -4845,7 +4843,6 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
+ 		struct arm_smmu_queue *q;
+ 
+ 		ecmdq = *per_cpu_ptr(smmu->ecmdqs, cpu);
+-		q = &ecmdq->cmdq.q;
+ 
+ 		/*
+ 		 * The boot option "maxcpus=" can limit the number of online
+@@ -4858,6 +4855,8 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
+ 		 */
+ 		if (!ecmdq || (ecmdq != per_cpu_ptr(smmu->ecmdq, cpu)))
+ 			continue;
++
++		q = &ecmdq->cmdq.q;
+ 		ecmdq->base = cp_base + addr;
+ 
+ 		q->llq.max_n_shift = ECMDQ_MAX_SZ_SHIFT + shift_increment;
+-- 
+2.43.0
+

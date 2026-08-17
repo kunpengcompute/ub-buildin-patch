@@ -1,0 +1,124 @@
+From d62c9a3f81fde1d4b83e373359f26c97503d5a32 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:11 +0800
+Subject: [PATCH 659/960] downstream: arm_mpam: resctrl: Implement helpers to
+ update configuration
+
+resctrl has two helpers for updating the configuration.
+resctrl_arch_update_one() updates a single value, and is used by the
+software-controller to apply feedback to the bandwidth controls,
+it has to be called on one of the CPUs in the resctrl:domain.
+
+resctrl_arch_update_domains() copies multiple staged configurations,
+it can be called from anywhere.
+
+Both helpers should update any changes to the underlying hardware.
+
+Imlpement resctrl_arch_update_domains() to use
+resctrl_arch_update_one(), which doesn't depend on being called
+on the right CPU.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_internal.h |  7 +--
+ drivers/platform/mpam/mpam_resctrl.c  | 64 +++++++++++++++++++++++++++
+ 2 files changed, 65 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index 6cd7ad9c360b..fd073f27fe45 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -117,12 +117,7 @@ struct mpam_props {
+ };
+ 
+ #define mpam_has_feature(_feat, x)	((1<<_feat) & (x)->features)
+-
+-static inline void mpam_set_feature(enum mpam_device_features feat,
+-				    struct mpam_props *props)
+-{
+-	props->features |= (1<<feat);
+-}
++#define mpam_set_feature(_feat, x)	((x)->features |= (1<<_feat))
+ 
+ static inline void mpam_clear_feature(enum mpam_device_features feat,
+ 				      mpam_features_t *supported)
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index cda8f08c0819..3d001af48c0c 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -291,6 +291,70 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 	}
+ }
+ 
++int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
++			    u32 closid, enum resctrl_conf_type t, u32 cfg_val)
++{
++	u32 partid;
++	struct mpam_config cfg;
++	struct mpam_props *cprops;
++	struct mpam_resctrl_res *res;
++	struct mpam_resctrl_dom *dom;
++
++	lockdep_assert_cpus_held();
++	lockdep_assert_irqs_enabled();
++
++	/* NOTE: don't check the CPU as mpam_apply_config() doesn't care,
++	 * and resctrl_arch_update_domains() depends on this.
++	 */
++	res = container_of(r, struct mpam_resctrl_res, resctrl_res);
++	dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
++	cprops = &res->class->props;
++
++	partid = resctrl_get_config_index(closid, t);
++	if (!r->alloc_capable || partid >= resctrl_arch_get_num_closid(r))
++		return -EINVAL;
++
++	switch (r->rid) {
++	case RDT_RESOURCE_L2:
++	case RDT_RESOURCE_L3:
++		/* TODO: Scaling is not yet supported */
++		cfg.cpbm = cfg_val;
++		mpam_set_feature(mpam_feat_cpor_part, &cfg);
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return mpam_apply_config(dom->comp, partid, &cfg);
++}
++
++/* TODO: this is IPI heavy */
++int resctrl_arch_update_domains(struct rdt_resource *r, u32 closid)
++{
++	int err = 0;
++	struct rdt_domain *d;
++	enum resctrl_conf_type t;
++	struct resctrl_staged_config *cfg;
++
++	lockdep_assert_cpus_held();
++	lockdep_assert_irqs_enabled();
++
++	list_for_each_entry(d, &r->domains, list) {
++		for (t = 0; t < CDP_NUM_TYPES; t++) {
++			cfg = &d->staged_config[t];
++			if (!cfg->have_new_ctrl)
++				continue;
++
++			err = resctrl_arch_update_one(r, d, closid, t,
++						      cfg->new_ctrl);
++			if (err)
++				return err;
++		}
++	}
++
++	return err;
++}
++
+ void resctrl_arch_reset_resources(void)
+ {
+ 	int i, idx;
+-- 
+2.43.0
+

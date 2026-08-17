@@ -1,0 +1,104 @@
+From 3f26e58341a82972d5b31177cf0a89b5436a9886 Mon Sep 17 00:00:00 2001
+From: Xiongfeng Wang <wangxiongfeng2@huawei.com>
+Date: Fri, 26 Jan 2024 10:39:43 +0800
+Subject: [PATCH 486/960] downstream: blk-mq: avoid housekeeping CPUs
+ scheduling a worker on a non-housekeeping CPU
+
+When NOHZ_FULL is enabled, such as in HPC situation, CPUs are divided
+into housekeeping CPUs and non-housekeeping CPUs. Non-housekeeping CPUs
+are NOHZ_FULL CPUs and are often monopolized by the userspace process,
+such HPC application process. Any sort of interruption is not expected.
+
+blk_mq_hctx_next_cpu() selects each cpu in 'hctx->cpumask' alternately
+to schedule the work thread blk_mq_run_work_fn(). When 'hctx->cpumask'
+contains housekeeping CPU and non-housekeeping CPU at the same time, a
+housekeeping CPU, which want to request a IO, may schedule a worker on a
+non-housekeeping CPU. This may affect the performance of the userspace
+application running on non-housekeeping CPUs.
+
+So let's just schedule the worker thread on the current CPU when the
+current CPU is housekeeping CPU.
+
+Signed-off-by: Xiongfeng Wang <wangxiongfeng2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Conflicts:
+	block/blk-mq.c
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ block/blk-mq.c                  | 11 ++++++++++-
+ include/linux/sched/isolation.h |  3 +++
+ kernel/sched/isolation.c        |  8 ++++++++
+ 3 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/block/blk-mq.c b/block/blk-mq.c
+index 4c1c5a261d0c..2f085d86eddc 100644
+--- a/block/blk-mq.c
++++ b/block/blk-mq.c
+@@ -25,6 +25,7 @@
+ #include <linux/sched/topology.h>
+ #include <linux/sched/signal.h>
+ #include <linux/suspend.h>
++#include <linux/sched/isolation.h>
+ #include <linux/delay.h>
+ #include <linux/crash_dump.h>
+ #include <linux/prefetch.h>
+@@ -2259,9 +2260,17 @@ static int blk_mq_hctx_next_cpu(struct blk_mq_hw_ctx *hctx)
+  */
+ void blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, unsigned long msecs)
+ {
++	int work_cpu;
++
+ 	if (unlikely(blk_mq_hctx_stopped(hctx)))
+ 		return;
+-	kblockd_mod_delayed_work_on(blk_mq_hctx_next_cpu(hctx), &hctx->run_work,
++
++	if (enhanced_isolcpus && tick_nohz_full_enabled() &&
++	    housekeeping_cpu(raw_smp_processor_id(), HK_TYPE_WQ))
++		work_cpu = raw_smp_processor_id();
++	else
++		work_cpu = blk_mq_hctx_next_cpu(hctx);
++	kblockd_mod_delayed_work_on(work_cpu, &hctx->run_work,
+ 				    msecs_to_jiffies(msecs));
+ }
+ EXPORT_SYMBOL(blk_mq_delay_run_hw_queue);
+diff --git a/include/linux/sched/isolation.h b/include/linux/sched/isolation.h
+index fe1a46f30d24..3894e74e8dc5 100644
+--- a/include/linux/sched/isolation.h
++++ b/include/linux/sched/isolation.h
+@@ -19,6 +19,7 @@ enum hk_type {
+ };
+ 
+ #ifdef CONFIG_CPU_ISOLATION
++extern bool enhanced_isolcpus;
+ DECLARE_STATIC_KEY_FALSE(housekeeping_overridden);
+ extern int housekeeping_any_cpu(enum hk_type type);
+ extern const struct cpumask *housekeeping_cpumask(enum hk_type type);
+@@ -29,6 +30,8 @@ extern void __init housekeeping_init(void);
+ 
+ #else
+ 
++#define enhanced_isolcpus 0
++
+ static inline int housekeeping_any_cpu(enum hk_type type)
+ {
+ 	return smp_processor_id();
+diff --git a/kernel/sched/isolation.c b/kernel/sched/isolation.c
+index 82e2f7fc7c26..1179dc21873e 100644
+--- a/kernel/sched/isolation.c
++++ b/kernel/sched/isolation.c
+@@ -244,3 +244,11 @@ static int __init housekeeping_isolcpus_setup(char *str)
+ 	return housekeeping_setup(str, flags);
+ }
+ __setup("isolcpus=", housekeeping_isolcpus_setup);
++
++bool enhanced_isolcpus;
++static int __init enhanced_isolcpus_setup(char *str)
++{
++	enhanced_isolcpus = true;
++	return 0;
++}
++__setup("enhanced_isolcpus", enhanced_isolcpus_setup);
+-- 
+2.43.0
+

@@ -1,0 +1,78 @@
+From 618efdbc74e9c63e73358d650f9f1cf90b4670a7 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Mon, 10 Jun 2024 21:31:10 -0300
+Subject: [PATCH 364/960] iommu/arm-smmu-v3: Do not zero the strtab twice
+
+commit c84c5ab76c9c04b5f1c8cc66ee9313198e89bb11 upstream.
+
+dmam_alloc_coherent() already returns zero'd memory so cfg->strtab.l1_desc
+(the list of DMA addresses for the L2 entries) is already zero'd.
+
+arm_smmu_init_l1_strtab() goes through and calls
+arm_smmu_write_strtab_l1_desc() on the newly allocated (and zero'd) struct
+arm_smmu_strtab_l1_desc, which ends up computing 'val = 0' and zeroing it
+again.
+
+Remove arm_smmu_init_l1_strtab() and just call devm_kcalloc() from
+arm_smmu_init_strtab_2lvl to allocate the companion struct.
+
+Tested-by: Nicolin Chen <nicolinc@nvidia.com>
+Reviewed-by: Mostafa Saleh <smostafa@google.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Reviewed-by: Nicolin Chen <nicolinc@nvidia.com>
+Link: https://lore.kernel.org/r/1-v2-318ed5f6983b+198f-smmuv3_tidy_jgg@nvidia.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 26 +++++----------------
+ 1 file changed, 6 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index e65128c18d52..72b94c18e465 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -3624,25 +3624,6 @@ static int arm_smmu_init_queues(struct arm_smmu_device *smmu)
+ 				       PRIQ_ENT_DWORDS, "priq");
+ }
+ 
+-static int arm_smmu_init_l1_strtab(struct arm_smmu_device *smmu)
+-{
+-	unsigned int i;
+-	struct arm_smmu_strtab_cfg *cfg = &smmu->strtab_cfg;
+-	void *strtab = smmu->strtab_cfg.strtab;
+-
+-	cfg->l1_desc = devm_kcalloc(smmu->dev, cfg->num_l1_ents,
+-				    sizeof(*cfg->l1_desc), GFP_KERNEL);
+-	if (!cfg->l1_desc)
+-		return -ENOMEM;
+-
+-	for (i = 0; i < cfg->num_l1_ents; ++i) {
+-		arm_smmu_write_strtab_l1_desc(strtab, &cfg->l1_desc[i]);
+-		strtab += STRTAB_L1_DESC_DWORDS << 3;
+-	}
+-
+-	return 0;
+-}
+-
+ static int arm_smmu_init_strtab_2lvl(struct arm_smmu_device *smmu)
+ {
+ 	void *strtab;
+@@ -3678,7 +3659,12 @@ static int arm_smmu_init_strtab_2lvl(struct arm_smmu_device *smmu)
+ 	reg |= FIELD_PREP(STRTAB_BASE_CFG_SPLIT, STRTAB_SPLIT);
+ 	cfg->strtab_base_cfg = reg;
+ 
+-	return arm_smmu_init_l1_strtab(smmu);
++	cfg->l1_desc = devm_kcalloc(smmu->dev, cfg->num_l1_ents,
++				    sizeof(*cfg->l1_desc), GFP_KERNEL);
++	if (!cfg->l1_desc)
++		return -ENOMEM;
++
++	return 0;
+ }
+ 
+ static int arm_smmu_init_strtab_linear(struct arm_smmu_device *smmu)
+-- 
+2.43.0
+

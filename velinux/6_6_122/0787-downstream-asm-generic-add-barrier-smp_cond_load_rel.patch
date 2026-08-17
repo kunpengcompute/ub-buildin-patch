@@ -1,0 +1,92 @@
+From 886188e06d9b9deaae8db14ce7b8ad1b2b929b01 Mon Sep 17 00:00:00 2001
+From: Ankur Arora <ankur.a.arora@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:43 +0800
+Subject: [PATCH 787/960] downstream: asm-generic: add barrier
+ smp_cond_load_relaxed_timeout()
+
+Add a timed variant of smp_cond_load_relaxed().
+
+This is useful because arm64 supports polling on a conditional variable
+by directly waiting on the cacheline instead of spin waiting for the
+condition to change.
+
+However, an implementation such as this has a problem that it can block
+forever -- unless there's an explicit timeout or another out-of-band
+mechanism which allows it to come out of the wait state periodically.
+
+smp_cond_load_relaxed_timeout() supports these semantics by specifying
+a time-check expression and an associated time-limit.
+
+However, note that for the generic spin-wait implementation we want to
+minimize the numbers of instructions executed in each iteration. So,
+limit how often we evaluate the time-check expression by doing it once
+every smp_cond_time_check_count.
+
+The inner loop in poll_idle() has a substantially similar structure
+and constraints as smp_cond_load_relaxed_timeout(), so define
+smp_cond_time_check_count to the same value used in poll_idle().
+
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/asm-generic/barrier.h | 42 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+
+diff --git a/include/asm-generic/barrier.h b/include/asm-generic/barrier.h
+index 1985c22d90ca..f5d6c8444d33 100644
+--- a/include/asm-generic/barrier.h
++++ b/include/asm-generic/barrier.h
+@@ -275,6 +275,48 @@ do {									\
+ })
+ #endif
+ 
++#ifndef smp_cond_time_check_count
++/*
++ * Limit how often smp_cond_load_relaxed_timeout() evaluates time_expr_ns.
++ * This helps reduce the number of instructions executed while spin-waiting.
++ */
++#define smp_cond_time_check_count	200
++#endif
++
++/**
++ * smp_cond_load_relaxed_timeout() - (Spin) wait for cond with no ordering
++ * guarantees until a timeout expires.
++ * @ptr: pointer to the variable to wait on
++ * @cond: boolean expression to wait for
++ * @time_expr_ns: evaluates to the current time
++ * @time_limit_ns: compared against time_expr_ns
++ *
++ * Equivalent to using READ_ONCE() on the condition variable.
++ *
++ * Due to C lacking lambda expressions we load the value of *ptr into a
++ * pre-named variable @VAL to be used in @cond.
++ */
++#ifndef smp_cond_load_relaxed_timeout
++#define smp_cond_load_relaxed_timeout(ptr, cond_expr, time_expr_ns,	\
++				      time_limit_ns) ({			\
++	typeof(ptr) __PTR = (ptr);					\
++	__unqual_scalar_typeof(*ptr) VAL;				\
++	unsigned int __count = 0;					\
++	for (;;) {							\
++		VAL = READ_ONCE(*__PTR);				\
++		if (cond_expr)						\
++			break;						\
++		cpu_relax();						\
++		if (__count++ < smp_cond_time_check_count)		\
++			continue;					\
++		if ((time_expr_ns) >= time_limit_ns)			\
++			break;						\
++		__count = 0;						\
++	}								\
++	(typeof(*ptr))VAL;						\
++})
++#endif
++
+ /*
+  * pmem_wmb() ensures that all stores for which the modification
+  * are written to persistent storage by preceding instructions have
+-- 
+2.43.0
+

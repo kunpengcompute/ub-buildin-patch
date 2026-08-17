@@ -1,0 +1,133 @@
+From 62f84edba3926d4f9bd7af77151317f9de188d8b Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:03 +0800
+Subject: [PATCH 578/960] downstream: KVM: arm64: vgic-v3: Add userspace
+ selection for GICv3.3 NMI
+
+In order to allow the GIC NMI support to be selected from userspace,
+add userspace access to GICD_TYPER, which allows the NMI support bit
+to be set.
+
+This is gated by a global capability that nobody can set yet, so
+no observable change is expected. Again.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-init.c    | 10 +++++++++-
+ arch/arm64/kvm/vgic/vgic-mmio-v2.c |  1 +
+ arch/arm64/kvm/vgic/vgic-mmio-v3.c | 15 ++++++++++++++-
+ include/kvm/arm_vgic.h             |  6 +++++-
+ 4 files changed, 29 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-init.c b/arch/arm64/kvm/vgic/vgic-init.c
+index 7004e1fc3ce7..710a47f29ef2 100644
+--- a/arch/arm64/kvm/vgic/vgic-init.c
++++ b/arch/arm64/kvm/vgic/vgic-init.c
+@@ -342,8 +342,16 @@ int vgic_init(struct kvm *kvm)
+ 	 * If userspace didn't set the GIC implementation revision,
+ 	 * default to the latest and greatest. You know want it.
+ 	 */
+-	if (!dist->implementation_rev)
++	if (!dist->implementation_rev) {
+ 		dist->implementation_rev = KVM_VGIC_IMP_REV_LATEST;
++		/*
++		 * Advertise NMI if available. Userspace that explicitly
++		 * doesn't want NMI will have written to GICD_{IIDR,TYPER}
++		 * to set the implementation and the NMI support status.
++		 */
++		dist->has_nmi = kvm_vgic_global_state.has_nmi;
++	}
++
+ 	dist->initialized = true;
+ 
+ out:
+diff --git a/arch/arm64/kvm/vgic/vgic-mmio-v2.c b/arch/arm64/kvm/vgic/vgic-mmio-v2.c
+index e070cda86e12..365d83b0f263 100644
+--- a/arch/arm64/kvm/vgic/vgic-mmio-v2.c
++++ b/arch/arm64/kvm/vgic/vgic-mmio-v2.c
+@@ -95,6 +95,7 @@ static int vgic_mmio_uaccess_write_v2_misc(struct kvm_vcpu *vcpu,
+ 		switch (reg) {
+ 		case KVM_VGIC_IMP_REV_2:
+ 		case KVM_VGIC_IMP_REV_3:
++		case KVM_VGIC_IMP_REV_4:
+ 			vcpu->kvm->arch.vgic.v2_groups_user_writable = true;
+ 			dist->implementation_rev = reg;
+ 			return 0;
+diff --git a/arch/arm64/kvm/vgic/vgic-mmio-v3.c b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+index bd5119646946..d916c2c32f4a 100644
+--- a/arch/arm64/kvm/vgic/vgic-mmio-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-mmio-v3.c
+@@ -78,6 +78,8 @@ static unsigned long vgic_mmio_read_v3_misc(struct kvm_vcpu *vcpu,
+ 	case GICD_TYPER:
+ 		value = vgic->nr_spis + VGIC_NR_PRIVATE_IRQS;
+ 		value = (value >> 5) - 1;
++		if (vgic->has_nmi)
++			value |= GICD_TYPER_NMI;
+ 		if (vgic_has_its(vcpu->kvm)) {
+ 			value |= (INTERRUPT_ID_BITS_ITS - 1) << 19;
+ 			value |= GICD_TYPER_LPIS;
+@@ -159,6 +161,13 @@ static int vgic_mmio_uaccess_write_v3_misc(struct kvm_vcpu *vcpu,
+ 	u32 reg;
+ 
+ 	switch (addr & 0x0c) {
++	case GICD_TYPER:
++		if (dist->implementation_rev >= KVM_VGIC_IMP_REV_4 &&
++		    kvm_vgic_global_state.has_nmi)
++			dist->has_nmi = val & GICD_TYPER_NMI;
++		else if (val & GICD_TYPER_NMI)
++			return -EINVAL;
++		return 0;
+ 	case GICD_TYPER2:
+ 		if (val != vgic_mmio_read_v3_misc(vcpu, addr, len))
+ 			return -EINVAL;
+@@ -172,6 +181,10 @@ static int vgic_mmio_uaccess_write_v3_misc(struct kvm_vcpu *vcpu,
+ 		switch (reg) {
+ 		case KVM_VGIC_IMP_REV_2:
+ 		case KVM_VGIC_IMP_REV_3:
++			/* Disable NMI on selecting an older revision */
++			dist->has_nmi = false;
++			fallthrough;
++		case KVM_VGIC_IMP_REV_4:
+ 			dist->implementation_rev = reg;
+ 			return 0;
+ 		default:
+@@ -187,7 +200,7 @@ static int vgic_mmio_uaccess_write_v3_misc(struct kvm_vcpu *vcpu,
+ 		return 0;
+ 	}
+ 
+-	vgic_mmio_write_v3_misc(vcpu, addr, len, val);
++	/* Not reachable... */
+ 	return 0;
+ }
+ 
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index 016a7a04cb04..71b943de5ebc 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -103,6 +103,9 @@ struct vgic_global {
+ 	bool			has_gicv4;
+ 	bool			has_gicv4_1;
+ 
++	/* NMI */
++	bool			has_nmi;
++
+ 	/* Pseudo GICv3 from outer space */
+ 	bool			no_hw_deactivation;
+ 
+@@ -275,7 +278,8 @@ struct vgic_dist {
+ 	u32			implementation_rev;
+ #define KVM_VGIC_IMP_REV_2	2 /* GICv2 restorable groups */
+ #define KVM_VGIC_IMP_REV_3	3 /* GICv3 GICR_CTLR.{IW,CES,RWP} */
+-#define KVM_VGIC_IMP_REV_LATEST	KVM_VGIC_IMP_REV_3
++#define KVM_VGIC_IMP_REV_4	4 /* GICv3 NMI */
++#define KVM_VGIC_IMP_REV_LATEST	KVM_VGIC_IMP_REV_4
+ 
+ 	/* Userspace can write to GICv2 IGROUPR */
+ 	bool			v2_groups_user_writable;
+-- 
+2.43.0
+

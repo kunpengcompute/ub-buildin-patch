@@ -1,0 +1,47 @@
+From 09dda40e782ebced35c4f1ed054cc68c4f64593b Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Tue, 3 Mar 2026 15:32:00 +0800
+Subject: [PATCH 908/960] downstream: arm64: move getting valid siaddr to the
+ top of do_sea
+
+Move getting valid siaddr to the top of do_sea in preparation for
+dump valid siaddr if apei_claim_sea failed.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Conflicts:
+	arch/arm64/mm/fault.c
+[ Context conflict. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/mm/fault.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/mm/fault.c b/arch/arm64/mm/fault.c
+index 9c1ef0046bbc..8968462cf930 100644
+--- a/arch/arm64/mm/fault.c
++++ b/arch/arm64/mm/fault.c
+@@ -778,9 +778,6 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
+ 	const struct fault_info *inf;
+ 	unsigned long siaddr;
+ 
+-	if (do_apei_claim_sea(regs))
+-		return 0;
+-
+ 	inf = esr_to_fault_info(esr);
+ 	if (esr & ESR_ELx_FnV) {
+ 		siaddr = 0;
+@@ -793,6 +790,10 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
+ 		siaddr  = untagged_addr(far);
+ 	}
+ 	add_taint(TAINT_MACHINE_CHECK, LOCKDEP_STILL_OK);
++
++	if (do_apei_claim_sea(regs))
++		return 0;
++
+ 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
+ 
+ 	return 0;
+-- 
+2.43.0
+

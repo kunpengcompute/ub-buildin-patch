@@ -1,0 +1,86 @@
+From 0836cd50ca94a3f3dc2c86277e155e656a3edce6 Mon Sep 17 00:00:00 2001
+From: leoliu-oc <leoliu-oc@zhaoxin.com>
+Date: Tue, 28 May 2024 10:19:11 +0800
+Subject: [PATCH 884/960] downstream: iommu/dma: Move iova_reserve_domain_addr
+ to header dma-iommu.h
+
+Move the declaration iova_reserve_domain_addr from public header
+linux/iommu.h to private header driver/iommu/dma-iommu.h to avoid the
+compilation errors when CONFIG_IOMMU_SUPPORT is not set.
+
+And upper acpi_rmrr_andd_probe error printk log level.
+
+Fixes: 6b8bca54e185 ("downstream: iommu/vt-d: Add support for detecting ACPI namespace device in RMRR")
+Reported-by: kernel test robot <lkp@intel.com>
+Closes: https://lore.kernel.org/oe-kbuild-all/202405202025.9w8wgmwQ-lkp@intel.com/
+Signed-off-by: leoliu-oc <leoliu-oc@zhaoxin.com>
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+Signed-off-by: Zhang Guangzhi <zhangguangzhi3@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/dma-iommu.h   | 8 ++++++++
+ drivers/iommu/intel/iommu.c | 4 ++--
+ include/linux/iommu.h       | 2 --
+ 3 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/iommu/dma-iommu.h b/drivers/iommu/dma-iommu.h
+index c829f1f82a99..358ffd54f167 100644
+--- a/drivers/iommu/dma-iommu.h
++++ b/drivers/iommu/dma-iommu.h
+@@ -22,6 +22,8 @@ static inline void iommu_dma_set_pci_32bit_workaround(struct device *dev)
+ 	dev->iommu->pci_32bit_workaround = !iommu_dma_forcedac;
+ }
+ 
++int iova_reserve_domain_addr(struct iommu_domain *domain, dma_addr_t start, dma_addr_t end);
++
+ #else /* CONFIG_IOMMU_DMA */
+ 
+ static inline int iommu_dma_init_fq(struct iommu_domain *domain)
+@@ -46,5 +48,11 @@ static inline void iommu_dma_set_pci_32bit_workaround(struct device *dev)
+ {
+ }
+ 
++static inline int iova_reserve_domain_addr(struct iommu_domain *domain, dma_addr_t start,
++					   dma_addr_t end)
++{
++	return -EINVAL;
++}
++
+ #endif	/* CONFIG_IOMMU_DMA */
+ #endif	/* __DMA_IOMMU_H */
+diff --git a/drivers/iommu/intel/iommu.c b/drivers/iommu/intel/iommu.c
+index 785d3a5ff72a..60dd4c34e56e 100644
+--- a/drivers/iommu/intel/iommu.c
++++ b/drivers/iommu/intel/iommu.c
+@@ -3651,13 +3651,13 @@ static inline int acpi_rmrr_andd_probe(struct device *dev)
+ 
+ 	iommu = device_lookup_iommu(dev, &bus, &devfn);
+ 	if (!iommu) {
+-		pr_info("dpoint-- cannot get acpi device corresponding iommu\n");
++		pr_err("cannot get acpi device corresponding iommu\n");
+ 		return -EINVAL;
+ 	}
+ 
+ 	pci_device = pci_get_domain_bus_and_slot(iommu->segment, bus, devfn);
+ 	if (!pci_device) {
+-		pr_info("dpoint-- cannot get acpi devie corresponding pci_device\n");
++		pr_err("cannot get acpi devie corresponding pci_device\n");
+ 		return -EINVAL;
+ 	}
+ 	ret = acpi_rmrr_device_create_direct_mappings(iommu_get_domain_for_dev(&pci_device->dev),
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index 16bd7bfce8d3..ee10dd82e517 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -965,8 +965,6 @@ static inline bool apply_zhaoxin_dmar_acpi_a_behavior(void)
+ 	return false;
+ }
+ 
+-extern int iova_reserve_domain_addr(struct iommu_domain *domain, dma_addr_t start, dma_addr_t end);
+-
+ int __acpi_rmrr_device_create_direct_mappings(struct iommu_domain *domain, struct device *dev);
+ 
+ static inline void iommu_flush_iotlb_all(struct iommu_domain *domain)
+-- 
+2.43.0
+

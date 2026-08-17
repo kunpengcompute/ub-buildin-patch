@@ -1,0 +1,96 @@
+From 3d11fcb4a2f70d041377c3fecf10eb9775575b40 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Wed, 27 Mar 2024 10:24:28 +0800
+Subject: [PATCH 749/960] downstream: ACPI: add support to register CPUs based
+ on the _STA enabled bit
+
+acpi_processor_get_info() registers all present CPUs. Registering a
+CPU is what creates the sysfs entries and triggers the udev
+notifications.
+
+arm64 virtual machines that support 'virtual cpu hotplug' use the
+enabled bit to indicate whether the CPU can be brought online, as
+the existing ACPI tables require all hardware to be described and
+present.
+
+If firmware describes a CPU as present, but disabled, skip the
+registration. Such CPUs are present, but can't be brought online for
+whatever reason. (e.g. firmware/hypervisor policy).
+
+Once firmware sets the enabled bit, the CPU can be registered and
+brought online by user-space. Online CPUs, or CPUs that are missing
+an _STA method must always be registered.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Reviewed-by: Gavin Shan <gshan@redhat.com>
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Tested-by: Miguel Luis <miguel.luis@oracle.com>
+Tested-by: Vishnu Pajjuri <vishnu@os.amperecomputing.com>
+Tested-by: Jianyong Wu <jianyong.wu@arm.com>
+Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Signed-off-by: liwei <liwei728@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/acpi_processor.c | 31 ++++++++++++++++++++++++++++++-
+ 1 file changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/acpi/acpi_processor.c b/drivers/acpi/acpi_processor.c
+index 4500fff16297..e62b8b8dbb18 100644
+--- a/drivers/acpi/acpi_processor.c
++++ b/drivers/acpi/acpi_processor.c
+@@ -228,6 +228,32 @@ static int acpi_processor_make_present(struct acpi_processor *pr)
+ 	return ret;
+ }
+ 
++static int acpi_processor_make_enabled(struct acpi_processor *pr)
++{
++	unsigned long long sta;
++	acpi_status status;
++	bool present, enabled;
++
++	if (!acpi_has_method(pr->handle, "_STA"))
++		return arch_register_cpu(pr->id);
++
++	status = acpi_evaluate_integer(pr->handle, "_STA", NULL, &sta);
++	if (ACPI_FAILURE(status))
++		return -ENODEV;
++
++	present = sta & ACPI_STA_DEVICE_PRESENT;
++	enabled = sta & ACPI_STA_DEVICE_ENABLED;
++
++	if (cpu_online(pr->id) && (!present || !enabled)) {
++		pr_err_once(FW_BUG "CPU %u is online, but described as not present or disabled!\n", pr->id);
++		add_taint(TAINT_FIRMWARE_WORKAROUND, LOCKDEP_STILL_OK);
++	} else if (!present || !enabled) {
++		return -ENODEV;
++	}
++
++	return arch_register_cpu(pr->id);
++}
++
+ static int acpi_processor_get_info(struct acpi_device *device)
+ {
+ 	union acpi_object object = { .processor = { 0 } };
+@@ -318,7 +344,7 @@ static int acpi_processor_get_info(struct acpi_device *device)
+ 	 */
+ 	if (!invalid_logical_cpuid(pr->id) && cpu_present(pr->id) &&
+ 	    !get_cpu_device(pr->id)) {
+-		int ret = arch_register_cpu(pr->id);
++		int ret = acpi_processor_make_enabled(pr);
+ 
+ 		if (ret)
+ 			return ret;
+@@ -527,6 +553,9 @@ static void acpi_processor_post_eject(struct acpi_device *device)
+ 		acpi_processor_make_not_present(device);
+ 		return;
+ 	}
++
++	if (cpu_present(pr->id) && !(sta & ACPI_STA_DEVICE_ENABLED))
++		arch_unregister_cpu(pr->id);
+ }
+ 
+ #ifdef CONFIG_ARCH_MIGHT_HAVE_ACPI_PDC
+-- 
+2.43.0
+

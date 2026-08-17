@@ -1,0 +1,70 @@
+From bca787a5f57aadd0a2eb052edbfd217092fadbac Mon Sep 17 00:00:00 2001
+From: Yicong Yang <yangyicong@hisilicon.com>
+Date: Thu, 16 May 2024 17:20:16 +0800
+Subject: [PATCH 506/960] downstream: irqchip/gic-v3: Fix one race condition
+ due to NMI withdraw
+
+The introduce of FEAT_NMI/FEAT_GICv3_NMI will cause a race problem that
+we may handle the normal interrupt in interrupt disabled context due to
+the withdraw of NMI interrupt. The flow will be like below:
+
+[interrupt disabled]
+                  <- normal interrupt pending, for example timer interrupt
+                  <- NMI occurs, ISR_EL1.nmi = 1
+do_el1_interrupt()
+                  <- NMI withdraw, ISR_EL1.nmi = 0
+  ISR_EL1.nmi = 0, not an NMI interrupt
+  gic_handle_irq()
+    __gic_handle_irq_from_irqson()
+      irqnr = gic_read_iar() <- Oops, ack and handle an normal interrupt
+                                in interrupt disabled context!
+
+Fix this by checking the interrupt status in __gic_handle_irq_from_irqson()
+and ignore the interrupt if we're in interrupt disabled context.
+
+Fixes: 0408b5bc4300 ("irqchip/gic-v3: Implement FEAT_GICv3_NMI support")
+Signed-off-by: Yicong Yang <yangyicong@hisilicon.com>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 86a13df82f71..93aab2bd83ac 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -858,6 +858,28 @@ static void __gic_handle_irq_from_irqson(struct pt_regs *regs)
+ 	bool is_nmi;
+ 	u32 irqnr;
+ 
++	/*
++	 * We should enter here with interrupts disabled, otherwise we may met
++	 * a race here with FEAT_NMI/FEAT_GICv3_NMI:
++	 *
++	 * [interrupt disabled]
++	 *                   <- normal interrupt pending, for example timer interrupt
++	 *                   <- NMI occurs, ISR_EL1.nmi = 1
++	 * do_el1_interrupt()
++	 *                   <- NMI withdraw, ISR_EL1.nmi = 0
++	 *   ISR_EL1.nmi = 0, not an NMI interrupt
++	 *   gic_handle_irq()
++	 *     __gic_handle_irq_from_irqson()
++	 *       irqnr = gic_read_iar() <- Oops, ack and handle an normal interrupt
++	 *                                 in interrupt disabled context!
++	 *
++	 * So if we met this case here, just return from the interrupt context.
++	 * Since the interrupt is still pending, we can handle it once the
++	 * interrupt re-enabled and it'll not be missing.
++	 */
++	if (!interrupts_enabled(regs))
++		return;
++
+ 	irqnr = gic_read_iar();
+ 
+ 	is_nmi = gic_rpr_is_nmi_prio();
+-- 
+2.43.0
+

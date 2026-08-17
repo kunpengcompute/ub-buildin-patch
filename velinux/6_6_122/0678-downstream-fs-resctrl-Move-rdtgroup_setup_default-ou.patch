@@ -1,0 +1,38 @@
+From 669e4b86cf14e214599e74f8288bb20ccf476bd5 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 8 Apr 2024 10:47:42 +0800
+Subject: [PATCH 678/960] downstream: fs/resctrl: Move rdtgroup_setup_default()
+ out of init.text section
+
+rdtgroup_setup_default() is declared at .init.text section, but will be
+called by resctrl_init() located in the .text section, which will lead to
+incorrect reference.
+
+Here is the compilation error message reported by linker:
+WARNING: modpost: vmlinux: section mismatch in reference:
+resctrl_init+0x6c (section: .text) -> rdtgroup_setup_default (section: .init.text)
+
+Reported-by: kernel test robot <lkp@intel.com>
+Closes: https://lore.kernel.org/oe-kbuild-all/202401261430.Xq824gQ5-lkp@intel.com/
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ fs/resctrl/rdtgroup.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/resctrl/rdtgroup.c b/fs/resctrl/rdtgroup.c
+index 79d994fa813f..526a494080b6 100644
+--- a/fs/resctrl/rdtgroup.c
++++ b/fs/resctrl/rdtgroup.c
+@@ -3746,7 +3746,7 @@ static void rdtgroup_destroy_root(void)
+ 	rdtgroup_default.kn = NULL;
+ }
+ 
+-static void __init rdtgroup_setup_default(void)
++static void rdtgroup_setup_default(void)
+ {
+ 	mutex_lock(&rdtgroup_mutex);
+ 
+-- 
+2.43.0
+

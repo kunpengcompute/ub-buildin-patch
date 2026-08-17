@@ -1,0 +1,40 @@
+From 3aaec07e0b37db7a27a095fb3501004de80f834c Mon Sep 17 00:00:00 2001
+From: Jinjie Ruan <ruanjinjie@huawei.com>
+Date: Mon, 19 Aug 2024 20:00:07 +0800
+Subject: [PATCH 417/960] iommufd/selftest: Make dirty_ops static
+
+commit cf1e515c9a40caa8bddb920970d3257bb01c1421 upstream.
+
+The sparse tool complains as follows:
+
+drivers/iommu/iommufd/selftest.c:277:30: warning:
+	symbol 'dirty_ops' was not declared. Should it be static?
+
+This symbol is not used outside of selftest.c, so marks it static.
+
+Fixes: 266ce58989ba ("iommufd/selftest: Test IOMMU_HWPT_ALLOC_DIRTY_TRACKING")
+Link: https://patch.msgid.link/r/20240819120007.3884868-1-ruanjinjie@huawei.com
+Signed-off-by: Jinjie Ruan <ruanjinjie@huawei.com>
+Reviewed-by: Yi Liu <yi.l.liu@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/selftest.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/iommufd/selftest.c b/drivers/iommu/iommufd/selftest.c
+index 0ecfece1856b..aa9ef2089cbe 100644
+--- a/drivers/iommu/iommufd/selftest.c
++++ b/drivers/iommu/iommufd/selftest.c
+@@ -274,7 +274,7 @@ static int mock_domain_read_and_clear_dirty(struct iommu_domain *domain,
+ 	return 0;
+ }
+ 
+-const struct iommu_dirty_ops dirty_ops = {
++static const struct iommu_dirty_ops dirty_ops = {
+ 	.set_dirty_tracking = mock_domain_set_dirty_tracking,
+ 	.read_and_clear_dirty = mock_domain_read_and_clear_dirty,
+ };
+-- 
+2.43.0
+

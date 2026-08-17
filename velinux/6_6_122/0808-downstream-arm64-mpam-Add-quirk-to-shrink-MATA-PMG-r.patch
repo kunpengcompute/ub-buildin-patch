@@ -1,0 +1,54 @@
+From 9c22125ebb255b22b9e874d4ffa4ce42d9a238b3 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 13 Nov 2025 19:01:09 +0800
+Subject: [PATCH 808/960] downstream: arm64/mpam: Add quirk to shrink MATA PMG
+ range
+
+On certain specific chip platforms, the PMG function is not fully
+supported. Using a non-zero PMG as a monitoring resource can lead to the
+loss of write traffic statistics. Therefore, impose restrictions on the PMG
+usage range for such chips.
+
+Fixes: 9cb26074545b ("arm_mpam: Probe MSCs to find the supported partid/pmg values")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index 8ea6d783b6ee..a7285c7f13f4 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -745,6 +745,19 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
+ 	}
+ }
+ 
++static int mpam_pmg_max_workaround(u64 idr)
++{
++	static const struct midr_range cpus[] = {
++		MIDR_ALL_VERSIONS(MIDR_HISI_HIP12),
++		{ /* sentinel */ }
++	};
++
++	if (is_midr_in_range_list(read_cpuid_id(), cpus))
++		return 0;
++
++	return FIELD_GET(MPAMF_IDR_PMG_MAX, idr);
++}
++
+ static int mpam_msc_hw_probe(struct mpam_msc *msc)
+ {
+ 	u64 idr;
+@@ -770,7 +783,7 @@ static int mpam_msc_hw_probe(struct mpam_msc *msc)
+ 
+ 	/* Use these values so partid/pmg always starts with a valid value */
+ 	msc->partid_max = FIELD_GET(MPAMF_IDR_PARTID_MAX, idr);
+-	msc->pmg_max = FIELD_GET(MPAMF_IDR_PMG_MAX, idr);
++	msc->pmg_max = mpam_pmg_max_workaround(idr);
+ 
+ 	for (ris_idx = 0; ris_idx <= msc->ris_max; ris_idx++) {
+ 		spin_lock(&msc->part_sel_lock);
+-- 
+2.43.0
+

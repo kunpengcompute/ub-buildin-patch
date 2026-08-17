@@ -1,0 +1,46 @@
+From d9683f9e62d8e058e21ffd1007b477edbdadd19f Mon Sep 17 00:00:00 2001
+From: Jie Liu <liujie375@h-partners.com>
+Date: Mon, 19 Feb 2024 09:34:33 +0800
+Subject: [PATCH 503/960] downstream: config: enable CONFIG_ARM64_NMI and
+ CONFIG_HARDLOCKUP_DETECTOR_PERF for arm64
+
+Set CONFIG_ARM64_NMI=y and CONFIG_HARDLOCKUP_DETECTOR_PERF=y.
+
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ config.aarch64     | 2 ++
+ config.aarch64-64k | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/config.aarch64 b/config.aarch64
+index 28140119ed41..bc716ed954ec 100644
+--- a/config.aarch64
++++ b/config.aarch64
+@@ -406,6 +406,8 @@ CONFIG_HISILICON_ERRATUM_162100125=y
+ CONFIG_ARM64_BRBE=y
+ CONFIG_HISI_SOC_CACHE=m
+ CONFIG_HISI_SOC_HHA=m
++CONFIG_ARM64_NMI=y
++CONFIG_HARDLOCKUP_DETECTOR_PERF=y
+ 
+ CONFIG_ARM64_4K_PAGES=y
+ # CONFIG_ARM64_16K_PAGES is not set
+diff --git a/config.aarch64-64k b/config.aarch64-64k
+index 7437dd32fc87..5ce36fe8e7ff 100644
+--- a/config.aarch64-64k
++++ b/config.aarch64-64k
+@@ -406,6 +406,8 @@ CONFIG_HISILICON_ERRATUM_162100125=y
+ CONFIG_ARM64_BRBE=y
+ CONFIG_HISI_SOC_CACHE=m
+ CONFIG_HISI_SOC_HHA=m
++CONFIG_ARM64_NMI=y
++CONFIG_HARDLOCKUP_DETECTOR_PERF=y
+ 
+ # CONFIG_ARM64_4K_PAGES is not set
+ # CONFIG_ARM64_16K_PAGES is not set
+-- 
+2.43.0
+

@@ -1,0 +1,191 @@
+From 788f34cb7c705a9647e2c24763c7ce1f9959756d Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Mon, 28 Apr 2025 19:56:56 +0800
+Subject: [PATCH 707/960] downstream: arm64/mpam: Add CMAX feature
+
+Implement the cmax interface and allow users can configure the cache
+maximum capacity by the schemata interface under the resctrl fs. User can
+update CMAX settings by the interface {L2,L3}MAX:${domain_id}=${value} in
+the schemata file.
+
+When the cache occupancy of the target PARTID does not reach the cmax
+configuration, allows to use the shared resources with higher priority.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  | 10 ++++--
+ drivers/platform/mpam/mpam_internal.h |  1 +
+ drivers/platform/mpam/mpam_resctrl.c  | 51 ++++++++++++++++++++++++++-
+ include/linux/resctrl_types.h         |  4 +++
+ 4 files changed, 62 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index e2a5d1379075..a9971cd2adbf 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -1208,6 +1208,13 @@ static void mpam_reprogram_ris_partid(struct mpam_msc_ris *ris, u16 partid,
+ 					      rprops->cpbm_wd);
+ 	}
+ 
++	if (mpam_has_feature(mpam_feat_ccap_part, rprops)) {
++		if (mpam_has_feature(mpam_feat_ccap_part, cfg))
++			mpam_write_partsel_reg(msc, CMAX, cfg->cmax);
++		else
++			mpam_write_partsel_reg(msc, CMAX, cmax);
++	}
++
+ 	if (mpam_has_feature(mpam_feat_mbw_part, rprops)) {
+ 		if (mpam_has_feature(mpam_feat_mbw_part, cfg))
+ 			mpam_write_partsel_reg(msc, MBW_PBM, cfg->mbw_pbm);
+@@ -1230,9 +1237,6 @@ static void mpam_reprogram_ris_partid(struct mpam_msc_ris *ris, u16 partid,
+ 	if (mpam_has_feature(mpam_feat_mbw_prop, rprops))
+ 		mpam_write_partsel_reg(msc, MBW_PROP, bwa_fract);
+ 
+-	if (mpam_has_feature(mpam_feat_ccap_part, rprops))
+-		mpam_write_partsel_reg(msc, CMAX, cmax);
+-
+ 	if (mpam_has_feature(mpam_feat_intpri_part, rprops) ||
+ 	    mpam_has_feature(mpam_feat_dspri_part, rprops)) {
+ 		/* aces high? */
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index cfe06297c679..eff9a4ca2f57 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -159,6 +159,7 @@ struct mpam_config {
+ 	u32	cpbm;
+ 	u32	mbw_pbm;
+ 	u16	mbw_max;
++	u16	cmax;
+ };
+ 
+ struct mpam_component {
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index abd8c2ba22ee..7c1bc97a9743 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -439,6 +439,13 @@ static bool cache_has_usable_cpor(struct mpam_class *class)
+ 	return (class->props.cpbm_wd <= RESCTRL_MAX_CBM);
+ }
+ 
++static bool cache_has_usable_cmax(struct mpam_class *class)
++{
++	struct mpam_props *cprops = &class->props;
++
++	return mpam_has_feature(mpam_feat_ccap_part, cprops);
++}
++
+ static bool cache_has_usable_csu(struct mpam_class *class)
+ {
+ 	struct mpam_props *cprops;
+@@ -595,6 +602,7 @@ static void mpam_resctrl_pick_caches(void)
+ {
+ 	int idx;
+ 	unsigned int cache_size;
++	bool has_cpor, has_cmax;
+ 	struct mpam_class *class;
+ 	struct mpam_resctrl_res *res;
+ 
+@@ -603,7 +611,9 @@ static void mpam_resctrl_pick_caches(void)
+ 	idx = srcu_read_lock(&mpam_srcu);
+ 	list_for_each_entry_rcu(class, &mpam_classes, classes_list) {
+ 		struct mpam_props *cprops = &class->props;
+-		bool has_cpor = cache_has_usable_cpor(class);
++
++		has_cpor = cache_has_usable_cpor(class);
++		has_cmax = cache_has_usable_cmax(class);
+ 
+ 		if (class->type != MPAM_CLASS_CACHE) {
+ 			pr_debug("pick_caches: Class is not a cache\n");
+@@ -648,6 +658,17 @@ static void mpam_resctrl_pick_caches(void)
+ 			}
+ 			res->class = class;
+ 		}
++
++		if (has_cmax) {
++			if (class->level == 2) {
++				res = &mpam_resctrl_exports[RDT_RESOURCE_L2_MAX];
++				res->resctrl_res.name = "L2MAX";
++			} else {
++				res = &mpam_resctrl_exports[RDT_RESOURCE_L3_MAX];
++				res->resctrl_res.name = "L3MAX";
++			}
++			res->class = class;
++		}
+ 	}
+ 	srcu_read_unlock(&mpam_srcu, idx);
+ }
+@@ -821,6 +842,22 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		}
+ 		break;
+ 
++	case RDT_RESOURCE_L3_MAX:
++	case RDT_RESOURCE_L2_MAX:
++		r->format_str = "%d=%0*u";
++		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
++		r->fflags = RFTYPE_RES_CACHE;
++		r->default_ctrl = MAX_MBA_BW;
++		r->data_width = 3;
++		r->cache_level = class->level;
++
++		if (cache_has_usable_cmax(class))
++			r->alloc_capable = true;
++
++		r->membw.min_bw = 0;
++		r->membw.bw_gran = max(100 / (1 << cprops->cmax_wd), 1);
++		break;
++
+ 	default:
+ 		break;
+ 	}
+@@ -939,6 +976,11 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 	case RDT_RESOURCE_L3:
+ 		configured_by = mpam_feat_cpor_part;
+ 		break;
++	case RDT_RESOURCE_L2_MAX:
++	case RDT_RESOURCE_L3_MAX:
++		configured_by = mpam_feat_ccap_part;
++		break;
++
+ 	case RDT_RESOURCE_MBA:
+ 		if (mba_class_use_mbw_part(cprops)) {
+ 			configured_by = mpam_feat_mbw_part;
+@@ -960,6 +1002,8 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 	case mpam_feat_cpor_part:
+ 		/* TODO: Scaling is not yet supported */
+ 		return cfg->cpbm;
++	case mpam_feat_ccap_part:
++		return mbw_max_to_percent(cfg->cmax, cprops->cmax_wd);
+ 	case mpam_feat_mbw_part:
+ 		/* TODO: Scaling is not yet supported */
+ 		return mbw_pbm_to_percent(cfg->mbw_pbm, cprops);
+@@ -1002,6 +1046,11 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 		cfg.cpbm = cfg_val;
+ 		mpam_set_feature(mpam_feat_cpor_part, &cfg);
+ 		break;
++	case RDT_RESOURCE_L2_MAX:
++	case RDT_RESOURCE_L3_MAX:
++		cfg.cmax = percent_to_mbw_max(cfg_val, cprops->cmax_wd);
++		mpam_set_feature(mpam_feat_ccap_part, &cfg);
++		break;
+ 	case RDT_RESOURCE_MBA:
+ 		if (mba_class_use_mbw_part(cprops)) {
+ 			cfg.mbw_pbm = percent_to_mbw_pbm(cfg_val, cprops);
+diff --git a/include/linux/resctrl_types.h b/include/linux/resctrl_types.h
+index 44f7a47f986b..b155d536ed3d 100644
+--- a/include/linux/resctrl_types.h
++++ b/include/linux/resctrl_types.h
+@@ -78,6 +78,10 @@ enum resctrl_res_level {
+ 	RDT_RESOURCE_L2,
+ 	RDT_RESOURCE_MBA,
+ 	RDT_RESOURCE_SMBA,
++#ifdef CONFIG_ARM64_MPAM
++	RDT_RESOURCE_L3_MAX,
++	RDT_RESOURCE_L2_MAX,
++#endif
+ 
+ 	/* Must be the last */
+ 	RDT_NUM_RESOURCES,
+-- 
+2.43.0
+

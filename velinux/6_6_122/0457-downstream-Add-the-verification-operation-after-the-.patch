@@ -1,0 +1,37 @@
+From 6d4552587719e16a33584189730a4fc24b61c37b Mon Sep 17 00:00:00 2001
+From: Devyn Liu <liudingyuan@huawei.com>
+Date: Thu, 14 Dec 2023 17:29:42 +0800
+Subject: [PATCH 457/960] downstream: Add the verification operation after the
+ bus recovery operation obtains resources through the ACPI
+
+If the device does not support obtaining resources through ACPI, the
+obtained adev pointer may be null. After obtaining resources through
+ACPI, add whether to support ACPI and null pointer check.
+
+Signed-off-by: Devyn Liu <liudingyuan@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/i2c/busses/i2c-hisi.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/i2c/busses/i2c-hisi.c b/drivers/i2c/busses/i2c-hisi.c
+index e932a6d6b11b..69b0b45ea4bc 100644
+--- a/drivers/i2c/busses/i2c-hisi.c
++++ b/drivers/i2c/busses/i2c-hisi.c
+@@ -508,7 +508,10 @@ static void hisi_i2c_init_recovery_info(struct hisi_i2c_controller *ctlr)
+ 	struct acpi_device *adev = ACPI_COMPANION(ctlr->dev);
+ 	struct gpio_desc *gpio;
+ 
+-	if (!acpi_has_method(adev->handle, HISI_I2C_PIN_MUX_METHOD))
++	if (acpi_disabled)
++		return;
++
++	if (!adev || !acpi_has_method(adev->handle, HISI_I2C_PIN_MUX_METHOD))
+ 		return;
+ 
+ 	gpio = devm_gpiod_get_optional(ctlr->dev, "scl", GPIOD_OUT_HIGH);
+-- 
+2.43.0
+

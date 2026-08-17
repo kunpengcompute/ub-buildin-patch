@@ -1,0 +1,33 @@
+From 29b79a2244941b705616bd65330ce15cf402f1ea Mon Sep 17 00:00:00 2001
+From: Jie Zhan <zhanjie9@hisilicon.com>
+Date: Mon, 27 Oct 2025 14:16:42 +0800
+Subject: [PATCH 778/960] downstream: ACPI: CPPC: Export
+ cppc_get_nominal_perf()
+
+cppc_get_nominal_perf() is declared in the cppc_acpi.h header, but not
+exported.
+
+Export it for kernel modules and keep it consistent with the header.
+
+Signed-off-by: Jie Zhan <zhanjie9@hisilicon.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/cppc_acpi.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/acpi/cppc_acpi.c b/drivers/acpi/cppc_acpi.c
+index 16ac219ae6fe..fdc2c9b8761d 100644
+--- a/drivers/acpi/cppc_acpi.c
++++ b/drivers/acpi/cppc_acpi.c
+@@ -1238,6 +1238,7 @@ int cppc_get_nominal_perf(int cpunum, u64 *nominal_perf)
+ {
+ 	return cppc_get_perf(cpunum, NOMINAL_PERF, nominal_perf);
+ }
++EXPORT_SYMBOL_GPL(cppc_get_nominal_perf);
+ 
+ /**
+  * cppc_get_highest_perf - Get the highest performance register value.
+-- 
+2.43.0
+

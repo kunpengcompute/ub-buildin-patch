@@ -1,0 +1,231 @@
+From 3a4e8ab517b2979ef42e90251f476bceab2e5543 Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:04 +0800
+Subject: [PATCH 529/960] downstream: irqchip/gic-v4.1: Rework
+ its_alloc_vcpu_sgis() to support vPPI allocation
+
+Allocate up to 32 IRQs at vcpu creation time if vtimer irqbypass
+is supported.
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3-its.c   | 27 ++++++++++++++++-
+ drivers/irqchip/irq-gic-v4.c       | 47 ++++++++++++++++++++++++++++++
+ include/linux/irqchip/arm-gic-v4.h | 11 ++++++-
+ 3 files changed, 83 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index c5103509df27..093444943f08 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -4679,11 +4679,19 @@ static int its_sgi_irq_domain_alloc(struct irq_domain *domain,
+ {
+ 	struct its_vpe *vpe = args;
+ 	int i;
+-
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	/* We may want 32 IRQs if vtimer irqbypass is supported. */
++	WARN_ON(nr_irqs != 16 && nr_irqs != 32);
++#else
+ 	/* Yes, we do want 16 SGIs */
+ 	WARN_ON(nr_irqs != 16);
++#endif
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	for (i = 0; i < nr_irqs; i++) {
++#else
+ 	for (i = 0; i < 16; i++) {
++#endif
+ 		vpe->sgi_config[i].priority = 0;
+ 		vpe->sgi_config[i].enabled = false;
+ 		vpe->sgi_config[i].group = false;
+@@ -5988,6 +5996,9 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
+ 	struct its_node *its;
+ 	bool has_v4 = false;
+ 	bool has_v4_1 = false;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	bool has_vtimer_irqbypass = false;
++#endif
+ 	int err;
+ 
+ 	gic_rdists = rdists;
+@@ -6011,12 +6022,21 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
+ 	list_for_each_entry(its, &its_nodes, entry) {
+ 		has_v4 |= is_v4(its);
+ 		has_v4_1 |= is_v4_1(its);
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++		has_vtimer_irqbypass |= is_vtimer_irqbypass(its);
++#endif
+ 	}
+ 
+ 	/* Don't bother with inconsistent systems */
+ 	if (WARN_ON(!has_v4_1 && rdists->has_rvpeid))
+ 		rdists->has_rvpeid = false;
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	/* vtimer irqbypass depends on rvpeid support */
++	if (WARN_ON(!has_v4_1 && has_vtimer_irqbypass))
++		has_vtimer_irqbypass = false;
++#endif
++
+ 	if (has_v4 & rdists->has_vlpis) {
+ 		const struct irq_domain_ops *sgi_ops;
+ 
+@@ -6026,7 +6046,12 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
+ 			sgi_ops = NULL;
+ 
+ 		if (its_init_vpe_domain() ||
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++		    its_init_v4(parent_domain, &its_vpe_domain_ops, sgi_ops) ||
++		    vtimer_irqbypass_init(parent_domain, has_vtimer_irqbypass)) {
++#else
+ 		    its_init_v4(parent_domain, &its_vpe_domain_ops, sgi_ops)) {
++#endif
+ 			rdists->has_vlpis = false;
+ 			pr_err("ITS: Disabling GICv4 support\n");
+ 		}
+diff --git a/drivers/irqchip/irq-gic-v4.c b/drivers/irqchip/irq-gic-v4.c
+index 94d56a03b175..8408508520a0 100644
+--- a/drivers/irqchip/irq-gic-v4.c
++++ b/drivers/irqchip/irq-gic-v4.c
+@@ -86,6 +86,9 @@
+ static struct irq_domain *gic_domain;
+ static const struct irq_domain_ops *vpe_domain_ops;
+ static const struct irq_domain_ops *sgi_domain_ops;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++static bool vtimerirq_bypass;
++#endif
+ 
+ #ifdef CONFIG_ARM64
+ #include <asm/cpufeature.h>
+@@ -110,6 +113,13 @@ static bool has_v4_1(void)
+ 	return !!sgi_domain_ops;
+ }
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++static bool has_v4_1_vsgi_extend(void)
++{
++	return has_v4_1() && vtimerirq_bypass;
++}
++#endif
++
+ static bool has_v4_1_sgi(void)
+ {
+ 	return has_v4_1() && gic_cpuif_has_vsgi();
+@@ -119,10 +129,18 @@ static int its_alloc_vcpu_sgis(struct its_vpe *vpe, int idx)
+ {
+ 	char *name;
+ 	int sgi_base;
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	int nr_irqs = 16;
++#endif
+ 
+ 	if (!has_v4_1_sgi())
+ 		return 0;
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	if (has_v4_1_vsgi_extend())
++		nr_irqs = 32;
++#endif
++
+ 	name = kasprintf(GFP_KERNEL, "GICv4-sgi-%d", task_pid_nr(current));
+ 	if (!name)
+ 		goto err;
+@@ -134,18 +152,30 @@ static int its_alloc_vcpu_sgis(struct its_vpe *vpe, int idx)
+ 	kfree(name);
+ 	name = NULL;
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	vpe->sgi_domain = irq_domain_create_linear(vpe->fwnode, nr_irqs,
++#else
+ 	vpe->sgi_domain = irq_domain_create_linear(vpe->fwnode, 16,
++#endif
+ 						   sgi_domain_ops, vpe);
+ 	if (!vpe->sgi_domain)
+ 		goto err;
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	vpe->nr_irqs = nr_irqs;
++	sgi_base = irq_domain_alloc_irqs(vpe->sgi_domain, nr_irqs, NUMA_NO_NODE, vpe);
++#else
+ 	sgi_base = irq_domain_alloc_irqs(vpe->sgi_domain, 16, NUMA_NO_NODE, vpe);
++#endif
+ 	if (sgi_base <= 0)
+ 		goto err;
+ 
+ 	return 0;
+ 
+ err:
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	vpe->nr_irqs = 0;
++#endif
+ 	if (vpe->sgi_domain)
+ 		irq_domain_remove(vpe->sgi_domain);
+ 	if (vpe->fwnode)
+@@ -211,7 +241,11 @@ static void its_free_sgi_irqs(struct its_vm *vm)
+ 		if (WARN_ON(!irq))
+ 			continue;
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++		irq_domain_free_irqs(irq, vm->vpes[i]->nr_irqs);
++#else
+ 		irq_domain_free_irqs(irq, 16);
++#endif
+ 		irq_domain_remove(vm->vpes[i]->sgi_domain);
+ 		irq_domain_free_fwnode(vm->vpes[i]->fwnode);
+ 	}
+@@ -387,3 +421,16 @@ int its_init_v4(struct irq_domain *domain,
+ 	pr_err("ITS: No GICv4 VPE domain allocated\n");
+ 	return -ENODEV;
+ }
++
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++int vtimer_irqbypass_init(struct irq_domain *domain,
++			  bool has_vtimer_irqbypass)
++{
++	if (domain) {
++		vtimerirq_bypass = has_vtimer_irqbypass;
++		return 0;
++	}
++
++	return -ENODEV;
++}
++#endif
+diff --git a/include/linux/irqchip/arm-gic-v4.h b/include/linux/irqchip/arm-gic-v4.h
+index 7f1f11a5e4e4..fea618f43947 100644
+--- a/include/linux/irqchip/arm-gic-v4.h
++++ b/include/linux/irqchip/arm-gic-v4.h
+@@ -65,7 +65,12 @@ struct its_vpe {
+ 				u8	priority;
+ 				bool	enabled;
+ 				bool	group;
+-			}			sgi_config[16];
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++			}			sgi_config[32];
++			int nr_irqs;
++#else
++			}                       sgi_config[16];
++#endif
+ 		};
+ 	};
+ 
+@@ -154,6 +159,10 @@ struct irq_domain_ops;
+ int its_init_v4(struct irq_domain *domain,
+ 		const struct irq_domain_ops *vpe_ops,
+ 		const struct irq_domain_ops *sgi_ops);
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++int vtimer_irqbypass_init(struct irq_domain *domain,
++		bool has_vtimer_irqbypass);
++#endif
+ 
+ bool gic_cpuif_has_vsgi(void);
+ 
+-- 
+2.43.0
+

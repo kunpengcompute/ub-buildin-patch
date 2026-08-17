@@ -1,0 +1,32 @@
+From e9da2626a67ea8fbe9bdb39493d6bed0537c0282 Mon Sep 17 00:00:00 2001
+From: Bowen You <youbowen2@huawei.com>
+Date: Thu, 8 May 2025 14:39:05 +0800
+Subject: [PATCH 549/960] downstream: mm: export symbol walk_page_range in
+ mm/pagewalk.c
+
+hisi_soc_cache_framework.c uses symbol walk_page_range and it's not
+exported yet. Export it in pagewalk.c.
+
+Signed-off-by: Bowen You <youbowen2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/pagewalk.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/mm/pagewalk.c b/mm/pagewalk.c
+index b7d7e4fcfad7..144c9fed0fc9 100644
+--- a/mm/pagewalk.c
++++ b/mm/pagewalk.c
+@@ -525,6 +525,7 @@ int walk_page_range(struct mm_struct *mm, unsigned long start,
+ 	} while (start = next, start < end);
+ 	return err;
+ }
++EXPORT_SYMBOL_GPL(walk_page_range);
+ 
+ /**
+  * walk_page_range_novma - walk a range of pagetables not backed by a vma
+-- 
+2.43.0
+

@@ -1,0 +1,49 @@
+From 0c357a8110876bfca3576c23c0332ac85638367d Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 23 Apr 2025 18:51:47 +0800
+Subject: [PATCH 704/960] downstream: arm64/mpam: Add debugging information
+ about CDP monitor value
+
+If the CDP mount option is enabled, allow users to configure separately
+code and data portion, but still provide one monitor for each MSC class
+instead of two.
+
+Based on the above reason, add debugging information about monitor value
+for code and data streams separately.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 21c7081d3a8d..09b5a8022f97 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -358,15 +358,19 @@ int resctrl_arch_rmid_read(struct rdt_resource	*r, struct rdt_domain *d,
+ 	cfg.opts = resctrl_evt_config_to_mpam(dom->mbm_local_evt_cfg);
+ 
+ 	if (cdp_enabled) {
+-		cfg.partid = closid << 1;
++		cfg.partid = resctrl_get_config_index(closid, CDP_DATA);
+ 		err = mpam_msmon_read(dom->comp, &cfg, type, val);
+ 		if (err)
+ 			return err;
+ 
+-		cfg.partid += 1;
++		cfg.partid = resctrl_get_config_index(closid, CDP_CODE);
+ 		err = mpam_msmon_read(dom->comp, &cfg, type, &cdp_val);
+-		if (!err)
++		if (!err) {
++			pr_debug("read monitor rmid %u %s:%u CODE/DATA: %lld/%lld\n",
++				resctrl_arch_rmid_idx_encode(closid, rmid),
++				r->name, dom->comp->comp_id, cdp_val, *val);
+ 			*val += cdp_val;
++		}
+ 	} else {
+ 		cfg.partid = closid;
+ 		err = mpam_msmon_read(dom->comp, &cfg, type, val);
+-- 
+2.43.0
+

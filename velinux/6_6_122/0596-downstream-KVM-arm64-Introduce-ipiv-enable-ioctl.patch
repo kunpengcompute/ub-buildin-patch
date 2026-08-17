@@ -1,0 +1,86 @@
+From 20357012889379d5442ac334d76940037423e10d Mon Sep 17 00:00:00 2001
+From: Zhou Wang <wangzhou1@hisilicon.com>
+Date: Fri, 23 May 2025 20:45:26 +0800
+Subject: [PATCH 596/960] downstream: KVM: arm64: Introduce ipiv enable ioctl
+
+IPIV uses ioctl to be enabled. Users (such as qemu) can
+invoke the ioctl to enable IPIV.
+
+Signed-off-by: Zhou Wang <wangzhou1@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/arm.c               | 15 ++++++++++++++-
+ include/linux/irqchip/arm-gic-v4.h |  1 +
+ include/uapi/linux/kvm.h           |  2 +-
+ 3 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index e3c7e20fa304..2fedb2d7f4b4 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -196,6 +196,14 @@ static int kvm_cap_arm_enable_hdbss(struct kvm *kvm,
+ }
+ #endif
+ 
++#ifdef CONFIG_ARM64_HISI_IPIV
++static int kvm_hisi_ipiv_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap)
++{
++	kvm->arch.vgic.its_vm.enable_ipiv_from_vmm = true;
++	return 0;
++}
++#endif
++
+ int kvm_vm_ioctl_enable_cap(struct kvm *kvm,
+ 			    struct kvm_enable_cap *cap)
+ {
+@@ -247,6 +255,11 @@ int kvm_vm_ioctl_enable_cap(struct kvm *kvm,
+ 	case KVM_CAP_ARM_HW_DIRTY_STATE_TRACK:
+ 		r = kvm_cap_arm_enable_hdbss(kvm, cap);
+ 		break;
++#endif
++#ifdef CONFIG_ARM64_HISI_IPIV
++	case KVM_CAP_ARM_HISI_IPIV:
++		r = kvm_hisi_ipiv_enable_cap(kvm, cap);
++		break;
+ #endif
+ 	default:
+ 		r = -EINVAL;
+@@ -473,7 +486,7 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
+ 		break;
+ #endif
+ #ifdef CONFIG_ARM64_HISI_IPIV
+-	case KVM_CAP_ARM_IPIV_MODE:
++	case KVM_CAP_ARM_HISI_IPIV:
+ 		if (static_branch_unlikely(&ipiv_enable))
+ 			r = 1;
+ 		else
+diff --git a/include/linux/irqchip/arm-gic-v4.h b/include/linux/irqchip/arm-gic-v4.h
+index 04c28e29342e..d4a6db704e97 100644
+--- a/include/linux/irqchip/arm-gic-v4.h
++++ b/include/linux/irqchip/arm-gic-v4.h
+@@ -37,6 +37,7 @@ struct its_vm {
+ #ifdef CONFIG_ARM64_HISI_IPIV
+ 	struct page         *vpeid_page;
+ 	bool                  nassgireq;
++	bool			enable_ipiv_from_vmm;
+ #endif
+ };
+ 
+diff --git a/include/uapi/linux/kvm.h b/include/uapi/linux/kvm.h
+index 6c1c4697c66e..7dd5528019dc 100644
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -1197,7 +1197,7 @@ struct kvm_ppc_resize_hpt {
+ 
+ #define KVM_CAP_ARM_HW_DIRTY_STATE_TRACK 502
+ 
+-#define KVM_CAP_ARM_IPIV_MODE 503
++#define KVM_CAP_ARM_HISI_IPIV 798
+ 
+ #ifdef KVM_CAP_IRQ_ROUTING
+ 
+-- 
+2.43.0
+

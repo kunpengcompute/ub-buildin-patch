@@ -1,0 +1,31 @@
+From 08193c151389343d117a8f9778897c58c283cbe4 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Fri, 23 May 2025 12:21:32 +0800
+Subject: [PATCH 718/960] downstream: arm64/mpam: Fix num_rmids information
+
+Select the maximum number of RMIDs supported by the system as the RMIDs
+number.
+
+Fixes: cc622cf0fb21 ("arm_mpam: resctrl: Pick a value for num_rmid")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index 1ae2586847e2..d9c75150be95 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -1050,7 +1050,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		 * For mpam, each control group has its own pmg/rmid
+ 		 * space.
+ 		 */
+-		r->num_rmid = mpam_partid_max * mpam_pmg_max;
++		r->num_rmid = resctrl_arch_system_num_rmid_idx();
+ 	}
+ 
+ 	return 0;
+-- 
+2.43.0
+

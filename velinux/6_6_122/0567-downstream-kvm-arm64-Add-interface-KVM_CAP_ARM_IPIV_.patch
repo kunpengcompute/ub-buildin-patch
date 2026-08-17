@@ -1,0 +1,62 @@
+From 98d271e152d338ea76a19a055acfef2625162842 Mon Sep 17 00:00:00 2001
+From: Xiang Chen <chenxiang66@hisilicon.com>
+Date: Wed, 23 Apr 2025 17:16:27 +0800
+Subject: [PATCH 567/960] downstream: kvm: arm64: Add interface
+ KVM_CAP_ARM_IPIV_MODE
+
+Before IPIV feature, it gets mpidr from vcpu id, but after the feature,
+we need to know if IPIV mode is enabled. And new IPIV modes may be added
+later.
+
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/arm.c     | 8 ++++++++
+ include/uapi/linux/kvm.h | 2 ++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index 5f20c5d4e439..dfd5df9bfe9e 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -346,6 +346,8 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
+ 	kvm_arm_teardown_hypercalls(kvm);
+ }
+ 
++extern struct static_key_false ipiv_enable;
++
+ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
+ {
+ 	int r;
+@@ -461,6 +463,12 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
+ 		r = system_supports_hdbss();
+ 		break;
+ #endif
++	case KVM_CAP_ARM_IPIV_MODE:
++		if (static_branch_unlikely(&ipiv_enable))
++			r = 1;
++		else
++			r = 0;
++		break;
+ 	default:
+ 		r = 0;
+ 	}
+diff --git a/include/uapi/linux/kvm.h b/include/uapi/linux/kvm.h
+index dee981bc5f4f..6c1c4697c66e 100644
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -1197,6 +1197,8 @@ struct kvm_ppc_resize_hpt {
+ 
+ #define KVM_CAP_ARM_HW_DIRTY_STATE_TRACK 502
+ 
++#define KVM_CAP_ARM_IPIV_MODE 503
++
+ #ifdef KVM_CAP_IRQ_ROUTING
+ 
+ struct kvm_irq_routing_irqchip {
+-- 
+2.43.0
+

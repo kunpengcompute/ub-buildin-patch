@@ -1,0 +1,52 @@
+From 1c4985ed943e75d4814c03c59f953fbf3bd50916 Mon Sep 17 00:00:00 2001
+From: Joao Martins <joao.m.martins@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:52 +0800
+Subject: [PATCH 796/960] downstream: governors/haltpoll: drop
+ kvm_para_available() check
+
+The haltpoll governor is selected either by the cpuidle-haltpoll
+driver, or explicitly by the user.
+In particular, it is never selected by default since it has the lowest
+rating of all governors (menu=20, teo=19, ladder=10/25, haltpoll=9).
+
+So, we can safely forgo the kvm_para_available() check. This also
+allows cpuidle-haltpoll to be tested on baremetal.
+
+Signed-off-by: Joao Martins <joao.m.martins@oracle.com>
+Signed-off-by: Mihai Carabas <mihai.carabas@oracle.com>
+Acked-by: Rafael J. Wysocki <rafael@kernel.org>
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/cpuidle/governors/haltpoll.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/drivers/cpuidle/governors/haltpoll.c b/drivers/cpuidle/governors/haltpoll.c
+index 1dff3a52917d..e7b1c602ed08 100644
+--- a/drivers/cpuidle/governors/haltpoll.c
++++ b/drivers/cpuidle/governors/haltpoll.c
+@@ -18,7 +18,6 @@
+ #include <linux/tick.h>
+ #include <linux/sched.h>
+ #include <linux/module.h>
+-#include <linux/kvm_para.h>
+ #include <trace/events/power.h>
+ 
+ static unsigned int guest_halt_poll_ns __read_mostly = 200000;
+@@ -143,10 +142,7 @@ static struct cpuidle_governor haltpoll_governor = {
+ 
+ static int __init init_haltpoll(void)
+ {
+-	if (kvm_para_available())
+-		return cpuidle_register_governor(&haltpoll_governor);
+-
+-	return 0;
++	return cpuidle_register_governor(&haltpoll_governor);
+ }
+ 
+ postcore_initcall(init_haltpoll);
+-- 
+2.43.0
+

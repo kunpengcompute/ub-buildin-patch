@@ -1,0 +1,87 @@
+From 54bbd789cc33918d564e1fc7f972f4f2c73d8f6a Mon Sep 17 00:00:00 2001
+From: eillon <yezhenyu2@huawei.com>
+Date: Wed, 2 Apr 2025 15:56:22 +0800
+Subject: [PATCH 550/960] downstream: arm64/sysreg: add HDBSS related register
+ information
+
+The ARM architecture added the HDBSS feature and descriptions of
+related registers (HDBSSBR/HDBSSPROD) in the DDI0601(ID121123) version,
+add them to Linux.
+
+Signed-off-by: eillon <yezhenyu2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/esr.h     |  2 ++
+ arch/arm64/include/asm/kvm_arm.h |  1 +
+ arch/arm64/tools/sysreg          | 28 ++++++++++++++++++++++++++++
+ 3 files changed, 31 insertions(+)
+
+diff --git a/arch/arm64/include/asm/esr.h b/arch/arm64/include/asm/esr.h
+index b04575ea3a35..ca9a13c9a668 100644
+--- a/arch/arm64/include/asm/esr.h
++++ b/arch/arm64/include/asm/esr.h
+@@ -144,6 +144,8 @@
+ #define ESR_ELx_CM 		(UL(1) << ESR_ELx_CM_SHIFT)
+ 
+ /* ISS2 field definitions for Data Aborts */
++#define ESR_ELx_HDBSSF_SHIFT	(11)
++#define ESR_ELx_HDBSSF		(UL(1) << ESR_ELx_HDBSSF_SHIFT)
+ #define ESR_ELx_TnD_SHIFT	(10)
+ #define ESR_ELx_TnD 		(UL(1) << ESR_ELx_TnD_SHIFT)
+ #define ESR_ELx_TagAccess_SHIFT	(9)
+diff --git a/arch/arm64/include/asm/kvm_arm.h b/arch/arm64/include/asm/kvm_arm.h
+index 04ff06978d00..0c46d38242ed 100644
+--- a/arch/arm64/include/asm/kvm_arm.h
++++ b/arch/arm64/include/asm/kvm_arm.h
+@@ -129,6 +129,7 @@
+ 
+ /* VTCR_EL2 Registers bits */
+ #define VTCR_EL2_DS		TCR_EL2_DS
++#define VTCR_EL2_HDBSS		(1UL << 45)
+ #define VTCR_EL2_RES1		(1U << 31)
+ #define VTCR_EL2_HD		(1 << 22)
+ #define VTCR_EL2_HA		(1 << 21)
+diff --git a/arch/arm64/tools/sysreg b/arch/arm64/tools/sysreg
+index 961bef1c0959..7a5f89c20cee 100644
+--- a/arch/arm64/tools/sysreg
++++ b/arch/arm64/tools/sysreg
+@@ -2477,6 +2477,34 @@ Sysreg	SMCR_EL2	3	4	1	2	6
+ Fields	SMCR_ELx
+ EndSysreg
+ 
++Sysreg	HDBSSBR_EL2	3	4	2	3	2
++Res0	63:56
++Field	55:12	BADDR
++Res0	11:4
++Enum	3:0	SZ
++	0b0001	8KB
++	0b0010	16KB
++	0b0011	32KB
++	0b0100	64KB
++	0b0101	128KB
++	0b0110	256KB
++	0b0111	512KB
++	0b1000	1MB
++	0b1001	2MB
++EndEnum
++EndSysreg
++
++Sysreg	HDBSSPROD_EL2	3	4	2	3	3
++Res0	63:32
++Enum	31:26	FSC
++	0b000000	OK
++	0b010000	ExternalAbort
++	0b101000	GPF
++EndEnum
++Res0	25:19
++Field	18:0	INDEX
++EndSysreg
++
+ Sysreg	DACR32_EL2	3	4	3	0	0
+ Res0	63:32
+ Field	31:30	D15
+-- 
+2.43.0
+

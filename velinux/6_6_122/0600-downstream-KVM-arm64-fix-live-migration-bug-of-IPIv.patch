@@ -1,0 +1,65 @@
+From fe325531180d9b64227017ab20c8c837efd531cb Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Fri, 23 May 2025 20:45:30 +0800
+Subject: [PATCH 600/960] downstream: KVM: arm64: fix live migration bug of
+ IPIv
+
+GITS_IIDR bit7 is used to store whether IPIV is enabled for Guest OS to
+ensure that enable_ipiv_from_guest are the same before and after live
+migration.
+
+Signed-off-by: Zhou Wang <wangzhou1@hisilicon.com>
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-its.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-its.c b/arch/arm64/kvm/vgic/vgic-its.c
+index 9f8a99a09816..1795110fb394 100644
+--- a/arch/arm64/kvm/vgic/vgic-its.c
++++ b/arch/arm64/kvm/vgic/vgic-its.c
+@@ -498,6 +498,14 @@ static unsigned long vgic_mmio_read_its_typer(struct kvm *kvm,
+ 	return extract_bytes(reg, addr & 7, len);
+ }
+ 
++#ifdef CONFIG_ARM64_HISI_IPIV
++/*
++ * Use bit7 not used by GITS_IIDR to indicate whether IPIV is
++ * enabled for guest OS.
++ */
++#define HISI_GUEST_ENABLE_IPIV_SHIFT 7
++#endif
++
+ static unsigned long vgic_mmio_read_its_iidr(struct kvm *kvm,
+ 					     struct vgic_its *its,
+ 					     gpa_t addr, unsigned int len)
+@@ -518,6 +526,12 @@ static int vgic_mmio_uaccess_write_its_iidr(struct kvm *kvm,
+ 
+ 	if (rev >= NR_ITS_ABIS)
+ 		return -EINVAL;
++
++#ifdef CONFIG_ARM64_HISI_IPIV
++	if (val & (1UL << HISI_GUEST_ENABLE_IPIV_SHIFT))
++		kvm->arch.vgic.its_vm.enable_ipiv_from_guest = true;
++#endif
++
+ 	return vgic_its_set_abi(its, rev);
+ }
+ 
+@@ -2109,6 +2123,11 @@ static int vgic_its_attr_regs_access(struct kvm_device *dev,
+ 			region->its_write(dev->kvm, its, addr, len, *reg);
+ 	} else {
+ 		*reg = region->its_read(dev->kvm, its, addr, len);
++#ifdef CONFIG_ARM64_HISI_IPIV
++		if (dev->kvm->arch.vgic.its_vm.enable_ipiv_from_guest &&
++			    offset == GITS_IIDR)
++			*reg |= 1UL << HISI_GUEST_ENABLE_IPIV_SHIFT;
++#endif
+ 	}
+ out:
+ 	mutex_unlock(&dev->kvm->arch.config_lock);
+-- 
+2.43.0
+

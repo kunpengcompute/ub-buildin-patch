@@ -1,0 +1,41 @@
+From 888f8fc89a163cb32004b58099cc528211db79c9 Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@kernel.org>
+Date: Tue, 11 Oct 2022 22:36:56 +0100
+Subject: [PATCH 490/960] downstream: arm64/booting: Document boot requirements
+ for FEAT_NMI
+
+In order to use FEAT_NMI we must be able to use ALLINT, require that it
+behave as though not trapped when it is present.
+
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Conflicts:
+	Documentation/arch/arm64/booting.rst
+[ Context conflicts. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ Documentation/arch/arm64/booting.rst | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/Documentation/arch/arm64/booting.rst b/Documentation/arch/arm64/booting.rst
+index cbd08d10ec8b..a1fbb7dc72f4 100644
+--- a/Documentation/arch/arm64/booting.rst
++++ b/Documentation/arch/arm64/booting.rst
+@@ -444,6 +444,12 @@ Before jumping into the kernel, the following conditions must be met:
+ 
+     - HCRX_EL2.EnASR (bit 2) must be initialised to 0b1.
+ 
++ For CPUs with Non-maskable Interrupts (FEAT_NMI):
++
++ - If the kernel is entered at EL1 and EL2 is present:
++
++   - HCRX_EL2.TALLINT must be initialised to 0b0.
++
+ The requirements described above for CPU mode, caches, MMUs, architected
+ timers, coherency and system registers apply to all CPUs.  All CPUs must
+ enter the kernel in the same exception level.  Where the values documented
+-- 
+2.43.0
+

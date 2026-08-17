@@ -1,0 +1,65 @@
+From 407e555e7631fcdea285212ae23d79fed055a199 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Mon, 26 Feb 2024 13:07:24 -0400
+Subject: [PATCH 309/960] iommu/arm-smmu-v3: Add a global static BLOCKED domain
+
+commit 352bd64cd8288c5c6808735d52a75809dfef8635 upstream.
+
+Using the same design as the IDENTITY domain install an
+STRTAB_STE_0_CFG_ABORT STE.
+
+Reviewed-by: Michael Shavit <mshavit@google.com>
+Reviewed-by: Nicolin Chen <nicolinc@nvidia.com>
+Tested-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Tested-by: Nicolin Chen <nicolinc@nvidia.com>
+Tested-by: Moritz Fischer <moritzf@google.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Link: https://lore.kernel.org/r/13-v6-96275f25c39d+2d4-smmuv3_newapi_p1_jgg@nvidia.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 9443e1627c6a..23190e8de854 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -2647,6 +2647,24 @@ static struct iommu_domain arm_smmu_identity_domain = {
+ 	.ops = &arm_smmu_identity_ops,
+ };
+ 
++static int arm_smmu_attach_dev_blocked(struct iommu_domain *domain,
++					struct device *dev)
++{
++	struct arm_smmu_ste ste;
++
++	arm_smmu_make_abort_ste(&ste);
++	return arm_smmu_attach_dev_ste(dev, &ste);
++}
++
++static const struct iommu_domain_ops arm_smmu_blocked_ops = {
++	.attach_dev = arm_smmu_attach_dev_blocked,
++};
++
++static struct iommu_domain arm_smmu_blocked_domain = {
++	.type = IOMMU_DOMAIN_BLOCKED,
++	.ops = &arm_smmu_blocked_ops,
++};
++
+ static int arm_smmu_map_pages(struct iommu_domain *domain, unsigned long iova,
+ 			      phys_addr_t paddr, size_t pgsize, size_t pgcount,
+ 			      int prot, gfp_t gfp, size_t *mapped)
+@@ -3059,6 +3077,7 @@ static void arm_smmu_remove_dev_pasid(struct device *dev, ioasid_t pasid)
+ 
+ static struct iommu_ops arm_smmu_ops = {
+ 	.identity_domain	= &arm_smmu_identity_domain,
++	.blocked_domain		= &arm_smmu_blocked_domain,
+ 	.capable		= arm_smmu_capable,
+ 	.domain_alloc		= arm_smmu_domain_alloc,
+ 	.probe_device		= arm_smmu_probe_device,
+-- 
+2.43.0
+

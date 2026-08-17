@@ -1,0 +1,141 @@
+From a606f7cb0bc4714591d5356a6ab90cc7e8ec83ae Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:57:35 +0800
+Subject: [PATCH 623/960] downstream: untested: KVM: arm64: Force guest EL1 to
+ use user-space's partid configuration
+
+While we trap the guest's attempts to read/write the MPAM control registers,
+these remain in effect. guest-EL0 uses KVM's user-space's configuration,
+as the value is left in the register, and guest-EL1 uses either the host
+kernel's configuration, or in the case of VHE, the unknown reset value of
+MPAM1_EL1.
+
+On nVHE systems, EL2 continues to use partid-0 for world-switch, even
+when the host may have configured its kernel threads to use a different
+partid. 0 may have been assigned to another task.
+
+We want to force the guest-EL1 to use KVM's user-space's MPAM configuration.
+
+On a nVHE system, copy the EL1 MPAM register to EL2. This ensures
+world-switch uses the same partid as the kernel thread does on the host.
+
+When loading the guests EL1 registers, copy the VMM's EL0 partid to
+the EL1 register. When restoring the hosts registers, the partid
+previously copied to EL2 can be used to restore EL1.
+
+For VHE systems, we can skip restoring the EL1 register for the host,
+as it is out-of-context once HCR_EL2.TGE is set.
+
+This is done outside the usual sysreg save/restore as the values can
+change behind KVMs back, so should not be stored in the guest context.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hyp/include/hyp/sysreg-sr.h | 27 ++++++++++++++++++++++
+ arch/arm64/kvm/hyp/nvhe/switch.c           | 11 +++++++++
+ arch/arm64/kvm/hyp/vhe/sysreg-sr.c         |  1 +
+ 3 files changed, 39 insertions(+)
+
+diff --git a/arch/arm64/kvm/hyp/include/hyp/sysreg-sr.h b/arch/arm64/kvm/hyp/include/hyp/sysreg-sr.h
+index bb6b571ec627..c8767abd693e 100644
+--- a/arch/arm64/kvm/hyp/include/hyp/sysreg-sr.h
++++ b/arch/arm64/kvm/hyp/include/hyp/sysreg-sr.h
+@@ -15,6 +15,7 @@
+ #include <asm/kvm_emulate.h>
+ #include <asm/kvm_hyp.h>
+ #include <asm/kvm_mmu.h>
++#include <asm/mpam.h>
+ 
+ static inline void __sysreg_save_common_state(struct kvm_cpu_context *ctxt)
+ {
+@@ -243,4 +244,30 @@ static inline void __sysreg32_restore_state(struct kvm_vcpu *vcpu)
+ 		write_sysreg(__vcpu_sys_reg(vcpu, DBGVCR32_EL2), dbgvcr32_el2);
+ }
+ 
++/*
++ * The _EL0 value was written by the host's context switch, copy this into the
++ * guest's EL1.
++ */
++static inline void __mpam_guest_load(void)
++{
++	if (IS_ENABLED(CONFIG_ARM64_MPAM) && mpam_cpus_have_feature())
++		write_sysreg_el1(read_sysreg_s(SYS_MPAM0_EL1), SYS_MPAM1);
++}
++
++/*
++ * Copy the _EL2 register back to _EL1, clearing any trap bits EL2 may have set.
++ * nVHE world-switch copies the _EL1 register to _EL2. A VHE host writes to the
++ * _EL2 register as it is aliased by the hardware when TGE is set.
++ */
++static inline void __mpam_guest_put(void)
++{
++	u64 val, mask = MPAM_SYSREG_PMG_D | MPAM_SYSREG_PMG_I |
++			MPAM_SYSREG_PARTID_D | MPAM_SYSREG_PARTID_I;
++
++	if (IS_ENABLED(CONFIG_ARM64_MPAM) && mpam_cpus_have_feature()) {
++		val = FIELD_GET(mask, read_sysreg_s(SYS_MPAM2_EL2));
++		write_sysreg_el1(val, SYS_MPAM1);
++	}
++}
++
+ #endif /* __ARM64_KVM_HYP_SYSREG_SR_H__ */
+diff --git a/arch/arm64/kvm/hyp/nvhe/switch.c b/arch/arm64/kvm/hyp/nvhe/switch.c
+index ec2f32cbd80c..68abbba1eef5 100644
+--- a/arch/arm64/kvm/hyp/nvhe/switch.c
++++ b/arch/arm64/kvm/hyp/nvhe/switch.c
+@@ -282,6 +282,13 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
+ 	return __fixup_guest_exit(vcpu, exit_code, handlers);
+ }
+ 
++/* Use the host thread's partid and pmg for world switch */
++static void __mpam_copy_el1_to_el2(void)
++{
++	if (IS_ENABLED(CONFIG_ARM64_MPAM) && mpam_cpus_have_feature())
++		write_sysreg_s(read_sysreg_s(SYS_MPAM1_EL1), SYS_MPAM2_EL2);
++}
++
+ /* Switch to the guest for legacy non-VHE systems */
+ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+ {
+@@ -291,6 +298,8 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+ 	bool pmu_switch_needed;
+ 	u64 exit_code;
+ 
++	__mpam_copy_el1_to_el2();
++
+ 	/*
+ 	 * Having IRQs masked via PMR when entering the guest means the GIC
+ 	 * will not signal the CPU of interrupts of lower priority, and the
+@@ -350,6 +359,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+ 	__timer_enable_traps(vcpu);
+ 
+ 	__debug_switch_to_guest(vcpu);
++	__mpam_guest_load();
+ 
+ 	do {
+ 		/* Jump in the fire! */
+@@ -360,6 +370,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
+ 
+ 	__sysreg_save_state_nvhe(guest_ctxt);
+ 	__sysreg32_save_state(vcpu);
++	__mpam_guest_put();
+ 	__timer_disable_traps(vcpu);
+ 	__hyp_vgic_save_state(vcpu);
+ 
+diff --git a/arch/arm64/kvm/hyp/vhe/sysreg-sr.c b/arch/arm64/kvm/hyp/vhe/sysreg-sr.c
+index 6d8b74953068..283e19127591 100644
+--- a/arch/arm64/kvm/hyp/vhe/sysreg-sr.c
++++ b/arch/arm64/kvm/hyp/vhe/sysreg-sr.c
+@@ -90,6 +90,7 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
+ 	__sysreg32_restore_state(vcpu);
+ 	__sysreg_restore_user_state(guest_ctxt);
+ 	__sysreg_restore_el1_state(guest_ctxt);
++	__mpam_guest_load();
+ 
+ #ifdef CONFIG_ARM64_HDBSS
+ 	__load_hdbss(vcpu);
+-- 
+2.43.0
+

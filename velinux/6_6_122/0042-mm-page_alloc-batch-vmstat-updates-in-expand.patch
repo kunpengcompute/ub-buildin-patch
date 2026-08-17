@@ -1,0 +1,57 @@
+From 8e28122916ef2cf589e7e92d2b5a1c617b412145 Mon Sep 17 00:00:00 2001
+From: Johannes Weiner <hannes@cmpxchg.org>
+Date: Wed, 27 Mar 2024 15:01:11 -0400
+Subject: [PATCH 042/960] mm: page_alloc: batch vmstat updates in expand()
+
+commit 883dd161e9a83e188487debc562b1928917a4b39 upstream.
+
+expand() currently updates vmstat for every subpage.  This is unnecessary,
+since they're all of the same zone and migratetype.
+
+Count added pages locally, then do a single vmstat update.
+
+Link: https://lkml.kernel.org/r/20240327190111.GC7597@cmpxchg.org
+Signed-off-by: Johannes Weiner <hannes@cmpxchg.org>
+Suggested-by: Vlastimil Babka <vbabka@suse.cz>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/page_alloc.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index 5f547bed7269..a151a88d9cf8 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -1375,13 +1375,11 @@ struct page *__pageblock_pfn_to_page(unsigned long start_pfn,
+  *
+  * -- nyc
+  */
+-static inline void add_to_free_list(struct page *page, struct zone *zone,
+-				    unsigned int order, int migratetype,
+-				    bool tail);
+ static inline void expand(struct zone *zone, struct page *page,
+ 	int low, int high, int migratetype)
+ {
+ 	unsigned long size = 1 << high;
++	unsigned long nr_added = 0;
+ 
+ 	while (high > low) {
+ 		high--;
+@@ -1397,9 +1395,11 @@ static inline void expand(struct zone *zone, struct page *page,
+ 		if (set_page_guard(zone, &page[size], high))
+ 			continue;
+ 
+-		add_to_free_list(&page[size], zone, high, migratetype, false);
++		__add_to_free_list(&page[size], zone, high, migratetype, false);
+ 		set_buddy_order(&page[size], high);
++		nr_added += size;
+ 	}
++	account_freepages(zone, nr_added, migratetype);
+ }
+ 
+ static void check_new_page_bad(struct page *page)
+-- 
+2.43.0
+

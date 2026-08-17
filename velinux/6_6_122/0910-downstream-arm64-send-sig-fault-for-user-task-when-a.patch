@@ -1,0 +1,69 @@
+From 6a2410fdf9513d99d24e107bb1c08b86c7d20d42 Mon Sep 17 00:00:00 2001
+From: Wupeng Ma <mawupeng1@huawei.com>
+Date: Tue, 3 Mar 2026 15:32:02 +0800
+Subject: [PATCH 910/960] downstream: arm64: send sig fault for user task when
+ apei_claim_sea fails
+
+During do_sea, kernel will panic if no info is reported to kernel since
+apei_claim_sea failed. However, for user task, sig fault can be send to
+which can avoid kernel panic.
+
+Signed-off-by: Wupeng Ma <mawupeng1@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/mm/fault.c | 21 +++++++++++++++++----
+ 1 file changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/mm/fault.c b/arch/arm64/mm/fault.c
+index 9636ba4589c8..51afeb2e16cf 100644
+--- a/arch/arm64/mm/fault.c
++++ b/arch/arm64/mm/fault.c
+@@ -759,8 +759,10 @@ static int do_bad(unsigned long far, unsigned long esr, struct pt_regs *regs)
+  * Some processing deferred to task_work before ret_to_user().
+  */
+ static bool do_apei_claim_sea(unsigned long esr, struct pt_regs *regs,
+-			      unsigned long siaddr)
++			      unsigned long siaddr, int sig, int code)
+ {
++	int err;
++
+ 	if (user_mode(regs)) {
+ 		if (!apei_claim_sea(regs))
+ 			return true;
+@@ -779,10 +781,21 @@ static bool do_apei_claim_sea(unsigned long esr, struct pt_regs *regs,
+ 	if (!fixup_exception_me(regs))
+ 		return false;
+ 
+-	if (apei_claim_sea(regs))
++	err = apei_claim_sea(regs);
++	if (!err)
+ 		return true;
+ 
+-	return false;
++	pr_emerg("comm: %s pid: %d apei claim sea failed. addr: %#lx, esr: %#lx\n",
++		current->comm, current->pid, siaddr, esr);
++
++	if (!current->mm)
++		return true;
++
++	set_thread_esr(0, esr);
++	arm64_force_sig_fault(sig, code, siaddr,
++		"Uncorrected memory error on access to user memory\n");
++
++	return true;
+ }
+ 
+ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
+@@ -803,7 +816,7 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
+ 	}
+ 	add_taint(TAINT_MACHINE_CHECK, LOCKDEP_STILL_OK);
+ 
+-	if (do_apei_claim_sea(esr, regs, siaddr))
++	if (do_apei_claim_sea(esr, regs, siaddr, inf->sig, inf->code))
+ 		return 0;
+ 
+ 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
+-- 
+2.43.0
+

@@ -1,0 +1,50 @@
+From 1d3cb060c388342795e2a718c65001c5661a3259 Mon Sep 17 00:00:00 2001
+From: eillon <yezhenyu2@huawei.com>
+Date: Wed, 2 Apr 2025 15:56:27 +0800
+Subject: [PATCH 555/960] downstream: arm64/kabi: use KABI_EXTEND to skip KABI
+ check
+
+Use KABI_EXTEND to skip KABI check of HDBSS feature.
+
+Signed-off-by: eillon <yezhenyu2@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h | 4 ++--
+ include/linux/kvm_host.h          | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 06c578d8f3c0..67fad82111eb 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -619,10 +619,10 @@ struct kvm_vcpu_arch {
+ #endif
+ #ifdef CONFIG_ARM64_HDBSS
+ 	/* HDBSS registers info */
+-	struct {
++	KABI_EXTEND(struct {
+ 		u64 br_el2;
+ 		u64 prod_el2;
+-	} hdbss;
++	} hdbss)
+ #endif
+ 
+ };
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index 7c38fccba3e4..cd44b4342cb6 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -820,7 +820,7 @@ struct kvm {
+ #endif
+ 	char stats_id[KVM_STATS_NAME_SIZE];
+ #ifdef CONFIG_ARM64_HDBSS
+-	bool enable_hdbss;
++	KABI_EXTEND(bool enable_hdbss)
+ #endif
+ };
+ 
+-- 
+2.43.0
+

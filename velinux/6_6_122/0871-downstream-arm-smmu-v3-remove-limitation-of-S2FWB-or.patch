@@ -1,0 +1,37 @@
+From 0af5531e8c5e64fd7b2a79b8431ed8934e725432 Mon Sep 17 00:00:00 2001
+From: Zhangfei Gao <zhangfei.gao@linaro.org>
+Date: Mon, 25 Nov 2024 03:26:44 +0000
+Subject: [PATCH 871/960] downstream: arm-smmu-v3: remove limitation of S2FWB
+ or CANWBS
+
+Remove the limitation of S2FWB or CANWBS temperatily.
+S2FWB will be supported in the new chip.
+CANWBS can be supported via device FW.
+https://patches.linaro.org/project/linux-acpi/patch/3-v3-e2e16cd7467f+2a6a1-smmuv3_nesting_jgg@nvidia.com/
+Signed-off-by: Zhangfei Gao <zhangfei.gao@linaro.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
+index 25b273f4c31a..6b11af76eb97 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
+@@ -390,9 +390,11 @@ struct iommufd_viommu *arm_vsmmu_alloc(struct device *dev,
+ 	 * things non-coherent using the memattr, but No-Snoop behavior is not
+ 	 * effected.
+ 	 */
++	/*
+ 	if (!arm_smmu_master_canwbs(master) &&
+ 	    !(smmu->features & ARM_SMMU_FEAT_S2FWB))
+ 		return ERR_PTR(-EOPNOTSUPP);
++	*/
+ 
+ 	vsmmu = iommufd_viommu_alloc(ictx, struct arm_vsmmu, core,
+ 				     &arm_vsmmu_ops);
+-- 
+2.43.0
+

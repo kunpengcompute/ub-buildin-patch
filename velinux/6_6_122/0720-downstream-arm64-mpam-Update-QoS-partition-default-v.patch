@@ -1,0 +1,87 @@
+From f542f3d1cd3a31af4ae9fd1a09a4eaa3a0e80886 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Fri, 23 May 2025 12:21:36 +0800
+Subject: [PATCH 720/960] downstream: arm64/mpam: Update QoS partition default
+ value
+
+No longer use the configurable maximum value as the default for QoS
+configuration. Instead, we have updated the recommended value to be the
+default.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index db46cd9a3d13..05a5f9ea3929 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -921,6 +921,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
+ 		r->fflags = RFTYPE_RES_MB;
+ 		r->default_ctrl = MAX_MBA_BW;
++		r->membw.max_bw = MAX_MBA_BW;
+ 		r->data_width = 3;
+ 
+ 		r->membw.delay_linear = true;
+@@ -949,6 +950,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
+ 		r->fflags = RFTYPE_RES_CACHE;
+ 		r->default_ctrl = MAX_MBA_BW;
++		r->membw.max_bw = MAX_MBA_BW;
+ 		r->data_width = 3;
+ 		r->cache_level = class->level;
+ 
+@@ -964,7 +966,8 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->format_str = "%d=%0*u";
+ 		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
+ 		r->fflags = RFTYPE_RES_CACHE;
+-		r->default_ctrl = MAX_MBA_BW;
++		r->default_ctrl = 0;
++		r->membw.max_bw = MAX_MBA_BW;
+ 		r->data_width = 3;
+ 		r->cache_level = class->level;
+ 
+@@ -979,7 +982,8 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->format_str = "%d=%0*u";
+ 		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
+ 		r->fflags = RFTYPE_RES_MB;
+-		r->default_ctrl = MAX_MBA_BW;
++		r->default_ctrl = 0;
++		r->membw.max_bw = MAX_MBA_BW;
+ 		r->data_width = 3;
+ 
+ 		r->membw.delay_linear = true;
+@@ -999,7 +1003,8 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->format_str = "%d=%0*u";
+ 		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
+ 		r->fflags = RFTYPE_RES_CACHE;
+-		r->default_ctrl = GENMASK(cprops->intpri_wd - 1, 0);
++		r->default_ctrl = 0;
++		r->membw.max_bw = GENMASK(cprops->intpri_wd - 1, 0);
+ 		r->data_width = 3;
+ 		r->cache_level = class->level;
+ 
+@@ -1014,7 +1019,8 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->format_str = "%d=%0*u";
+ 		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
+ 		r->fflags = RFTYPE_RES_MB;
+-		r->default_ctrl = GENMASK(cprops->intpri_wd - 1, 0);
++		r->default_ctrl = 3;
++		r->membw.max_bw = GENMASK(cprops->intpri_wd - 1, 0);
+ 		r->data_width = 3;
+ 
+ 		r->membw.bw_gran = 1;
+@@ -1028,6 +1034,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->schema_fmt = RESCTRL_SCHEMA_RANGE;
+ 		r->fflags = RFTYPE_RES_MB;
+ 		r->default_ctrl = 1;
++		r->membw.max_bw = 1;
+ 		r->data_width = 1;
+ 
+ 		r->membw.bw_gran = 1;
+-- 
+2.43.0
+

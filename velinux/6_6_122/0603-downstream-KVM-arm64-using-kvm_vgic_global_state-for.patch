@@ -1,0 +1,149 @@
+From ba570307d68142502aae8e9202728bbe4924bc80 Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Fri, 23 May 2025 20:45:33 +0800
+Subject: [PATCH 603/960] downstream: KVM: arm64: using kvm_vgic_global_state
+ for ipiv
+
+when kvm-arm.vgic_v4_enable=0 kvm-arm.ipiv_enabled=1 is configured in the
+cmdline, the Host KVM displays "ipiv enabled", but ipiv is not enabled.
+gic_data.rdists.has_rvpeid is hardware-level information, which does not
+indicate that GICv4.1 is enabled for KVM.
+
+So whether the host supports IPIV depends on KVM enables GICv4.1m instead
+of hardware supports GICv4.1.
+
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/kvm_host.h    |  4 ----
+ arch/arm64/kvm/arm.c                 | 14 --------------
+ arch/arm64/kvm/hisilicon/hisi_virt.c |  2 +-
+ arch/arm64/kvm/hisilicon/hisi_virt.h |  1 -
+ arch/arm64/kvm/vgic/vgic-init.c      | 11 +++++++++++
+ drivers/irqchip/irq-gic-v3.c         |  9 ---------
+ 6 files changed, 12 insertions(+), 29 deletions(-)
+
+diff --git a/arch/arm64/include/asm/kvm_host.h b/arch/arm64/include/asm/kvm_host.h
+index 19125cd8afde..03b857ca7068 100644
+--- a/arch/arm64/include/asm/kvm_host.h
++++ b/arch/arm64/include/asm/kvm_host.h
+@@ -1226,8 +1226,4 @@ extern bool force_wfi_trap;
+ extern bool kvm_ncsnp_support;
+ extern bool kvm_dvmbm_support;
+ 
+-#ifdef CONFIG_ARM64_HISI_IPIV
+-extern bool kvm_ipiv_support;
+-#endif
+-
+ #endif /* __ARM64_KVM_HOST_H__ */
+diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
+index eb023af46360..4d74bbbcf0b1 100644
+--- a/arch/arm64/kvm/arm.c
++++ b/arch/arm64/kvm/arm.c
+@@ -64,11 +64,6 @@ bool kvm_ncsnp_support;
+ /* Capability of DVMBM */
+ bool kvm_dvmbm_support;
+ 
+-#ifdef CONFIG_ARM64_HISI_IPIV
+-/* Capability of IPIV */
+-bool kvm_ipiv_support;
+-#endif /* CONFIG_ARM64_HISI_IPIV */
+-
+ static DEFINE_PER_CPU(unsigned char, kvm_hyp_initialized);
+ 
+ bool is_kvm_arm_initialised(void)
+@@ -2675,17 +2670,8 @@ static __init int kvm_arm_init(void)
+ 	probe_hisi_cpu_type();
+ 	kvm_ncsnp_support = hisi_ncsnp_supported();
+ 	kvm_dvmbm_support = hisi_dvmbm_supported();
+-#ifdef CONFIG_ARM64_HISI_IPIV
+-	kvm_ipiv_support = hisi_ipiv_supported();
+-#endif
+ 	kvm_info("KVM ncsnp %s\n", kvm_ncsnp_support ? "enabled" : "disabled");
+ 	kvm_info("KVM dvmbm %s\n", kvm_dvmbm_support ? "enabled" : "disabled");
+-#ifdef CONFIG_ARM64_HISI_IPIV
+-	kvm_info("KVM ipiv %s\n", kvm_ipiv_support ? "enabled" : "disabled");
+-
+-	if (kvm_ipiv_support)
+-		ipiv_gicd_init();
+-#endif
+ 
+ 	if (kvm_dvmbm_support)
+ 		kvm_get_pg_cfg();
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.c b/arch/arm64/kvm/hisilicon/hisi_virt.c
+index 6a7c3a7f7a69..d9029d612697 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.c
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.c
+@@ -184,7 +184,7 @@ bool hisi_ipiv_supported(void)
+ 		return false;
+ 
+ 	/* Enable IPIV feature if necessary */
+-	if (!is_gicv4p1()) {
++	if (!kvm_vgic_global_state.has_gicv4_1) {
+ 		kvm_info("Hisi ipiv needs to enable GICv4p1!\n");
+ 		return false;
+ 	}
+diff --git a/arch/arm64/kvm/hisilicon/hisi_virt.h b/arch/arm64/kvm/hisilicon/hisi_virt.h
+index 7e7fa1399e28..15943e1fc27b 100644
+--- a/arch/arm64/kvm/hisilicon/hisi_virt.h
++++ b/arch/arm64/kvm/hisilicon/hisi_virt.h
+@@ -138,6 +138,5 @@ static inline void kvm_hisi_reload_lsudvmbm(struct kvm *kvm) {}
+ 
+ #ifdef CONFIG_ARM64_HISI_IPIV
+ extern bool gic_dist_enable_ipiv(void);
+-extern bool is_gicv4p1(void);
+ #endif /* CONFIG_ARM64_HISI_IPIV */
+ #endif /* __HISI_VIRT_H__ */
+diff --git a/arch/arm64/kvm/vgic/vgic-init.c b/arch/arm64/kvm/vgic/vgic-init.c
+index b0faee550d1b..7d7dfa90b5d6 100644
+--- a/arch/arm64/kvm/vgic/vgic-init.c
++++ b/arch/arm64/kvm/vgic/vgic-init.c
+@@ -13,6 +13,10 @@
+ #include <asm/kvm_mmu.h>
+ #include "vgic.h"
+ 
++#ifdef CONFIG_ARM64_HISI_IPIV
++#include "hisilicon/hisi_virt.h"
++#endif
++
+ /*
+  * Initialization rules: there are multiple stages to the vgic
+  * initialization, both for the distributor and the CPU interfaces.  The basic
+@@ -663,6 +667,13 @@ int kvm_vgic_hyp_init(void)
+ 	kvm_info("vgic interrupt IRQ%d\n", kvm_vgic_global_state.maint_irq);
+ 
+ #ifdef CONFIG_ARM64_HISI_IPIV
++	if (hisi_ipiv_supported()) {
++		ipiv_gicd_init();
++		kvm_info("KVM ipiv enabled\n");
++	} else {
++		kvm_info("KVM ipiv disabled\n");
++	}
++
+ 	if (static_branch_unlikely(&ipiv_enable)) {
+ 		ipiv_irq = acpi_register_gsi(NULL, 18, ACPI_EDGE_SENSITIVE,
+ 			ACPI_ACTIVE_HIGH);
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 06ca53cdf796..6739061eb801 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -1371,15 +1371,6 @@ static int gic_dist_supports_lpis(void)
+ }
+ 
+ #ifdef CONFIG_ARM64_HISI_IPIV
+-bool is_gicv4p1(void)
+-{
+-	if (!gic_data.rdists.has_rvpeid)
+-		return false;
+-
+-	return true;
+-}
+-EXPORT_SYMBOL(is_gicv4p1);
+-
+ void gic_dist_enable_ipiv(void)
+ {
+ 	u32 val;
+-- 
+2.43.0
+

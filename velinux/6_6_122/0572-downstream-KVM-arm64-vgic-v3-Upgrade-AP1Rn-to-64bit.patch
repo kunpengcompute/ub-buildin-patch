@@ -1,0 +1,68 @@
+From a88e445c35d9f996c502a96295c1e656c013d775 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:21:57 +0800
+Subject: [PATCH 572/960] downstream: KVM: arm64: vgic-v3: Upgrade AP1Rn to
+ 64bit.
+
+With the advent of FEAT_GIC_NMI, ICH_AP1R0_EL2 is now a 64bit
+register, as the NMI priority is encoded in bit 63.
+
+Upgrade the whole of the AP1Rn array to 64bit, leaving the
+Group0 equivalent to 32bit.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hyp/vgic-v3-sr.c | 11 ++++++++---
+ include/kvm/arm_vgic.h          |  2 +-
+ 2 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/kvm/hyp/vgic-v3-sr.c b/arch/arm64/kvm/hyp/vgic-v3-sr.c
+index 6cb638b184b1..05955e369c51 100644
+--- a/arch/arm64/kvm/hyp/vgic-v3-sr.c
++++ b/arch/arm64/kvm/hyp/vgic-v3-sr.c
+@@ -130,7 +130,11 @@ static void __vgic_v3_write_ap0rn(u32 val, int n)
+ 	}
+ }
+ 
+-static void __vgic_v3_write_ap1rn(u32 val, int n)
++/*
++ * Contrary to ICH_AP0Rn_EL2, ICH_AP1R0_EL2 is 64bit, thanks to the
++ * NMI bit stuck at [63]. Isn't that fun?
++ */
++static void __vgic_v3_write_ap1rn(u64 val, int n)
+ {
+ 	switch (n) {
+ 	case 0:
+@@ -172,9 +176,10 @@ static u32 __vgic_v3_read_ap0rn(int n)
+ 	return val;
+ }
+ 
+-static u32 __vgic_v3_read_ap1rn(int n)
++/* Same remark about the 64bit-ness of AP1R0 */
++static u64 __vgic_v3_read_ap1rn(int n)
+ {
+-	u32 val;
++	u64 val;
+ 
+ 	switch (n) {
+ 	case 0:
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index 2bc5c4a8e205..fb74673d81ea 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -357,7 +357,7 @@ struct vgic_v3_cpu_if {
+ 	u32		vgic_vmcr;
+ 	u32		vgic_sre;	/* Restored only, change ignored */
+ 	u32		vgic_ap0r[4];
+-	u32		vgic_ap1r[4];
++	u64		vgic_ap1r[4];
+ 	u64		vgic_lr[VGIC_V3_MAX_LRS];
+ 
+ 	/*
+-- 
+2.43.0
+

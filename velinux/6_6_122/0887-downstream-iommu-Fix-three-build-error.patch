@@ -1,0 +1,60 @@
+From 245cf86f26395efecf696e92e8a98afc3f4b8f52 Mon Sep 17 00:00:00 2001
+From: Liu Shixin <liushixin2@huawei.com>
+Date: Mon, 20 Apr 2026 15:56:03 +0800
+Subject: [PATCH 887/960] downstream: iommu: Fix three build error
+
+The 'node' member has been moved from struct iopf_group to
+struct iopf_group_extend. Fix three related problems:
+
+- Fix missing update for 'node' member access in iommufd_fault_deliver_restore
+- Fix undefined variable 'group' build error in iommufd_fault_destroy
+- Remove redundant duplicate variable definitions in iommufd_fault_fops_read
+
+Fixes: 5a326226938b ("downstream: iommu: Fix kabi breakage")
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/fault.c           | 2 +-
+ drivers/iommu/iommufd/iommufd_private.h | 5 ++++-
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/iommu/iommufd/fault.c b/drivers/iommu/iommufd/fault.c
+index bd890d49937b..3afbb43479b5 100644
+--- a/drivers/iommu/iommufd/fault.c
++++ b/drivers/iommu/iommufd/fault.c
+@@ -228,6 +228,7 @@ int iommufd_fault_domain_replace_dev(struct iommufd_device *idev,
+ void iommufd_fault_destroy(struct iommufd_object *obj)
+ {
+ 	struct iommufd_fault *fault = container_of(obj, struct iommufd_fault, obj);
++	struct iopf_group *group;
+ 	struct iopf_group_extend *group_extend, *next;
+ 	unsigned long index;
+ 
+@@ -274,7 +275,6 @@ static ssize_t iommufd_fault_fops_read(struct file *filep, char __user *buf,
+ 	struct iommu_hwpt_pgfault data = {};
+ 	struct iommufd_device *idev;
+ 	struct iopf_group *group;
+-	struct iopf_group_extend *group_extend;
+ 	struct iopf_fault *iopf;
+ 	size_t done = 0;
+ 	int rc = 0;
+diff --git a/drivers/iommu/iommufd/iommufd_private.h b/drivers/iommu/iommufd/iommufd_private.h
+index b16559f06fa7..ae9cac05cb2a 100644
+--- a/drivers/iommu/iommufd/iommufd_private.h
++++ b/drivers/iommu/iommufd/iommufd_private.h
+@@ -467,8 +467,11 @@ iommufd_fault_deliver_fetch(struct iommufd_fault *fault)
+ static inline void iommufd_fault_deliver_restore(struct iommufd_fault *fault,
+ 						 struct iopf_group *group)
+ {
++	struct iopf_group_extend *group_extend =
++		container_of(group, struct iopf_group_extend, iopf_group);
++
+ 	spin_lock(&fault->lock);
+-	list_add(&group->node, &fault->deliver);
++	list_add(&group_extend->node, &fault->deliver);
+ 	spin_unlock(&fault->lock);
+ }
+ 
+-- 
+2.43.0
+

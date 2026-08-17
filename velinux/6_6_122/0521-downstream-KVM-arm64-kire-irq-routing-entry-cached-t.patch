@@ -1,0 +1,142 @@
+From 6a10224edf68ebf14e2e931ef01d87aa4a56f5b1 Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:27 +0800
+Subject: [PATCH 521/960] downstream: KVM: arm64: kire: irq routing entry
+ cached the relevant cache data
+
+For each kernel irq routing entry, cached the relevant virtual
+shadow device, for IRQ bypass inject in future.
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-irqfd.c | 23 +++++++++++++++++++++++
+ include/kvm/arm_vgic.h           |  1 +
+ include/linux/kvm_host.h         | 16 ++++++++++++++++
+ virt/kvm/eventfd.c               | 11 +++++++++++
+ 4 files changed, 51 insertions(+)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-irqfd.c b/arch/arm64/kvm/vgic/vgic-irqfd.c
+index 475059bacedf..381b700c7141 100644
+--- a/arch/arm64/kvm/vgic/vgic-irqfd.c
++++ b/arch/arm64/kvm/vgic/vgic-irqfd.c
+@@ -9,6 +9,29 @@
+ #include <kvm/arm_vgic.h>
+ #include "vgic.h"
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++static void kvm_populate_msi(struct kvm_kernel_irq_routing_entry *e,
++			    struct kvm_msi *msi);
++
++void kire_arch_cached_data_update(struct kvm *kvm,
++			struct kvm_kernel_irq_routing_entry *e)
++{
++	struct vgic_dist *dist = &kvm->arch.vgic;
++	struct kire_data *cache = &e->cache;
++	struct shadow_dev *sdev;
++	struct kvm_msi msi;
++
++	kvm_populate_msi(e, &msi);
++
++	raw_spin_lock(&dist->sdev_list_lock);
++	sdev = kvm_shadow_dev_get(kvm, &msi);
++	raw_spin_unlock(&dist->sdev_list_lock);
++
++	cache->valid = !!sdev;
++	cache->data = sdev;
++}
++#endif
++
+ /**
+  * vgic_irqfd_set_irq: inject the IRQ corresponding to the
+  * irqchip routing entry
+diff --git a/include/kvm/arm_vgic.h b/include/kvm/arm_vgic.h
+index 0e6726a5c707..9c20fea176f1 100644
+--- a/include/kvm/arm_vgic.h
++++ b/include/kvm/arm_vgic.h
+@@ -465,6 +465,7 @@ void kvm_shadow_dev_init(void);
+ int kvm_shadow_dev_create(struct kvm *kvm, struct kvm_master_dev_info *mdi);
+ void kvm_shadow_dev_delete(struct kvm *kvm, u32 devid);
+ void kvm_shadow_dev_delete_all(struct kvm *kvm);
++struct shadow_dev *kvm_shadow_dev_get(struct kvm *kvm, struct kvm_msi *msi);
+ #endif
+ 
+ #endif /* __KVM_ARM_VGIC_H */
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index 26a8c4ae2244..53b1f025d27e 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -631,6 +631,13 @@ struct kvm_xen_evtchn {
+ 	u32 priority;
+ };
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++struct kire_data {
++	bool    valid;
++	void    *data;
++};
++#endif
++
+ struct kvm_kernel_irq_routing_entry {
+ 	u32 gsi;
+ 	u32 type;
+@@ -654,6 +661,10 @@ struct kvm_kernel_irq_routing_entry {
+ 		struct kvm_xen_evtchn xen_evtchn;
+ 	};
+ 	struct hlist_node link;
++
++#ifdef CONFIG_VIRT_PLAT_DEV
++	struct kire_data cache;
++#endif
+ };
+ 
+ #ifdef CONFIG_HAVE_KVM_IRQ_ROUTING
+@@ -1649,6 +1660,11 @@ int kvm_request_irq_source_id(struct kvm *kvm);
+ void kvm_free_irq_source_id(struct kvm *kvm, int irq_source_id);
+ bool kvm_arch_irqfd_allowed(struct kvm *kvm, struct kvm_irqfd *args);
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++void kire_arch_cached_data_update(struct kvm *kvm,
++				  struct kvm_kernel_irq_routing_entry *e);
++#endif
++
+ /*
+  * Returns a pointer to the memslot if it contains gfn.
+  * Otherwise returns NULL.
+diff --git a/virt/kvm/eventfd.c b/virt/kvm/eventfd.c
+index 2c38ada6e417..763af3bc64be 100644
+--- a/virt/kvm/eventfd.c
++++ b/virt/kvm/eventfd.c
+@@ -38,6 +38,14 @@ kvm_arch_irqfd_allowed(struct kvm *kvm, struct kvm_irqfd *args)
+ 	return true;
+ }
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++void __weak
++kire_arch_cached_data_update(struct kvm *kvm,
++			     struct kvm_kernel_irq_routing_entry *e)
++{
++}
++#endif
++
+ static void
+ irqfd_inject(struct work_struct *work)
+ {
+@@ -270,6 +278,9 @@ static void irqfd_update(struct kvm *kvm, struct kvm_kernel_irqfd *irqfd)
+ 	else
+ 		irqfd->irq_entry.type = 0;
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++	kire_arch_cached_data_update(kvm, &irqfd->irq_entry);
++#endif
+ 	write_seqcount_end(&irqfd->irq_entry_sc);
+ }
+ 
+-- 
+2.43.0
+

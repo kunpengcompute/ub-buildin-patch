@@ -1,0 +1,538 @@
+From fe23f035d184fcc8c12a87c41fa15bc963a369b5 Mon Sep 17 00:00:00 2001
+From: Yicong Yang <yangyicong@hisilicon.com>
+Date: Thu, 10 Apr 2025 16:25:50 +0800
+Subject: [PATCH 556/960] downstream: perf stat: Enable iostat mode for
+ HiSilicon PCIe PMU
+
+Some HiSilicon platforms provide PCIe PMU devices for monitoring the
+bandwidth and latency of PCIe traffic. With the support of PCIe PMU
+we can enable the perf iostat mode.
+
+The HiSilicon PCIe PMU can support measuring the bandwidth of certain
+TLP types and of certian root port. Totally 6 metrics are provided in
+the unit of MB:
+
+- Inbound MWR: The memory write TLPs from the devices downstream the root port
+- Inbound MRD: The memory read TLPs from the devices downstream the root port
+- Inbound CPL: The completion TLPs from the devices downstream the root port
+- Outbound MWR: The memory write TLPs from the CPU to the downstream devices
+- Outbound MRD: The memory read TLPs from the CPU to the downstream devices
+- Outbound CPL: The completions TLPs from the CPU to the downstream devices
+
+Since the PMU measure the throughput with unit of DWords. So we need the
+calculate the actually bandwidth like:
+  Count * 4B / 1024 / 1024 / Time_elapsed (MB)
+
+Some of the display of the `perf iostat` will be like:
+[root@localhost tmp]# ./perf iostat list
+hisi_pcie8_core2<0000:aa:00.0>
+hisi_pcie0_core2<0000:40:00.0>
+hisi_pcie10_core2<0000:d5:00.0>
+hisi_pcie8_core1<0000:95:04.0>
+hisi_pcie8_core1<0000:95:00.0>
+hisi_pcie2_core2<0000:5f:00.0>
+hisi_pcie0_core1<0000:16:00.0>
+hisi_pcie0_core1<0000:16:04.0>
+[root@localhost tmp]# ./perf iostat --timeout 10000
+
+ Performance counter stats for 'system wide':
+
+    port              Inbound MWR(MB)      Inbound MRD(MB)      Inbound CPL(MB)     Outbound MWR(MB)     Outbound MRD(MB)     Outbound CPL(MB)
+0000:aa:00.0                    0                    0                    0                    0                    0                    0
+0000:40:00.0                    0                    0                    0                    0                    0                    0
+0000:d5:00.0                    0                    0                    0                    0                    0                    0
+0000:95:04.0                    9                   81                    0                    1                    0                 2497
+0000:95:00.0                    0                    0                    0                    0                    0                    0
+0000:5f:00.0                    0                    0                    0                    0                    0                    0
+0000:16:00.0                    0                    0                    0                    0                    0                    0
+0000:16:04.0                 5658                    2                    0                    2                    0                   17
+
+      10.006795510 seconds time elapsed
+[root@localhost tmp]# ./perf iostat 0000:95:04.0 -- iperf -c 192.100.100.1 -t 30
+------------------------------------------------------------
+Client connecting to 192.100.100.1, TCP port 5001
+TCP window size: 1.79 MByte (default)
+------------------------------------------------------------
+[  3] local 192.100.100.2 port 57130 connected with 192.100.100.1 port 5001
+[ ID] Interval       Transfer     Bandwidth
+[  3]  0.0-30.0 sec  32.9 GBytes  9.41 Gbits/sec
+
+ Performance counter stats for 'system wide':
+
+    port              Inbound MWR(MB)      Inbound MRD(MB)      Inbound CPL(MB)     Outbound MWR(MB)     Outbound MRD(MB)     Outbound CPL(MB)
+0000:95:04.0                    4                   41                    0                    1                    0                 1259
+
+      30.060558310 seconds time elapsed
+
+       0.060853000 seconds user
+       3.758800000 seconds sys
+
+More information of the HiSilicon PCIe PMU can be found at
+Documentation/admin-guide/perf/hisi-pcie-pmu.rst.
+
+Signed-off-by: Yicong Yang <yangyicong@hisilicon.com>
+Signed-off-by: Yushan Wang <wangyushan12@huawei.com>
+Signed-off-by: Qizhi Zhang <zhangqizhi3@h-partners.com>
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ tools/perf/arch/arm64/util/Build         |   1 +
+ tools/perf/arch/arm64/util/hisi-iostat.c | 432 +++++++++++++++++++++++
+ 2 files changed, 433 insertions(+)
+ create mode 100644 tools/perf/arch/arm64/util/hisi-iostat.c
+
+diff --git a/tools/perf/arch/arm64/util/Build b/tools/perf/arch/arm64/util/Build
+index 78ef7115be3d..4e8dabf98b29 100644
+--- a/tools/perf/arch/arm64/util/Build
++++ b/tools/perf/arch/arm64/util/Build
+@@ -3,6 +3,7 @@ perf-y += machine.o
+ perf-y += perf_regs.o
+ perf-y += tsc.o
+ perf-y += pmu.o
++perf-y += hisi-iostat.o
+ perf-$(CONFIG_LIBTRACEEVENT) += kvm-stat.o
+ perf-$(CONFIG_DWARF)     += dwarf-regs.o
+ perf-$(CONFIG_LOCAL_LIBUNWIND) += unwind-libunwind.o
+diff --git a/tools/perf/arch/arm64/util/hisi-iostat.c b/tools/perf/arch/arm64/util/hisi-iostat.c
+new file mode 100644
+index 000000000000..71a952d7de31
+--- /dev/null
++++ b/tools/perf/arch/arm64/util/hisi-iostat.c
+@@ -0,0 +1,432 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * perf iostat support for HiSilicon PCIe PMU.
++ * Partly derived from tools/perf/arch/x86/util/iostat.c.
++ *
++ * Copyright (c) 2024 HiSilicon Technologies Co., Ltd.
++ * Author: Yicong Yang <yangyicong@hisilicon.com>
++ */
++
++#include <api/fs/fs.h>
++#include <linux/err.h>
++#include <linux/zalloc.h>
++#include <linux/limits.h>
++#include <dirent.h>
++#include <stdio.h>
++#include <errno.h>
++#include <stdlib.h>
++
++#include "util/counts.h"
++#include "util/cpumap.h"
++#include "util/debug.h"
++#include "util/iostat.h"
++#include "util/pmu.h"
++
++#define PCI_DEFAULT_DOMAIN		0
++#define PCI_DEVICE_NAME_PATTERN		"%04x:%02hhx:%02hhx.%hhu"
++#define PCI_ROOT_BUS_DEVICES_PATH	"bus/pci/devices"
++
++static const char *const hisi_iostat_metrics[] = {
++	"Inbound MWR(MB)",
++	"Inbound MRD(MB)",
++	"Inbound CPL(MB)",
++	"Outbound MWR(MB)",
++	"Outbound MRD(MB)",
++	"Outbound CPL(MB)",
++};
++
++static const char *const hisi_iostat_cmd_template[] = {
++	/* Inbound Memory Write */
++	"hisi_pcie%hu_core%hu/event=0x0104,port=0x%hx/",
++	/* Inbound Memory Read */
++	"hisi_pcie%hu_core%hu/event=0x0804,port=0x%hx/",
++	/* Inbound Memory Completion */
++	"hisi_pcie%hu_core%hu/event=0x2004,port=0x%hx/",
++	/* Outbound Memory Write */
++	"hisi_pcie%hu_core%hu/event=0x0105,port=0x%hx/",
++	/* Outbound Memory Read */
++	"hisi_pcie%hu_core%hu/event=0x0405,port=0x%hx/",
++	/* Outbound Memory Completion */
++	"hisi_pcie%hu_core%hu/event=0x1005,port=0x%hx/",
++};
++
++struct hisi_pcie_root_port {
++	struct list_head list;
++	/* Is this Root Port selected for monitoring */
++	bool selected;
++	/* IDs to locate the PMU */
++	u16 sicl_id;
++	u16 core_id;
++	/* Filter mask for this Root Port */
++	u16 mask;
++	/* PCIe Root Port's <domain>:<bus>:<device>.<function> */
++	u32 domain;
++	u8 bus;
++	u8 dev;
++	u8 fn;
++};
++
++LIST_HEAD(hisi_pcie_root_ports_list);
++static int hisi_pcie_root_ports_num;
++
++static void hisi_pcie_init_root_port_mask(struct hisi_pcie_root_port *rp)
++{
++	rp->mask = BIT(rp->dev << 1);
++}
++
++/*
++ * Select specific Root Port to monitor. Return 0 if successfully find the
++ * Root Port, Otherwise -EINVAL.
++ */
++static int hisi_pcie_root_ports_select_one(u32 domain, u8 bus, u8 dev, u8 fn)
++{
++	struct hisi_pcie_root_port *rp;
++
++	list_for_each_entry(rp, &hisi_pcie_root_ports_list, list)
++		if (domain == rp->domain && bus == rp->bus &&
++		    dev == rp->dev && fn == rp->fn) {
++			rp->selected = true;
++			return 0;
++		}
++
++	return -EINVAL;
++}
++
++static void hisi_pcie_root_ports_select_all(void)
++{
++	struct hisi_pcie_root_port *rp;
++
++	list_for_each_entry(rp, &hisi_pcie_root_ports_list, list)
++		rp->selected = true;
++}
++
++static void hisi_pcie_root_ports_add(u16 sicl_id, u16 core_id, u8 target_bus)
++{
++	const char *sysfs = sysfs__mountpoint();
++	struct hisi_pcie_root_port *rp;
++	struct dirent *dent;
++	char path[PATH_MAX];
++	u8 bus, dev, fn;
++	u32 domain;
++	DIR *dir;
++	int ret;
++
++	snprintf(path, PATH_MAX, "%s/%s", sysfs, PCI_ROOT_BUS_DEVICES_PATH);
++	dir = opendir(path);
++	if (!dir)
++		return;
++
++	/* Scan the PCI root bus to find the match root port on @target_bus */
++	while ((dent = readdir(dir))) {
++		ret = sscanf(dent->d_name, PCI_DEVICE_NAME_PATTERN,
++			     &domain, &bus, &dev, &fn);
++		if (ret != 4 || bus != target_bus)
++			continue;
++
++		rp = zalloc(sizeof(*rp));
++		if (!rp)
++			continue;
++
++		rp->selected = false;
++		rp->sicl_id = sicl_id;
++		rp->core_id = core_id;
++		rp->domain = domain;
++		rp->bus = bus;
++		rp->dev = dev;
++		rp->fn = fn;
++
++		hisi_pcie_init_root_port_mask(rp);
++
++		list_add(&rp->list, &hisi_pcie_root_ports_list);
++		hisi_pcie_root_ports_num++;
++
++		pr_debug3("Found root port %s\n", dent->d_name);
++	}
++
++	closedir(dir);
++}
++
++/* Scan the PMUs and build the mapping of the Root Ports to the PMU */
++static int hisi_pcie_root_ports_init(void)
++{
++	char event_source[PATH_MAX], bus_path[PATH_MAX];
++	unsigned long long bus;
++	u16 sicl_id, core_id;
++	struct dirent *dent;
++	DIR *dir;
++
++	perf_pmu__event_source_devices_scnprintf(event_source, sizeof(event_source));
++	dir = opendir(event_source);
++	if (!dir)
++		return -ENOENT;
++
++	while ((dent = readdir(dir))) {
++		/*
++		 * This HiSilicon PCIe PMU will be named as:
++		 *   hisi_pcie<sicl_id>_core<core_id>
++		 */
++		if ((sscanf(dent->d_name, "hisi_pcie%hu_core%hu", &sicl_id, &core_id)) != 2)
++			continue;
++
++		/*
++		 * Driver will export the root port it can monitor through
++		 * the "bus" sysfs attribute.
++		 */
++		scnprintf(bus_path, sizeof(bus_path), "%s/hisi_pcie%hu_core%hu/bus",
++			  event_source, sicl_id, core_id);
++
++		/*
++		 * Per PCIe spec the bus should be 8bit, use unsigned long long
++		 * for the convience of the library function.
++		 */
++		if (filename__read_ull(bus_path, &bus))
++			continue;
++
++		pr_debug3("Found pmu %s bus 0x%llx\n", dent->d_name, bus);
++
++		hisi_pcie_root_ports_add(sicl_id, core_id, (u8)bus);
++	}
++
++	closedir(dir);
++	return hisi_pcie_root_ports_num > 0 ? 0 : -ENOENT;
++}
++
++static void hisi_pcie_root_ports_free(void)
++{
++	struct hisi_pcie_root_port *rp, *tmp;
++
++	if (hisi_pcie_root_ports_num == 0)
++		return;
++
++	list_for_each_entry_safe(rp, tmp, &hisi_pcie_root_ports_list, list) {
++		list_del(&rp->list);
++		zfree(&rp);
++		hisi_pcie_root_ports_num--;
++	}
++}
++
++static int hisi_iostat_add_events(struct evlist *evl)
++{
++	struct hisi_pcie_root_port *rp;
++	struct evsel *evsel;
++	unsigned int i, j;
++	char *iostat_cmd;
++	int pos = 0;
++	int ret;
++
++	if (!hisi_pcie_root_ports_num)
++		return -ENOENT;
++
++	iostat_cmd = zalloc(PATH_MAX);
++	if (!iostat_cmd)
++		return -ENOMEM;
++
++	list_for_each_entry(rp, &hisi_pcie_root_ports_list, list) {
++		if (!rp->selected)
++			continue;
++
++		iostat_cmd[pos++] = '{';
++		for (j = 0; j < ARRAY_SIZE(hisi_iostat_cmd_template); j++) {
++			pos += snprintf(iostat_cmd + pos, ARG_MAX - pos - 1,
++					hisi_iostat_cmd_template[j],
++					rp->sicl_id, rp->core_id, rp->mask);
++
++			if (j == ARRAY_SIZE(hisi_iostat_cmd_template) - 1)
++				iostat_cmd[pos++] = '}';
++			else
++				iostat_cmd[pos++] = ',';
++		}
++
++		ret = parse_event(evl, iostat_cmd);
++		if (ret)
++			break;
++
++		i = 0;
++		evlist__for_each_entry_reverse(evl, evsel) {
++			if (i == ARRAY_SIZE(hisi_iostat_cmd_template))
++				break;
++
++			evsel->priv = rp;
++			i++;
++		}
++
++		memset(iostat_cmd, 0, PATH_MAX);
++		pos = 0;
++	}
++
++	zfree(&iostat_cmd);
++	return ret;
++}
++
++int iostat_prepare(struct evlist *evlist,
++		   struct perf_stat_config *config)
++{
++	if (evlist->core.nr_entries > 0) {
++		pr_warning("The -e and -M options are not supported."
++			   "All chosen events/metrics will be dropped\n");
++		evlist__delete(evlist);
++		evlist = evlist__new();
++		if (!evlist)
++			return -ENOMEM;
++	}
++
++	config->metric_only = true;
++	config->aggr_mode = AGGR_GLOBAL;
++
++	return hisi_iostat_add_events(evlist);
++}
++
++static int hisi_pcie_root_ports_list_filter(const char *str)
++{
++	char *tok, *tmp, *copy = NULL;
++	u8 bus, dev, fn;
++	u32 domain;
++	int ret;
++
++	copy = strdup(str);
++	if (!copy)
++		return -ENOMEM;
++
++	for (tok = strtok_r(copy, ",", &tmp); tok; tok = strtok_r(NULL, ",", &tmp)) {
++		ret = sscanf(tok, PCI_DEVICE_NAME_PATTERN, &domain, &bus, &dev, &fn);
++		if (ret != 4) {
++			ret = -EINVAL;
++			break;
++		}
++
++		ret = hisi_pcie_root_ports_select_one(domain, bus, dev, fn);
++		if (ret)
++			break;
++	}
++
++	zfree(&copy);
++	return ret;
++}
++
++int iostat_parse(const struct option *opt, const char *str, int unset __maybe_unused)
++{
++	struct perf_stat_config *config = (struct perf_stat_config *)opt->data;
++	int ret;
++
++	ret = hisi_pcie_root_ports_init();
++	if (!ret) {
++		config->iostat_run = true;
++
++		if (!str) {
++			iostat_mode = IOSTAT_RUN;
++			hisi_pcie_root_ports_select_all();
++		} else if (!strcmp(str, "list")) {
++			iostat_mode = IOSTAT_LIST;
++			hisi_pcie_root_ports_select_all();
++		} else {
++			iostat_mode = IOSTAT_RUN;
++			ret = hisi_pcie_root_ports_list_filter(str);
++		}
++	}
++
++	return ret;
++}
++
++static void hisi_pcie_root_port_show(FILE *output,
++				     const struct hisi_pcie_root_port * const rp)
++{
++	if (output && rp)
++		fprintf(output, "hisi_pcie%hu_core%hu<" PCI_DEVICE_NAME_PATTERN ">\n",
++			rp->sicl_id, rp->core_id, rp->domain, rp->bus, rp->dev, rp->fn);
++}
++
++void iostat_list(struct evlist *evlist __maybe_unused, struct perf_stat_config *config)
++{
++	struct hisi_pcie_root_port *rp = NULL;
++	struct evsel *evsel;
++
++	evlist__for_each_entry(evlist, evsel) {
++		if (rp != evsel->priv) {
++			hisi_pcie_root_port_show(config->output, evsel->priv);
++			rp = evsel->priv;
++		}
++	}
++}
++
++void iostat_release(struct evlist *evlist)
++{
++	struct evsel *evsel;
++
++	evlist__for_each_entry(evlist, evsel)
++		evsel->priv = NULL;
++
++	hisi_pcie_root_ports_free();
++}
++
++void iostat_print_header_prefix(struct perf_stat_config *config)
++{
++	if (config->csv_output)
++		fputs("port,", config->output);
++	else if (config->interval)
++		fprintf(config->output, "#          time    port         ");
++	else
++		fprintf(config->output, "   port         ");
++}
++
++void iostat_print_metric(struct perf_stat_config *config, struct evsel *evsel,
++			 struct perf_stat_output_ctx *out)
++{
++	const char *iostat_metric =
++		hisi_iostat_metrics[evsel->core.idx % ARRAY_SIZE(hisi_iostat_metrics)];
++	struct perf_counts_values *count;
++	double iostat_value;
++
++	/* We're using AGGR_GLOBAL so there's only one aggr counts aggr[0]. */
++	count = &evsel->stats->aggr[0].counts;
++
++	/* The counts has been scaled, we can use it directly. */
++	iostat_value = (double)count->val;
++
++	/*
++	 * Display two digits after decimal point for better accuracy if the
++	 * value is non-zero.
++	 */
++	out->print_metric(config, out->ctx, NULL,
++			  iostat_value > 0 ? "%8.2f" : "%8.0f",
++			  iostat_metric, iostat_value / (256 * 1024));
++}
++
++void iostat_prefix(struct evlist *evlist, struct perf_stat_config *config,
++		   char *prefix, struct timespec *ts)
++{
++	struct hisi_pcie_root_port *rp = evlist->selected->priv;
++
++	if (rp) {
++		if (ts)
++			sprintf(prefix, "%6lu.%09lu%s" PCI_DEVICE_NAME_PATTERN "%s",
++				ts->tv_sec, ts->tv_nsec, config->csv_sep,
++				rp->domain, rp->bus, rp->dev, rp->fn,
++				config->csv_sep);
++		else
++			sprintf(prefix, PCI_DEVICE_NAME_PATTERN "%s",
++				rp->domain, rp->bus, rp->dev, rp->fn,
++				config->csv_sep);
++	}
++}
++
++void iostat_print_counters(struct evlist *evlist, struct perf_stat_config *config,
++			   struct timespec *ts, char *prefix,
++			   iostat_print_counter_t print_cnt_cb, void *arg)
++{
++	struct evsel *counter = evlist__first(evlist);
++	void *perf_device;
++
++	evlist__set_selected(evlist, counter);
++	iostat_prefix(evlist, config, prefix, ts);
++	fprintf(config->output, "%s", prefix);
++	evlist__for_each_entry(evlist, counter) {
++		perf_device = evlist->selected->priv;
++		if (perf_device && perf_device != counter->priv) {
++			evlist__set_selected(evlist, counter);
++			iostat_prefix(evlist, config, prefix, ts);
++			fprintf(config->output, "\n%s", prefix);
++		}
++		print_cnt_cb(config, counter, arg);
++	}
++	fputc('\n', config->output);
++}
+-- 
+2.43.0
+

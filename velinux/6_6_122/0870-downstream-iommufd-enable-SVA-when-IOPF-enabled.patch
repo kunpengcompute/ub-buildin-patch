@@ -1,0 +1,56 @@
+From 9e3e5c6917005ed9bf07e955663a8810d46713bd Mon Sep 17 00:00:00 2001
+From: Zhangfei Gao <zhangfei.gao@linaro.org>
+Date: Mon, 25 Nov 2024 03:20:30 +0000
+Subject: [PATCH 870/960] downstream: iommufd: enable SVA when IOPF enabled
+
+On smmuv3, SVA is only enabled once enable SVA, so enable
+SVA as well when enable IOPF as quick solution.
+
+In drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c,
+iommu_dev_enable_feature(IOMMU_DEV_FEAT_SVA) will real call
+iopf_queue_add_device,
+while iommu_dev_enable_feature(IOPF)  only set flag.
+
+arm_smmu_dev_enable_feature
+case IOMMU_DEV_FEAT_SVA:
+arm_smmu_master_enable_sva(master)
+iopf_queue_add_device(master->smmu->evtq.iopf, dev);
+
+By the way, Jason is doing a new patchset to handle this
+https://patchwork.kernel.org/project/linux-acpi/cover/0-v4-9e99b76f3518+3a8-smmuv3_nesting_jgg@nvidia.com/
+
+Signed-off-by: Zhangfei Gao <zhangfei.gao@linaro.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/fault.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/iommu/iommufd/fault.c b/drivers/iommu/iommufd/fault.c
+index c4a62c700b19..61b77ddc48bb 100644
+--- a/drivers/iommu/iommufd/fault.c
++++ b/drivers/iommu/iommufd/fault.c
+@@ -45,6 +45,11 @@ static int iommufd_fault_iopf_enable(struct iommufd_device *idev)
+ 	ret = iommu_dev_enable_feature(dev, IOMMU_DEV_FEAT_IOPF);
+ 	if (ret)
+ 		--idev->iopf_enabled;
++
++	ret = iommu_dev_enable_feature(idev->dev, IOMMU_DEV_FEAT_SVA);
++	if (ret)
++		return ret;
++
+ 	mutex_unlock(&idev->iopf_lock);
+ 
+ 	return ret;
+@@ -53,6 +58,7 @@ static int iommufd_fault_iopf_enable(struct iommufd_device *idev)
+ static void iommufd_fault_iopf_disable(struct iommufd_device *idev)
+ {
+ 	mutex_lock(&idev->iopf_lock);
++	iommu_dev_disable_feature(idev->dev, IOMMU_DEV_FEAT_SVA);
+ 	if (!WARN_ON(idev->iopf_enabled == 0)) {
+ 		if (--idev->iopf_enabled == 0)
+ 			iommu_dev_disable_feature(idev->dev, IOMMU_DEV_FEAT_IOPF);
+-- 
+2.43.0
+

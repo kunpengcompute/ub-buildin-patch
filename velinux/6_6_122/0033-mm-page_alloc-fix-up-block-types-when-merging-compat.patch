@@ -1,0 +1,61 @@
+From fdfe15bd75737fa574ed4384d38a3d787f842f9f Mon Sep 17 00:00:00 2001
+From: Johannes Weiner <hannes@cmpxchg.org>
+Date: Wed, 20 Mar 2024 14:02:08 -0400
+Subject: [PATCH 033/960] mm: page_alloc: fix up block types when merging
+ compatible blocks
+
+commit e6cf9e1c4cde8a53385423ecb8ca581097f42e02 upstream.
+
+The buddy allocator coalesces compatible blocks during freeing, but it
+doesn't update the types of the subblocks to match.  When an allocation
+later breaks the chunk down again, its pieces will be put on freelists of
+the wrong type.  This encourages incompatible page mixing (ask for one
+type, get another), and thus long-term fragmentation.
+
+Update the subblocks when merging a larger chunk, such that a later
+expand() will maintain freelist type hygiene.
+
+Link: https://lkml.kernel.org/r/20240320180429.678181-4-hannes@cmpxchg.org
+Signed-off-by: Johannes Weiner <hannes@cmpxchg.org>
+Reviewed-by: Zi Yan <ziy@nvidia.com>
+Reviewed-by: Vlastimil Babka <vbabka@suse.cz>
+Acked-by: Mel Gorman <mgorman@techsingularity.net>
+Tested-by: "Huang, Ying" <ying.huang@intel.com>
+Tested-by: Baolin Wang <baolin.wang@linux.alibaba.com>
+Cc: David Hildenbrand <david@redhat.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Jinjiang Tu <tujinjiang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ mm/page_alloc.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/mm/page_alloc.c b/mm/page_alloc.c
+index d6f961b2e2f8..5a0ab092c79f 100644
+--- a/mm/page_alloc.c
++++ b/mm/page_alloc.c
+@@ -820,10 +820,17 @@ static inline void __free_one_page(struct page *page,
+ 			 */
+ 			int buddy_mt = get_pfnblock_migratetype(buddy, buddy_pfn);
+ 
+-			if (migratetype != buddy_mt
+-					&& (!migratetype_is_mergeable(migratetype) ||
+-						!migratetype_is_mergeable(buddy_mt)))
+-				goto done_merging;
++			if (migratetype != buddy_mt) {
++				if (!migratetype_is_mergeable(migratetype) ||
++				    !migratetype_is_mergeable(buddy_mt))
++					goto done_merging;
++				/*
++				 * Match buddy type. This ensures that
++				 * an expand() down the line puts the
++				 * sub-blocks on the right freelists.
++				 */
++				set_pageblock_migratetype(buddy, migratetype);
++			}
+ 		}
+ 
+ 		/*
+-- 
+2.43.0
+

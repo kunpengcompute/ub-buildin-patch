@@ -1,0 +1,80 @@
+From 28e12ebccd19661e8af539839c9a0227cd1b8ace Mon Sep 17 00:00:00 2001
+From: Kefeng Wang <wangkefeng.wang@huawei.com>
+Date: Wed, 26 Jun 2024 16:53:24 +0800
+Subject: [PATCH 009/960] mm: add folio_mc_copy()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+commit 02f4ee5a144cef6b26421cb42cca64bb4138d459 upstream.
+
+Add a #MC variant of folio_copy() which uses copy_mc_highpage() to support
+
+Link: https://lkml.kernel.org/r/20240626085328.608006-3-wangkefeng.wang@huawei.com
+Signed-off-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Reviewed-by: Jane Chu <jane.chu@oracle.com>
+Reviewed-by: Miaohe Lin <linmiaohe@huawei.com>
+Cc: Alistair Popple <apopple@nvidia.com>
+Cc: Benjamin LaHaise <bcrl@kvack.org>
+Cc: David Hildenbrand <david@redhat.com>
+Cc: Hugh Dickins <hughd@google.com>
+Cc: Jérôme Glisse <jglisse@redhat.com>
+Cc: Jiaqi Yan <jiaqiyan@google.com>
+Cc: Lance Yang <ioworker0@gmail.com>
+Cc: Matthew Wilcox (Oracle) <willy@infradead.org>
+Cc: Muchun Song <muchun.song@linux.dev>
+Cc: Naoya Horiguchi <nao.horiguchi@gmail.com>
+Cc: Oscar Salvador <osalvador@suse.de>
+Cc: Tony Luck <tony.luck@intel.com>
+Cc: Vishal Moola (Oracle) <vishal.moola@gmail.com>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ include/linux/mm.h |  1 +
+ mm/util.c          | 17 +++++++++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index f50686531f18..f1b1080e1804 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -1308,6 +1308,7 @@ void put_pages_list(struct list_head *pages);
+ 
+ void split_page(struct page *page, unsigned int order);
+ void folio_copy(struct folio *dst, struct folio *src);
++int folio_mc_copy(struct folio *dst, struct folio *src);
+ 
+ unsigned long nr_free_buffer_pages(void);
+ 
+diff --git a/mm/util.c b/mm/util.c
+index 47ad5d6c0152..dde3b4cfb763 100644
+--- a/mm/util.c
++++ b/mm/util.c
+@@ -810,6 +810,23 @@ void folio_copy(struct folio *dst, struct folio *src)
+ 	}
+ }
+ 
++int folio_mc_copy(struct folio *dst, struct folio *src)
++{
++	long nr = folio_nr_pages(src);
++	long i = 0;
++
++	for (;;) {
++		if (copy_mc_highpage(folio_page(dst, i), folio_page(src, i)))
++			return -EHWPOISON;
++		if (++i == nr)
++			break;
++		cond_resched();
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL(folio_mc_copy);
++
+ int sysctl_overcommit_memory __read_mostly = OVERCOMMIT_GUESS;
+ int sysctl_overcommit_ratio __read_mostly = 50;
+ unsigned long sysctl_overcommit_kbytes __read_mostly;
+-- 
+2.43.0
+

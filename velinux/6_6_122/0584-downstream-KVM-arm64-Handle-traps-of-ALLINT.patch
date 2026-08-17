@@ -1,0 +1,59 @@
+From 08f809d65310d067450e78a0b3654ada979382b5 Mon Sep 17 00:00:00 2001
+From: Marc Zyngier <maz@kernel.org>
+Date: Tue, 9 Apr 2024 09:22:09 +0800
+Subject: [PATCH 584/960] downstream: KVM: arm64: Handle traps of ALLINT
+
+Although we do force a trap of the ALLINT system register when
+FEAT_NMI isn't exposed to the guest, we don't provide any handler.
+
+That's bad. Let's fix that.
+
+Signed-off-by: Marc Zyngier <maz@kernel.org>
+Signed-off-by: Xiang Chen <chenxiang66@hisilicon.com>
+Signed-off-by: caijian <caijian11@h-partners.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/include/asm/sysreg.h | 2 ++
+ arch/arm64/kvm/sys_regs.c       | 5 +++++
+ 2 files changed, 7 insertions(+)
+
+diff --git a/arch/arm64/include/asm/sysreg.h b/arch/arm64/include/asm/sysreg.h
+index dbb51f9148cd..3625aa7ea8c2 100644
+--- a/arch/arm64/include/asm/sysreg.h
++++ b/arch/arm64/include/asm/sysreg.h
+@@ -294,6 +294,8 @@
+ #define SYS_SPSR_EL1			sys_reg(3, 0, 4, 0, 0)
+ #define SYS_ELR_EL1			sys_reg(3, 0, 4, 0, 1)
+ 
++#define SYS_ALLINT			sys_reg(3, 0, 4, 3, 0)
++
+ #define SYS_ICC_PMR_EL1			sys_reg(3, 0, 4, 6, 0)
+ 
+ #define SYS_AFSR0_EL1			sys_reg(3, 0, 5, 1, 0)
+diff --git a/arch/arm64/kvm/sys_regs.c b/arch/arm64/kvm/sys_regs.c
+index fc515e0afa40..07d0f27ffdad 100644
+--- a/arch/arm64/kvm/sys_regs.c
++++ b/arch/arm64/kvm/sys_regs.c
+@@ -2001,6 +2001,9 @@ static bool access_spsr(struct kvm_vcpu *vcpu,
+  * guest...
+  */
+ static const struct sys_reg_desc sys_reg_descs[] = {
++	{ SYS_DESC(SYS_ALLINT_CLR), undef_access },
++	{ SYS_DESC(SYS_ALLINT_SET), undef_access },
++
+ 	{ SYS_DESC(SYS_DC_ISW), access_dcsw },
+ 	{ SYS_DESC(SYS_DC_IGSW), access_dcgsw },
+ 	{ SYS_DESC(SYS_DC_IGDSW), access_dcgsw },
+@@ -2217,6 +2220,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
+ 	{ SYS_DESC(SYS_SPSR_EL1), access_spsr},
+ 	{ SYS_DESC(SYS_ELR_EL1), access_elr},
+ 
++	{ SYS_DESC(SYS_ALLINT), undef_access },
++
+ 	{ SYS_DESC(SYS_AFSR0_EL1), access_vm_reg, reset_unknown, AFSR0_EL1 },
+ 	{ SYS_DESC(SYS_AFSR1_EL1), access_vm_reg, reset_unknown, AFSR1_EL1 },
+ 	{ SYS_DESC(SYS_ESR_EL1), access_vm_reg, reset_unknown, ESR_EL1 },
+-- 
+2.43.0
+

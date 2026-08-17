@@ -1,0 +1,80 @@
+From bafae6c1a97f35c66d787d663f3f3223a7f7b16f Mon Sep 17 00:00:00 2001
+From: Jinqian Yang <yangjinqian1@huawei.com>
+Date: Thu, 24 Apr 2025 18:47:04 +0800
+Subject: [PATCH 587/960] downstream: kvm: hisi_virt: Fix compilation error due
+ to missing ACPI configuration
+
+When CONFIG_ACPI is disabled during kernel configuration, wrap all
+ACPI-related function calls and variable declarations with appropriate
+"#ifdef CONFIG_ACPI" conditionals to prevent build failures.
+
+Signed-off-by: Jinqian Yang <yangjinqian1@huawei.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-init.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-init.c b/arch/arm64/kvm/vgic/vgic-init.c
+index 710a47f29ef2..b8e6316ba737 100644
+--- a/arch/arm64/kvm/vgic/vgic-init.c
++++ b/arch/arm64/kvm/vgic/vgic-init.c
+@@ -520,31 +520,39 @@ int kvm_vgic_map_resources(struct kvm *kvm)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_ACPI
+ extern struct static_key_false ipiv_enable;
+ static int ipiv_irq;
++#endif
+ 
+ /* GENERIC PROBE */
+ 
+ void kvm_vgic_cpu_up(void)
+ {
+ 	enable_percpu_irq(kvm_vgic_global_state.maint_irq, 0);
++#ifdef CONFIG_ACPI
+ 	if (static_branch_unlikely(&ipiv_enable))
+ 		enable_percpu_irq(ipiv_irq, 0);
++#endif
+ }
+ 
+ 
+ void kvm_vgic_cpu_down(void)
+ {
+ 	disable_percpu_irq(kvm_vgic_global_state.maint_irq);
++#ifdef CONFIG_ACPI
+ 	if (static_branch_unlikely(&ipiv_enable))
+ 		disable_percpu_irq(ipiv_irq);
++#endif
+ }
+ 
++#ifdef CONFIG_ACPI
+ static irqreturn_t vgic_ipiv_irq_handler(int irq, void *data)
+ {
+ 	kvm_info("IPIV irq handler!\n");
+ 	return IRQ_HANDLED;
+ }
++#endif
+ 
+ static irqreturn_t vgic_maintenance_handler(int irq, void *data)
+ {
+@@ -654,6 +662,7 @@ int kvm_vgic_hyp_init(void)
+ 
+ 	kvm_info("vgic interrupt IRQ%d\n", kvm_vgic_global_state.maint_irq);
+ 
++#ifdef CONFIG_ACPI
+ 	if (static_branch_unlikely(&ipiv_enable)) {
+ 		ipiv_irq = acpi_register_gsi(NULL, 18, ACPI_EDGE_SENSITIVE,
+ 			ACPI_ACTIVE_HIGH);
+@@ -674,6 +683,7 @@ int kvm_vgic_hyp_init(void)
+ 			return ret;
+ 		}
+ 	}
++#endif
+ 
+ 	return 0;
+ }
+-- 
+2.43.0
+

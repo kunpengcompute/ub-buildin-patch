@@ -1,0 +1,62 @@
+From 92fe88fd1960021e0830711b73199e84eed3bbf1 Mon Sep 17 00:00:00 2001
+From: GQX <2290721782@qq.com>
+Date: Thu, 12 Feb 2026 15:49:54 +0800
+Subject: [PATCH 946/960] downstream: Migration/urma: optimize performance in
+ live migration.
+
+Current kvm_tlb_flush_vmid_range() logic segments large address ranges
+into chunks of MAX_TLBI_RANGE_PAGES and calls kvm_call_hyp() repeatedly.
+This leads to frequent hyp entries and causes kvm_clear_dirty_log_protect()
+to consume over 50% of total time during VM migration, severely impacting
+performance.
+
+Optimize this by checking if the total pages to flush exceed
+MAX_TLBI_RANGE_PAGES: if yes, directly call __kvm_tlb_flush_vmid (full
+VMID TLB flush) instead of segmented range flushes. This eliminates
+multiple hyp calls and reduces the overhead of
+kvm_clear_dirty_log_protect()
+during migration.
+
+The tradeoff (full TLB flush vs segmented range flush) is acceptable here:
+the performance gain from reducing hyp calls far outweighs the minor cost
+of flushing a full VMID TLB for large address ranges.
+
+Signed-off-by: GQX <2290721782@qq.com>
+Signed-off-by: liwei <liwei818@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/hyp/pgtable.c | 14 +++-----------
+ 1 file changed, 3 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm64/kvm/hyp/pgtable.c b/arch/arm64/kvm/hyp/pgtable.c
+index 35083e265a1f..682565f3630a 100644
+--- a/arch/arm64/kvm/hyp/pgtable.c
++++ b/arch/arm64/kvm/hyp/pgtable.c
+@@ -697,21 +697,13 @@ static bool stage2_has_fwb(struct kvm_pgtable *pgt)
+ void kvm_tlb_flush_vmid_range(struct kvm_s2_mmu *mmu,
+ 				phys_addr_t addr, size_t size)
+ {
+-	unsigned long pages, inval_pages;
++	unsigned long pages = size >> PAGE_SHIFT;
+ 
+-	if (!system_supports_tlb_range()) {
++	if (!system_supports_tlb_range() || pages > MAX_TLBI_RANGE_PAGES) {
+ 		kvm_call_hyp(__kvm_tlb_flush_vmid, mmu);
+ 		return;
+ 	}
+-
+-	pages = size >> PAGE_SHIFT;
+-	while (pages > 0) {
+-		inval_pages = min(pages, MAX_TLBI_RANGE_PAGES);
+-		kvm_call_hyp(__kvm_tlb_flush_vmid_range, mmu, addr, inval_pages);
+-
+-		addr += inval_pages << PAGE_SHIFT;
+-		pages -= inval_pages;
+-	}
++	kvm_call_hyp(__kvm_tlb_flush_vmid_range, mmu, addr, pages);
+ }
+ 
+ #define KVM_S2_MEMATTR(pgt, attr) PAGE_S2_MEMATTR(attr, stage2_has_fwb(pgt))
+-- 
+2.43.0
+

@@ -1,0 +1,44 @@
+From f9b4039b6a335ff665271ce02141b481422e2f39 Mon Sep 17 00:00:00 2001
+From: Slim6882 <yangjunshuo@huawei.com>
+Date: Fri, 26 Dec 2025 19:02:31 +0800
+Subject: [PATCH 805/960] downstream: arm64: perf: Keep event consistency of
+ hw_metric events
+
+hw_metric events should have same pmus.
+Check the event types and event pmus for event consistency.
+
+Signed-off-by: Slim6882 <yangjunshuo@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/perf/arm_pmuv3.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/perf/arm_pmuv3.c b/drivers/perf/arm_pmuv3.c
+index 1d737b6d019a..e175ac95a378 100644
+--- a/drivers/perf/arm_pmuv3.c
++++ b/drivers/perf/arm_pmuv3.c
+@@ -371,7 +371,10 @@ static u8 armv8pmu_event_threshold_control(struct perf_event_attr *attr)
+ #ifdef CONFIG_HISILICON_HW_METRIC
+ static inline bool armv8pmu_event_is_hw_metric(struct perf_event *event)
+ {
+-	return ATTR_CFG_GET_FLD(&event->attr, hw_metric);
++	bool hardware_event = event->attr.type & PERF_TYPE_HARDWARE;
++	bool hwmetric_event = ATTR_CFG_GET_FLD(&event->attr, hw_metric);
++
++	return hardware_event && hwmetric_event;
+ }
+ 
+ static bool armpmu_support_hisi_hw_metric(void)
+@@ -1161,7 +1164,8 @@ static int armv8pmu_check_hw_metric_event(struct pmu_hw_events *cpuc,
+ 		if (event == leader)
+ 			return 0;
+ 
+-		if (!armv8pmu_event_is_hw_metric(leader))
++		if (leader->pmu != event->pmu ||
++			!armv8pmu_event_is_hw_metric(leader))
+ 			return -EINVAL;
+ 
+ 		for_each_sibling_event(sibling, leader) {
+-- 
+2.43.0
+

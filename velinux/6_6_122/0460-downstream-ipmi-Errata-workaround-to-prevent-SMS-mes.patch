@@ -1,0 +1,183 @@
+From 11b44bc4cfb95fe624cc898911834e08fa0cc535 Mon Sep 17 00:00:00 2001
+From: Devyn Liu <liudingyuan@huawei.com>
+Date: Tue, 31 Oct 2023 10:52:47 +0800
+Subject: [PATCH 460/960] downstream: ipmi: Errata workaround to prevent SMS
+ message processing timeout
+
+Add erratum 162102203 for HIP09. Add erratum 162102203 kconfig to enable
+workaround for SMS message processing timeout
+
+Add a workaround method to prevent bridge commands from timeout. Because
+SMS_ATN bit will be cleared by specific CPU hardware before it is
+driven to process.
+
+sms_atn_quirk: Identify whether the SMS_ATN flag needs to be
+stored and do workaround operations.
+
+sms_atn_flag: This variable is used to store SMS_ATN when the driver
+polling enters the bt_event until the IDLE state is reached.Then
+reset this flag when driver finished proccessing SMS message and
+clear SMS_ATN bit.
+
+Identify whether the incorrect BT_B2H_ATN is possibly due to receiving
+an SMS message from BMC. If so, clear B2H_ATN. Prevents SMS_ATN from
+being discarded after processing drain stale response.
+
+Signed-off-by: Devyn Liu <liudingyuan@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/Kconfig             | 11 +++++
+ drivers/char/ipmi/ipmi_bt_sm.c | 78 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 89 insertions(+)
+
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index 5cd1f863fea7..b628e66d9708 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -1233,6 +1233,17 @@ config HISILICON_ERRATUM_162100801
+ 
+ 	  If unsure, say Y.
+ 
++config HISILICON_ERRATUM_162102203
++	bool "Hisilicon erratum 162102203"
++	default n
++	help
++	  On HIP09, SMS_ATN bit may be cleared by hardware before it is driven
++	  to process. This will causes bridge commands timeout. Avoid these issues
++	  by modifying the IPMI driver to use variables to store SMS_ATNs that may
++	  be lost.
++
++	  If unsure, say N.
++
+ config QCOM_FALKOR_ERRATUM_1003
+ 	bool "Falkor E1003: Incorrect translation due to ASID change"
+ 	default y
+diff --git a/drivers/char/ipmi/ipmi_bt_sm.c b/drivers/char/ipmi/ipmi_bt_sm.c
+index f41f78972b9c..1a4985c05bb1 100644
+--- a/drivers/char/ipmi/ipmi_bt_sm.c
++++ b/drivers/char/ipmi/ipmi_bt_sm.c
+@@ -88,6 +88,13 @@ struct si_sm_data {
+ 	enum bt_states	complete;	/* to divert the state machine */
+ 	long		BT_CAP_req2rsp;
+ 	int		BT_CAP_retries;	/* Recommended retries */
++
++#ifdef CONFIG_HISILICON_ERRATUM_162102203
++	/* Record sms_atn when sms_atn set && bt_state not in idle */
++	int		sms_atn_flag;
++	/* If true, need to store SMS_ATN bit */
++	bool	sms_atn_quirk;
++#endif
+ };
+ 
+ #define BT_CLR_WR_PTR	0x01	/* See IPMI 1.5 table 11.6.4 */
+@@ -168,6 +175,32 @@ static char *status2txt(unsigned char status)
+ }
+ #define STATUS2TXT status2txt(status)
+ 
++#ifdef CONFIG_HISILICON_ERRATUM_162102203
++/*
++ * To confirm whether the SMS_ATN flag needs to be stored and get
++ * quirk through the method reported by the BIOS. Because in special
++ * cases SMS_ATN flag bits may be lost before being processed.
++ */
++static bool get_sms_atn_quirk(struct si_sm_io *io)
++{
++	acpi_handle handle;
++	acpi_status status;
++	unsigned long long tmp;
++
++	handle = ACPI_HANDLE(io->dev);
++	if (!handle)
++		return false;
++
++	status = acpi_evaluate_integer(handle, "SATN", NULL, &tmp);
++	if (ACPI_FAILURE(status))
++		return false;
++	else if (tmp != 1)
++		return false;
++
++	return true;
++}
++#endif
++
+ /* called externally at insmod time, and internally on cleanup */
+ 
+ static unsigned int bt_init_data(struct si_sm_data *bt, struct si_sm_io *io)
+@@ -182,6 +215,12 @@ static unsigned int bt_init_data(struct si_sm_data *bt, struct si_sm_io *io)
+ 	bt->complete = BT_STATE_IDLE;	/* end here */
+ 	bt->BT_CAP_req2rsp = BT_NORMAL_TIMEOUT * USEC_PER_SEC;
+ 	bt->BT_CAP_retries = BT_NORMAL_RETRY_LIMIT;
++
++#ifdef CONFIG_HISILICON_ERRATUM_162102203
++	bt->sms_atn_quirk = get_sms_atn_quirk(io);
++	bt->sms_atn_flag = 0;
++#endif
++
+ 	return 3; /* We claim 3 bytes of space; ought to check SPMI table */
+ }
+ 
+@@ -283,6 +322,11 @@ static void reset_flags(struct si_sm_data *bt)
+ 		BT_CONTROL(BT_H_BUSY);	/* force clear */
+ 	BT_CONTROL(BT_CLR_WR_PTR);	/* always reset */
+ 	BT_CONTROL(BT_SMS_ATN);		/* always clear */
++
++#ifdef CONFIG_HISILICON_ERRATUM_162102203
++	bt->sms_atn_flag = 0;	/* Reset sms_atn_flag */
++#endif
++
+ 	BT_INTMASK_W(BT_BMC_HWRST);
+ }
+ 
+@@ -454,6 +498,36 @@ static enum si_sm_result bt_event(struct si_sm_data *bt, long time)
+ 	int i;
+ 
+ 	status = BT_STATUS;
++#ifdef CONFIG_HISILICON_ERRATUM_162102203
++	if (bt->sms_atn_quirk) {
++		/*
++		 * Identify whether the current BT_B2H_ATN is possibly due to
++		 * receiving an SMS message from BMC. If so, only clear the
++		 * incorrectly set BT_B2H_ATN without returning, and continue
++		 * to execute downwards.
++		 */
++		if ((bt->state < BT_STATE_WRITE_BYTES) && (status & BT_B2H_ATN) &&
++			(status & BT_SMS_ATN)) {
++			BT_CONTROL(BT_B2H_ATN); /* Clear it */
++			status &= ~BT_B2H_ATN; /* Refresh status */
++			if (bt_debug)
++				dev_dbg(bt->io->dev, "clear wrong B2H_ATN, BT: %s\n",
++					status2txt(BT_STATUS));
++		}
++
++		/*
++		 * Record the SMS_ATN by sms_atn_flag, because SMS_ATN would be clear
++		 * incorrectly by hardware when received a SMS message from BMC if
++		 * bt->state is not in IDLE state. And the BT_SMS_ATN will be lost.
++		 */
++		if ((bt->state >= BT_STATE_XACTION_START) && (status & BT_SMS_ATN))
++			bt->sms_atn_flag = 1;
++
++		/* Restore SMS_ATN */
++		if (bt->sms_atn_flag)
++			status |= BT_SMS_ATN;
++	}
++#endif
+ 	bt->nonzero_status |= status;
+ 	if ((bt_debug & BT_DEBUG_STATES) && (bt->state != last_printed)) {
+ 		dev_dbg(bt->io->dev, "BT: %s %s TO=%ld - %ld\n",
+@@ -496,6 +570,10 @@ static enum si_sm_result bt_event(struct si_sm_data *bt, long time)
+ 	case BT_STATE_IDLE:
+ 		if (status & BT_SMS_ATN) {
+ 			BT_CONTROL(BT_SMS_ATN);	/* clear it */
++
++#ifdef CONFIG_HISILICON_ERRATUM_162102203
++			bt->sms_atn_flag = 0; /* Reset sms_atn_flag */
++#endif
+ 			return SI_SM_ATTN;
+ 		}
+ 
+-- 
+2.43.0
+

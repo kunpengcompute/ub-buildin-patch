@@ -1,0 +1,54 @@
+From e2359baf71677e608c3309329fe9d48c69b5594a Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 10 Jul 2025 20:53:20 +0800
+Subject: [PATCH 730/960] downstream: arm64/mpam: Add quirk for MPAM MSMON_MBWU
+ monitor NRDY bit
+
+Fix the issue where the MSMON_MBWU monitor does not properly update
+statistics results on certain platforms due to the absence of NRDY
+bit functionality. On such platforms, when configuring a new partid,
+the NRDY bit remains 0, causing the monitor to remain 0 or the previous
+statistics result.
+
+For the specified chip vendors, assume the NRDY bit is set on the time
+configuration update and force the software to re-read the statistics
+result to ensure accurate data.
+
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index a55982ee654d..62a6d667f4e4 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -926,6 +926,14 @@ bool resctrl_arch_would_mbm_overflow(void)
+ 	return read_cpuid_implementor() != ARM_CPU_IMP_HISI;
+ }
+ 
++static bool mpam_ris_has_nrdy_bit(struct mpam_msc_ris *ris)
++{
++	if (ris->comp->class->type == MPAM_CLASS_MEMORY)
++		return read_cpuid_implementor() != ARM_CPU_IMP_HISI;
++
++	return true;
++}
++
+ static void __ris_msmon_read(void *arg)
+ {
+ 	bool nrdy = false;
+@@ -1000,6 +1008,9 @@ static void __ris_msmon_read(void *arg)
+ 			now = FIELD_GET(MSMON___VALUE, now);
+ 		}
+ 
++		if (config_mismatch && !mpam_ris_has_nrdy_bit(ris))
++			nrdy = true;
++
+ 		if (nrdy)
+ 			break;
+ 
+-- 
+2.43.0
+

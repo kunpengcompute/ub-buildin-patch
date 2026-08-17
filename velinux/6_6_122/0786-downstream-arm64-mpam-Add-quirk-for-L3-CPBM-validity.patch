@@ -1,0 +1,61 @@
+From bbbfa4c01ce634ae4c740aa99ce418b582a9c41c Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Thu, 6 Nov 2025 15:46:10 +0800
+Subject: [PATCH 786/960] downstream: arm64/mpam: Add quirk for L3 CPBM
+ validity check
+
+On specific chip models, the CPBM interface does not permit bits 18 and 17
+to be set independently. Therefore, add the validity check for L3 CPBM.
+
+Fixes: 812a0188f492 ("downstream: arm64/mpam: Add quirk for hisi cpbm_wd field")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Quanmin Yan <yanquanmin1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index a8e69f8274d2..92f56459b142 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -1277,6 +1277,26 @@ u32 resctrl_arch_get_config(struct rdt_resource *r, struct rdt_domain *d,
+ 	}
+ }
+ 
++static bool mpam_cpbm_hisi_check_invalid(struct rdt_resource *r,
++					 unsigned long val)
++{
++	static const struct midr_range cpus[] = {
++		MIDR_ALL_VERSIONS(MIDR_HISI_HIP12),
++		{ /* sentinel */ }
++	};
++
++	if (!is_midr_in_range_list(read_cpuid_id(), cpus))
++		return false;
++
++	if (r->cache_level != 3)
++		return false;
++
++	if (val & ~(BIT(18) | BIT(17)))
++		return false;
++
++	return true;
++}
++
+ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 			    u32 closid, enum resctrl_conf_type t, u32 cfg_val)
+ {
+@@ -1305,6 +1325,9 @@ int resctrl_arch_update_one(struct rdt_resource *r, struct rdt_domain *d,
+ 	switch (r->rid) {
+ 	case RDT_RESOURCE_L2:
+ 	case RDT_RESOURCE_L3:
++		if (mpam_cpbm_hisi_check_invalid(r, cfg_val))
++			return -EINVAL;
++
+ 		/* TODO: Scaling is not yet supported */
+ 		cfg.cpbm = cfg_val;
+ 		mpam_set_feature(mpam_feat_cpor_part, &cfg);
+-- 
+2.43.0
+

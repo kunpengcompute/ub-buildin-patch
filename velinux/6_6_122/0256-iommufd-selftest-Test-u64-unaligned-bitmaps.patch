@@ -1,0 +1,73 @@
+From 96ebeb97cd4c7dca94e30a30c9108663c8715925 Mon Sep 17 00:00:00 2001
+From: Joao Martins <joao.m.martins@oracle.com>
+Date: Fri, 2 Feb 2024 13:34:09 +0000
+Subject: [PATCH 256/960] iommufd/selftest: Test u64 unaligned bitmaps
+
+commit 42af95114535dd94c39714b97ad720602d406b9a upstream.
+
+Exercise the dirty tracking bitmaps with byte unaligned addresses in
+addition to the PAGE_SIZE unaligned bitmaps, using a address towards the
+end of the page boundary.
+
+In doing so, increase the tailroom we allocate for the bitmap from
+MOCK_PAGE_SIZE(2K) into PAGE_SIZE(4K), such that we can test end of bitmap
+boundary.
+
+Link: https://lore.kernel.org/r/20240202133415.23819-4-joao.m.martins@oracle.com
+Signed-off-by: Joao Martins <joao.m.martins@oracle.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ tools/testing/selftests/iommu/iommufd.c | 19 +++++++++++++++++--
+ 1 file changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/tools/testing/selftests/iommu/iommufd.c b/tools/testing/selftests/iommu/iommufd.c
+index f0a504c6ad9a..f1753b76048c 100644
+--- a/tools/testing/selftests/iommu/iommufd.c
++++ b/tools/testing/selftests/iommu/iommufd.c
+@@ -1741,9 +1741,9 @@ FIXTURE_SETUP(iommufd_dirty_tracking)
+ 	self->bitmap_size =
+ 		variant->buffer_size / self->page_size / BITS_PER_BYTE;
+ 
+-	/* Provision with an extra (MOCK_PAGE_SIZE) for the unaligned case */
++	/* Provision with an extra (PAGE_SIZE) for the unaligned case */
+ 	rc = posix_memalign(&self->bitmap, PAGE_SIZE,
+-			    self->bitmap_size + MOCK_PAGE_SIZE);
++			    self->bitmap_size + PAGE_SIZE);
+ 	assert(!rc);
+ 	assert(self->bitmap);
+ 	assert((uintptr_t)self->bitmap % PAGE_SIZE == 0);
+@@ -1873,6 +1873,13 @@ TEST_F(iommufd_dirty_tracking, get_dirty_bitmap)
+ 				self->bitmap + MOCK_PAGE_SIZE,
+ 				self->bitmap_size, 0, _metadata);
+ 
++	/* u64 unaligned bitmap */
++	test_mock_dirty_bitmaps(hwpt_id, variant->buffer_size,
++				MOCK_APERTURE_START, self->page_size,
++				self->bitmap + 0xff1,
++				self->bitmap_size, 0, _metadata);
++
++
+ 	test_ioctl_destroy(stddev_id);
+ 	test_ioctl_destroy(hwpt_id);
+ }
+@@ -1907,6 +1914,14 @@ TEST_F(iommufd_dirty_tracking, get_dirty_bitmap_no_clear)
+ 				IOMMU_HWPT_GET_DIRTY_BITMAP_NO_CLEAR,
+ 				_metadata);
+ 
++	/* u64 unaligned bitmap */
++	test_mock_dirty_bitmaps(hwpt_id, variant->buffer_size,
++				MOCK_APERTURE_START, self->page_size,
++				self->bitmap + 0xff1,
++				self->bitmap_size,
++				IOMMU_HWPT_GET_DIRTY_BITMAP_NO_CLEAR,
++				_metadata);
++
+ 	test_ioctl_destroy(stddev_id);
+ 	test_ioctl_destroy(hwpt_id);
+ }
+-- 
+2.43.0
+

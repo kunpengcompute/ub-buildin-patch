@@ -1,0 +1,43 @@
+From c5eb488387d794852f4327aa439505013841aca4 Mon Sep 17 00:00:00 2001
+From: Zhang Qiao <zhangqiao22@huawei.com>
+Date: Mon, 23 Mar 2026 20:09:11 +0800
+Subject: [PATCH 919/960] downstream: rseq: avoid memory access during
+ rseq_get_rseq_cs if task facing critical RAS
+
+After a critical RAS event is triggered, user data for this task becomes
+inaccessible.
+
+The __rseq_handle_notify_resume function handles atomic operations in user
+space. Upon kernel interruption, the task's IP pointer is modified to
+abort_handler. RSEQ-protected data is typically per-CPU statistics during
+task exit. As mm_struct is about to be freed, continuing to fix code is
+meaningless. Thus there is no harm to skip during rseq_get_rseq_cs if task
+facing critical RAS.
+
+Signed-off-by: Zhang Qiao <zhangqiao22@huawei.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+Conflicts:
+	kernel/rseq.c
+[ Context conflict. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ kernel/rseq.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/kernel/rseq.c b/kernel/rseq.c
+index 810005f927d7..318abb620dcf 100644
+--- a/kernel/rseq.c
++++ b/kernel/rseq.c
+@@ -180,6 +180,9 @@ static int rseq_get_rseq_cs(struct task_struct *t, struct rseq_cs *rseq_cs)
+ 	u32 sig;
+ 	int ret;
+ 
++	if (mm_is_critical_error(t->mm))
++		return -EFAULT;
++
+ 	ret = rseq_get_rseq_cs_ptr_val(t->rseq, &ptr);
+ 	if (ret)
+ 		return ret;
+-- 
+2.43.0
+

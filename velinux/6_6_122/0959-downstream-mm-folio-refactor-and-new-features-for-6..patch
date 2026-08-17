@@ -1,0 +1,661 @@
+From 448bff7c6644c483787e155192b3a19837ee7a22 Mon Sep 17 00:00:00 2001
+From: fffsfsaf <1825116237@qq.com>
+Date: Thu, 16 Jul 2026 14:24:08 +0800
+Subject: [PATCH 959/960] downstream: mm: folio refactor and new features for
+ 6.6.122-velinux-lingqu-dev-dkms
+
+Original commit list:
+
+1. 07728124659e mm:make mapping_evict_folio() the preferred way to evict clean folios
+   Author: Matthew Wilcox (Oracle)
+   SHA: 07728124659e88464081ba820ee2edd65edaf523
+
+2. 622eac00b780 mm: convert __do_fault() to use a folio
+   Author: Matthew Wilcox (Oracle)
+   SHA: 622eac00b780d738db91629285fe268f57685a66
+
+3. 14891729d4ea mm: use mapping_evict_folio() in truncate_error_page()
+   Author: Matthew Wilcox (Oracle)
+   SHA: 14891729d4ea62a1d3d8b6a93580da2aa015d87c
+
+4. abcbc0e9885d mm: convert soft_offline_in_use_page() to use a folio
+   Author: Matthew Wilcox (Oracle)
+   SHA: abcbc0e9885d6d9169e68f0038f867a9cba03839
+
+5. 9cee804dd829 mm: convert isolate_page() to mf_isolate_folio()
+   Author: Matthew Wilcox (Oracle)
+   SHA: 9cee804dd8291cadee9b77dd198a123612514565
+
+6. 1d75cc76f896 mm: remove invalidate_inode_page()
+   Author: Matthew Wilcox (Oracle)
+   SHA: 1d75cc76f89609dd71a5b3fe97651d45681a7bba
+
+7. 865c11568375 mm: migrate: add isolate_folio_to_list()
+   Author: Kefeng Wang
+   SHA: 865c1156837594b8732d66787a5bdaa837067ba2
+
+8. 0c9e581672e6 downstream: mm: migrate: add isolate_and_migrate_folios()
+   Author: jianzilin2025
+   SHA: 0c9e581672e686f4449d270b93410aca3712b5eb
+
+9. 3532d3fbb742 downstream: mm: hugetlb: add get_hugetlb_folio_nodemask() mm: hugetlb: add filter function to dequeue hugetlb functions
+   Author: jianzilin2025
+   SHA: 3532d3fbb742fbebbeacc67b338e37700d89e406
+
+Conflict resolution notes:
+- In include/linux/hugetlb.h and mm/hugetlb.c, the existing
+  alloc_hugetlb_folio_vma() on the dkms branch conflicted with
+  the newly added get_hugetlb_folio_nodemask() declaration;
+  both were kept.
+- The alloc_hugetlb_folio_size() / hugetlb_pool_alloc() etc.
+  at the end of mm/hugetlb.c are newly added code and were
+  preserved in full.
+
+Fix note:
+- Removed extra stray closing brace after the
+  get_hugetlb_folio_nodemask() inline stub in
+  include/linux/hugetlb.h, which would cause a build failure
+  when CONFIG_HUGETLB_PAGE is not defined.
+
+Signed-off-by: fffsfsaf <1825116237@qq.com>
+Signed-off-by: slim6882 <yangjunshuo@huawei.com>
+---
+ include/linux/hugetlb.h        | 13 ++++++
+ include/linux/migrate.h        | 12 +++++
+ include/linux/migrate_mode.h   |  1 +
+ include/trace/events/migrate.h |  3 +-
+ mm/hugetlb.c                   | 59 +++++++++++++++++++------
+ mm/internal.h                  |  2 +-
+ mm/memory-failure.c            | 74 +++++++++++--------------------
+ mm/memory.c                    | 20 ++++-----
+ mm/migrate.c                   | 80 ++++++++++++++++++++++++++++++++++
+ mm/truncate.c                  | 42 ++++++++----------
+ 10 files changed, 208 insertions(+), 98 deletions(-)
+
+diff --git a/include/linux/hugetlb.h b/include/linux/hugetlb.h
+index 9cacbe4d3fc9..9e010ba20ee7 100644
+--- a/include/linux/hugetlb.h
++++ b/include/linux/hugetlb.h
+@@ -27,6 +27,8 @@ typedef struct { unsigned long pd; } hugepd_t;
+ #define __hugepd(x) ((hugepd_t) { (x) })
+ #endif
+ 
++typedef bool filter_hugetlb_t(struct folio *folio);
++
+ void free_huge_folio(struct folio *folio);
+ 
+ #ifdef CONFIG_HUGETLB_PAGE
+@@ -767,6 +769,9 @@ struct folio *alloc_hugetlb_folio(struct vm_area_struct *vma,
+ 				unsigned long addr, int avoid_reserve);
+ struct folio *alloc_hugetlb_folio_nodemask(struct hstate *h, int preferred_nid,
+ 				nodemask_t *nmask, gfp_t gfp_mask);
++struct folio *get_hugetlb_folio_nodemask(unsigned long size, int preferred_nid,
++				nodemask_t *nmask, gfp_t gfp_mask,
++				filter_hugetlb_t filter);
+ int hugetlb_add_to_page_cache(struct folio *folio, struct address_space *mapping,
+ 			pgoff_t idx);
+ void restore_reserve_on_error(struct hstate *h, struct vm_area_struct *vma,
+@@ -1108,6 +1113,14 @@ alloc_hugetlb_folio_nodemask(struct hstate *h, int preferred_nid,
+ 	return NULL;
+ }
+ 
++static inline struct folio *
++get_hugetlb_folio_nodemask(unsigned long size, int preferred_nid,
++		nodemask_t *nmask, gfp_t gfp_mask,
++		filter_hugetlb_t filter)
++{
++	return NULL;
++}
++
+ static inline int __alloc_bootmem_huge_page(struct hstate *h)
+ {
+ 	return 0;
+diff --git a/include/linux/migrate.h b/include/linux/migrate.h
+index d662f00ad361..11350d69d6ee 100644
+--- a/include/linux/migrate.h
++++ b/include/linux/migrate.h
+@@ -69,7 +69,12 @@ int migrate_pages(struct list_head *l, new_folio_t new, free_folio_t free,
+ 		  unsigned long private, enum migrate_mode mode, int reason,
+ 		  unsigned int *ret_succeeded);
+ struct folio *alloc_migration_target(struct folio *src, unsigned long private);
++int isolate_and_migrate_folios(struct folio **folios, unsigned int nr_folios,
++		new_folio_t get_new_folio, free_folio_t put_new_folio,
++		unsigned long private, enum migrate_mode mode,
++		unsigned int *nr_succeeded);
+ bool isolate_movable_page(struct page *page, isolate_mode_t mode);
++bool isolate_folio_to_list(struct folio *folio, struct list_head *list);
+ 
+ int migrate_huge_page_move_mapping(struct address_space *mapping,
+ 		struct folio *dst, struct folio *src, enum migrate_mode mode);
+@@ -90,8 +95,15 @@ static inline int migrate_pages(struct list_head *l, new_folio_t new,
+ static inline struct folio *alloc_migration_target(struct folio *src,
+ 		unsigned long private)
+ 	{ return NULL; }
++static inline int isolate_and_migrate_folios(struct folio **folios, unsigned int nr_folios,
++		new_folio_t get_new_folio, free_folio_t put_new_folio,
++		unsigned long private, enum migrate_mode mode,
++		unsigned int *nr_succeeded)
++	{ return -EINVAL; }
+ static inline bool isolate_movable_page(struct page *page, isolate_mode_t mode)
+ 	{ return false; }
++static inline bool isolate_folio_to_list(struct folio *folio, struct list_head *list)
++	{ return false; }
+ 
+ static inline int migrate_huge_page_move_mapping(struct address_space *mapping,
+ 		struct folio *dst, struct folio *src, enum migrate_mode mode)
+diff --git a/include/linux/migrate_mode.h b/include/linux/migrate_mode.h
+index f37cc03f9369..2a248bd4516e 100644
+--- a/include/linux/migrate_mode.h
++++ b/include/linux/migrate_mode.h
+@@ -29,6 +29,7 @@ enum migrate_reason {
+ 	MR_CONTIG_RANGE,
+ 	MR_LONGTERM_PIN,
+ 	MR_DEMOTION,
++	MR_HOTNESS,
+ 	MR_TYPES
+ };
+ 
+diff --git a/include/trace/events/migrate.h b/include/trace/events/migrate.h
+index 061b5128f335..48ef58fccea3 100644
+--- a/include/trace/events/migrate.h
++++ b/include/trace/events/migrate.h
+@@ -22,7 +22,8 @@
+ 	EM( MR_NUMA_MISPLACED,	"numa_misplaced")		\
+ 	EM( MR_CONTIG_RANGE,	"contig_range")			\
+ 	EM( MR_LONGTERM_PIN,	"longterm_pin")			\
+-	EMe(MR_DEMOTION,	"demotion")
++	EM(MR_DEMOTION,		"demotion")			\
++	EMe(MR_HOTNESS,		"hotness")
+ 
+ /*
+  * First define the enums in the above macros to be exported to userspace
+diff --git a/mm/hugetlb.c b/mm/hugetlb.c
+index 6fb7031e3c59..a00622436300 100644
+--- a/mm/hugetlb.c
++++ b/mm/hugetlb.c
+@@ -1359,8 +1359,8 @@ static void enqueue_hugetlb_folio(struct hstate *h, struct folio *folio)
+ 	folio_set_hugetlb_freed(folio);
+ }
+ 
+-static struct folio *dequeue_hugetlb_folio_node_exact(struct hstate *h,
+-								int nid)
++static struct folio *__dequeue_hugetlb_folio_node_exact(struct hstate *h,
++		int nid, filter_hugetlb_t filter)
+ {
+ 	struct folio *folio;
+ 	bool pin = !!(current->flags & PF_MEMALLOC_PIN);
+@@ -1373,6 +1373,9 @@ static struct folio *dequeue_hugetlb_folio_node_exact(struct hstate *h,
+ 		if (folio_test_hwpoison(folio))
+ 			continue;
+ 
++		if (filter && filter(folio))
++			continue;
++
+ 		list_move(&folio->lru, &h->hugepage_activelist);
+ 		folio_ref_unfreeze(folio, 1);
+ 		folio_clear_hugetlb_freed(folio);
+@@ -1384,8 +1387,14 @@ static struct folio *dequeue_hugetlb_folio_node_exact(struct hstate *h,
+ 	return NULL;
+ }
+ 
+-static struct folio *dequeue_hugetlb_folio_nodemask(struct hstate *h, gfp_t gfp_mask,
+-							int nid, nodemask_t *nmask)
++struct folio *dequeue_hugetlb_folio_node_exact(struct hstate *h, int nid)
++{
++	return __dequeue_hugetlb_folio_node_exact(h, nid, NULL);
++}
++
++static struct folio *__dequeue_hugetlb_folio_nodemask(struct hstate *h,
++		gfp_t gfp_mask, int nid, nodemask_t *nmask,
++		filter_hugetlb_t filter)
+ {
+ 	unsigned int cpuset_mems_cookie;
+ 	struct zonelist *zonelist;
+@@ -1410,7 +1419,7 @@ static struct folio *dequeue_hugetlb_folio_nodemask(struct hstate *h, gfp_t gfp_
+ 			continue;
+ 		node = zone_to_nid(zone);
+ 
+-		folio = dequeue_hugetlb_folio_node_exact(h, node);
++		folio = __dequeue_hugetlb_folio_node_exact(h, node, filter);
+ 		if (folio)
+ 			return folio;
+ 	}
+@@ -1420,6 +1429,12 @@ static struct folio *dequeue_hugetlb_folio_nodemask(struct hstate *h, gfp_t gfp_
+ 	return NULL;
+ }
+ 
++static struct folio *dequeue_hugetlb_folio_nodemask(struct hstate *h,
++		gfp_t gfp_mask, int nid, nodemask_t *nmask)
++{
++	return __dequeue_hugetlb_folio_nodemask(h, gfp_mask, nid, nmask, NULL);
++}
++
+ static unsigned long available_huge_pages(struct hstate *h)
+ {
+ 	return h->free_huge_pages - h->resv_huge_pages;
+@@ -2667,6 +2682,31 @@ struct folio *alloc_hugetlb_folio_nodemask(struct hstate *h, int preferred_nid,
+ 	return alloc_migrate_hugetlb_folio(h, gfp_mask, preferred_nid, nmask);
+ }
+ 
++/*
++ * Similar to alloc_hugetlb_folio_nodemask(), but it will only
++ * allocate hugepages from free lists.
++ */
++struct folio *get_hugetlb_folio_nodemask(unsigned long size, int preferred_nid,
++		nodemask_t *nmask, gfp_t gfp_mask, filter_hugetlb_t filter)
++{
++	unsigned long flags;
++	struct hstate *h;
++	struct folio *folio = NULL;
++
++	h = size_to_hstate(size);
++	if (!h)
++		return NULL;
++
++	spin_lock_irqsave(&hugetlb_lock, flags);
++	if (available_huge_pages(h))
++		folio = __dequeue_hugetlb_folio_nodemask(h, gfp_mask,
++				preferred_nid, nmask, filter);
++	spin_unlock_irqrestore(&hugetlb_lock, flags);
++
++	return folio;
++}
++EXPORT_SYMBOL(get_hugetlb_folio_nodemask);
++
+ static nodemask_t *policy_mbind_nodemask(gfp_t gfp)
+ {
+ #ifdef CONFIG_NUMA
+@@ -8184,8 +8224,6 @@ struct folio *alloc_hugetlb_folio_size(int nid, unsigned long size)
+ 	gfp_t gfp_mask;
+ 	struct hstate *h;
+ 	nodemask_t nodemask;
+-	unsigned long flags;
+-	struct folio *folio = NULL;
+ 
+ 	h = size_to_hstate(size);
+ 	if (!h)
+@@ -8195,12 +8233,7 @@ struct folio *alloc_hugetlb_folio_size(int nid, unsigned long size)
+ 	node_set(nid, nodemask);
+ 	gfp_mask = htlb_alloc_mask(h);
+ 
+-	spin_lock_irqsave(&hugetlb_lock, flags);
+-	if (h->free_huge_pages - h->resv_huge_pages > 0)
+-		folio = dequeue_hugetlb_folio_nodemask(h, gfp_mask, nid, &nodemask);
+-	spin_unlock_irqrestore(&hugetlb_lock, flags);
+-
+-	return folio;
++	return get_hugetlb_folio_nodemask(size, nid, &nodemask, gfp_mask, NULL);
+ }
+ EXPORT_SYMBOL(alloc_hugetlb_folio_size);
+ 
+diff --git a/mm/internal.h b/mm/internal.h
+index c7d1a21bb7a0..f99d78d9d8fd 100644
+--- a/mm/internal.h
++++ b/mm/internal.h
+@@ -183,7 +183,7 @@ void filemap_free_folio(struct address_space *mapping, struct folio *folio);
+ int truncate_inode_folio(struct address_space *mapping, struct folio *folio);
+ bool truncate_inode_partial_folio(struct folio *folio, loff_t start,
+ 		loff_t end);
+-long invalidate_inode_page(struct page *page);
++long mapping_evict_folio(struct address_space *mapping, struct folio *folio);
+ unsigned long mapping_try_invalidate(struct address_space *mapping,
+ 		pgoff_t start, pgoff_t end, unsigned long *nr_failed);
+ 
+diff --git a/mm/memory-failure.c b/mm/memory-failure.c
+index d2370da0bce4..c9b4a584e190 100644
+--- a/mm/memory-failure.c
++++ b/mm/memory-failure.c
+@@ -961,10 +961,10 @@ static int delete_from_lru_cache(struct page *p)
+ static int truncate_error_page(struct page *p, unsigned long pfn,
+ 				struct address_space *mapping)
+ {
++	struct folio *folio = page_folio(p);
+ 	int ret = MF_FAILED;
+ 
+ 	if (mapping->a_ops->error_remove_page) {
+-		struct folio *folio = page_folio(p);
+ 		int err = mapping->a_ops->error_remove_page(mapping, p);
+ 
+ 		if (err != 0)
+@@ -978,7 +978,7 @@ static int truncate_error_page(struct page *p, unsigned long pfn,
+ 		 * If the file system doesn't support it just invalidate
+ 		 * This fails on dirty or anything with private pages
+ 		 */
+-		if (invalidate_inode_page(p))
++		if (mapping_evict_folio(mapping, folio))
+ 			ret = MF_RECOVERED;
+ 		else
+ 			pr_info("%#lx: Failed to invalidate\n",	pfn);
+@@ -2632,40 +2632,6 @@ int unpoison_memory(unsigned long pfn)
+ }
+ EXPORT_SYMBOL(unpoison_memory);
+ 
+-static bool isolate_page(struct page *page, struct list_head *pagelist)
+-{
+-	bool isolated = false;
+-
+-	if (PageHuge(page)) {
+-		isolated = isolate_hugetlb(page_folio(page), pagelist);
+-	} else {
+-		bool lru = !__PageMovable(page);
+-
+-		if (lru)
+-			isolated = isolate_lru_page(page);
+-		else
+-			isolated = isolate_movable_page(page,
+-							ISOLATE_UNEVICTABLE);
+-
+-		if (isolated) {
+-			list_add(&page->lru, pagelist);
+-			if (lru)
+-				inc_node_page_state(page, NR_ISOLATED_ANON +
+-						    page_is_file_lru(page));
+-		}
+-	}
+-
+-	/*
+-	 * If we succeed to isolate the page, we grabbed another refcount on
+-	 * the page, so we can safely drop the one we got from get_any_page().
+-	 * If we failed to isolate the page, it means that we cannot go further
+-	 * and we will return an error, so drop the reference we got from
+-	 * get_any_page() as well.
+-	 */
+-	put_page(page);
+-	return isolated;
+-}
+-
+ /*
+  * soft_offline_in_use_page handles hugetlb-pages and non-hugetlb pages.
+  * If the page is a non-dirty unmapped page-cache page, it simply invalidates.
+@@ -2675,40 +2641,41 @@ static int soft_offline_in_use_page(struct page *page)
+ {
+ 	long ret = 0;
+ 	unsigned long pfn = page_to_pfn(page);
+-	struct page *hpage = compound_head(page);
++	struct folio *folio = page_folio(page);
+ 	char const *msg_page[] = {"page", "hugepage"};
+-	bool huge = PageHuge(page);
++	bool huge = folio_test_hugetlb(folio);
++	bool isolated;
+ 	LIST_HEAD(pagelist);
+ 	struct migration_target_control mtc = {
+ 		.nid = NUMA_NO_NODE,
+ 		.gfp_mask = GFP_USER | __GFP_MOVABLE | __GFP_RETRY_MAYFAIL,
+ 	};
+ 
+-	if (!huge && PageTransHuge(hpage)) {
++	if (!huge && folio_test_large(folio)) {
+ 		if (try_to_split_thp_page(page)) {
+ 			pr_info("soft offline: %#lx: thp split failed\n", pfn);
+ 			return -EBUSY;
+ 		}
+-		hpage = page;
++		folio = page_folio(page);
+ 	}
+ 
+-	lock_page(page);
++	folio_lock(folio);
+ 	if (!huge)
+-		wait_on_page_writeback(page);
++		folio_wait_writeback(folio);
+ 	if (PageHWPoison(page)) {
+-		unlock_page(page);
+-		put_page(page);
++		folio_unlock(folio);
++		folio_put(folio);
+ 		pr_info("soft offline: %#lx page already poisoned\n", pfn);
+ 		return 0;
+ 	}
+ 
+-	if (!huge && PageLRU(page) && !PageSwapCache(page))
++	if (!huge && folio_test_lru(folio) && !folio_test_swapcache(folio))
+ 		/*
+ 		 * Try to invalidate first. This should work for
+ 		 * non dirty unmapped page cache pages.
+ 		 */
+-		ret = invalidate_inode_page(page);
+-	unlock_page(page);
++		ret = mapping_evict_folio(folio_mapping(folio), folio);
++	folio_unlock(folio);
+ 
+ 	if (ret) {
+ 		pr_info("soft_offline: %#lx: invalidated\n", pfn);
+@@ -2716,7 +2683,18 @@ static int soft_offline_in_use_page(struct page *page)
+ 		return 0;
+ 	}
+ 
+-	if (isolate_page(hpage, &pagelist)) {
++	isolated = isolate_folio_to_list(folio, &pagelist);
++
++	/*
++	 * If we succeed to isolate the folio, we grabbed another refcount on
++	 * the folio, so we can safely drop the one we got from get_any_page().
++	 * If we failed to isolate the folio, it means that we cannot go further
++	 * and we will return an error, so drop the reference we got from
++	 * get_any_page() as well.
++	 */
++	folio_put(folio);
++
++	if (isolated) {
+ 		ret = migrate_pages(&pagelist, alloc_migration_target, NULL,
+ 			(unsigned long)&mtc, MIGRATE_SYNC, MR_MEMORY_FAILURE, NULL);
+ 		if (!ret) {
+diff --git a/mm/memory.c b/mm/memory.c
+index 384edc262144..8a17ee19fed1 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -4301,6 +4301,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
+ static vm_fault_t __do_fault(struct vm_fault *vmf)
+ {
+ 	struct vm_area_struct *vma = vmf->vma;
++	struct folio *folio;
+ 	vm_fault_t ret;
+ 
+ 	/*
+@@ -4329,27 +4330,26 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
+ 			    VM_FAULT_DONE_COW)))
+ 		return ret;
+ 
++	folio = page_folio(vmf->page);
+ 	if (unlikely(PageHWPoison(vmf->page))) {
+-		struct page *page = vmf->page;
+ 		vm_fault_t poisonret = VM_FAULT_HWPOISON;
+ 		if (ret & VM_FAULT_LOCKED) {
+-			if (page_mapped(page))
+-				unmap_mapping_pages(page_mapping(page),
+-						    page->index, 1, false);
+-			/* Retry if a clean page was removed from the cache. */
+-			if (invalidate_inode_page(page))
++			if (page_mapped(vmf->page))
++				unmap_mapping_folio(folio);
++			/* Retry if a clean folio was removed from the cache. */
++			if (mapping_evict_folio(folio->mapping, folio))
+ 				poisonret = VM_FAULT_NOPAGE;
+-			unlock_page(page);
++			folio_unlock(folio);
+ 		}
+-		put_page(page);
++		folio_put(folio);
+ 		vmf->page = NULL;
+ 		return poisonret;
+ 	}
+ 
+ 	if (unlikely(!(ret & VM_FAULT_LOCKED)))
+-		lock_page(vmf->page);
++		folio_lock(folio);
+ 	else
+-		VM_BUG_ON_PAGE(!PageLocked(vmf->page), vmf->page);
++		VM_BUG_ON_PAGE(!folio_test_locked(folio), vmf->page);
+ 
+ 	return ret;
+ }
+diff --git a/mm/migrate.c b/mm/migrate.c
+index 6bf410484eb4..ce020c1c0026 100644
+--- a/mm/migrate.c
++++ b/mm/migrate.c
+@@ -177,6 +177,32 @@ void putback_movable_pages(struct list_head *l)
+ 	}
+ }
+ 
++/* Must be called with an elevated refcount on the non-hugetlb folio */
++bool isolate_folio_to_list(struct folio *folio, struct list_head *list)
++{
++	bool isolated, lru;
++
++	if (folio_test_hugetlb(folio))
++		return isolate_hugetlb(folio, list);
++
++	lru = !__folio_test_movable(folio);
++	if (lru)
++		isolated = folio_isolate_lru(folio);
++	else
++		isolated = isolate_movable_page(&folio->page,
++						ISOLATE_UNEVICTABLE);
++
++	if (!isolated)
++		return false;
++
++	list_add(&folio->lru, list);
++	if (lru)
++		node_stat_add_folio(folio, NR_ISOLATED_ANON +
++				    folio_is_file_lru(folio));
++
++	return true;
++}
++
+ /*
+  * Restore a potential migration pte to a working pte entry
+  */
+@@ -2043,6 +2069,60 @@ struct folio *alloc_migration_target(struct folio *src, unsigned long private)
+ 	return __folio_alloc(gfp_mask, order, nid, mtc->nmask);
+ }
+ 
++/*
++ * isolate_and_migrate_folios - isolate and migrate folios
++ *
++ * @folios:		The array stores the folios to be migrated.
++ * @nr_folios:		The number of folios to be migrated.
++ * @get_new_folio:	The function used to allocate free folios to be used
++ *			as the target of the folio migration.
++ * @put_new_folio:	The function used to free target folios if migration
++ *			fails, or NULL if no special handling is necessary.
++ * @private:		Private data to be passed on to get_new_folio()
++ * @mode:		The migration mode that specifies the constraints for
++ *			folio migration, if any.
++ * @nr_succeeded:	Set to the number of folios migrated successfully if
++ *			the caller passes a non-NULL pointer.
++ *
++ * This function is mainly used to isolate and migrate folios based on hotness
++ * of folios. Use this function to migrate cold folios identified by the caller
++ * to remote NUMA and hot folios to local NUMA.
++ *
++ * Context: The folio_get must be called on all folios before because folio_put
++ *	    is called after isolation.
++ *
++ * Returns the number of folios that were isolated but not migrated,
++ * or an error code.
++ */
++int isolate_and_migrate_folios(struct folio **folios, unsigned int nr_folios,
++		new_folio_t get_new_folio, free_folio_t put_new_folio,
++		unsigned long private, enum migrate_mode mode,
++		unsigned int *nr_succeeded)
++{
++	int ret = 0;
++	unsigned int i;
++	struct folio *folio;
++	LIST_HEAD(source);
++
++	for (i = 0; i < nr_folios; i++) {
++		folio = folios[i];
++		VM_BUG_ON_FOLIO(!folio_ref_count(folio), folio);
++		isolate_folio_to_list(folio, &source);
++		folio_put(folio);
++	}
++	if (!list_empty(&source)) {
++		ret = migrate_pages(&source, get_new_folio, put_new_folio,
++			private, mode, MR_HOTNESS, nr_succeeded);
++		if (ret)
++			putback_movable_pages(&source);
++		if (nr_succeeded && *nr_succeeded)
++			count_vm_numa_events(NUMA_PAGE_MIGRATE, *nr_succeeded);
++	}
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(isolate_and_migrate_folios);
++
+ #ifdef CONFIG_NUMA
+ 
+ static int store_status(int __user *status, int start, int value, int nr)
+diff --git a/mm/truncate.c b/mm/truncate.c
+index fa512642dee2..4a7616970afd 100644
+--- a/mm/truncate.c
++++ b/mm/truncate.c
+@@ -292,9 +292,22 @@ int generic_error_remove_page(struct address_space *mapping, struct page *page)
+ }
+ EXPORT_SYMBOL(generic_error_remove_page);
+ 
+-static long mapping_evict_folio(struct address_space *mapping,
+-		struct folio *folio)
++/**
++ * mapping_evict_folio() - Remove an unused folio from the page-cache.
++ * @mapping: The mapping this folio belongs to.
++ * @folio: The folio to remove.
++ *
++ * Safely remove one folio from the page cache.
++ * It only drops clean, unused folios.
++ *
++ * Context: Folio must be locked.
++ * Return: The number of pages successfully removed.
++ */
++long mapping_evict_folio(struct address_space *mapping, struct folio *folio)
+ {
++	/* The page may have been truncated before it was locked */
++	if (!mapping)
++		return 0;
+ 	if (folio_test_dirty(folio) || folio_test_writeback(folio))
+ 		return 0;
+ 	/* The refcount will be elevated if any page in the folio is mapped */
+@@ -307,27 +320,6 @@ static long mapping_evict_folio(struct address_space *mapping,
+ 	return remove_mapping(mapping, folio);
+ }
+ 
+-/**
+- * invalidate_inode_page() - Remove an unused page from the pagecache.
+- * @page: The page to remove.
+- *
+- * Safely invalidate one page from its pagecache mapping.
+- * It only drops clean, unused pages.
+- *
+- * Context: Page must be locked.
+- * Return: The number of pages successfully removed.
+- */
+-long invalidate_inode_page(struct page *page)
+-{
+-	struct folio *folio = page_folio(page);
+-	struct address_space *mapping = folio_mapping(folio);
+-
+-	/* The page may have been truncated before it was locked */
+-	if (!mapping)
+-		return 0;
+-	return mapping_evict_folio(mapping, folio);
+-}
+-
+ /**
+  * truncate_inode_pages_range - truncate range of pages specified by start & end byte offsets
+  * @mapping: mapping to truncate
+@@ -586,9 +578,9 @@ unsigned long invalidate_mapping_pages(struct address_space *mapping,
+ EXPORT_SYMBOL(invalidate_mapping_pages);
+ 
+ /*
+- * This is like invalidate_inode_page(), except it ignores the page's
++ * This is like mapping_evict_folio(), except it ignores the folio's
+  * refcount.  We do this because invalidate_inode_pages2() needs stronger
+- * invalidation guarantees, and cannot afford to leave pages behind because
++ * invalidation guarantees, and cannot afford to leave folios behind because
+  * shrink_page_list() has a temp ref on them, or because they're transiently
+  * sitting in the folio_add_lru() caches.
+  */
+-- 
+2.43.0
+

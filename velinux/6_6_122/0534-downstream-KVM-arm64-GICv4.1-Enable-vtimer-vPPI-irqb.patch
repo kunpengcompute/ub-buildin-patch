@@ -1,0 +1,125 @@
+From 9211c8e72a552fa4e7ff37dc0721d0295d8de710 Mon Sep 17 00:00:00 2001
+From: wanghaibin <wanghaibin.wang@huawei.com>
+Date: Thu, 11 Jan 2024 20:43:09 +0800
+Subject: [PATCH 534/960] downstream: KVM: arm64: GICv4.1: Enable vtimer vPPI
+ irqbypass config
+
+Plumb the configuration of vtimer interrupts into the first VCPU run.
+
+The restore of a guest will also benefit from it. By configering
+vPPIs at first run, we can move the restored PPIs to the HW if
+that's what the HW allows us to do.
+
+Signed-off-by: wanghaibin <wanghaibin.wang@huawei.com>
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Dongxu Sun <sundongxu3@huawei.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/kvm/vgic/vgic-v3.c |  4 +++
+ arch/arm64/kvm/vgic/vgic-v4.c | 48 +++++++++++++++++++++++++++++++++++
+ arch/arm64/kvm/vgic/vgic.h    |  5 +++-
+ 3 files changed, 56 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/kvm/vgic/vgic-v3.c b/arch/arm64/kvm/vgic/vgic-v3.c
+index 41e3955cee0a..3c13ea672c7f 100644
+--- a/arch/arm64/kvm/vgic/vgic-v3.c
++++ b/arch/arm64/kvm/vgic/vgic-v3.c
+@@ -571,6 +571,10 @@ int vgic_v3_map_resources(struct kvm *kvm)
+ 	if (kvm_vgic_global_state.has_gicv4_1)
+ 		vgic_v4_configure_vsgis(kvm);
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++	if (kvm_vgic_vtimer_irqbypass_support())
++		vgic_v4_configure_vtimer(kvm);
++#endif
+ 	return 0;
+ }
+ 
+diff --git a/arch/arm64/kvm/vgic/vgic-v4.c b/arch/arm64/kvm/vgic/vgic-v4.c
+index 339a55194b2c..2c3bf0c07284 100644
+--- a/arch/arm64/kvm/vgic/vgic-v4.c
++++ b/arch/arm64/kvm/vgic/vgic-v4.c
+@@ -204,6 +204,54 @@ void vgic_v4_configure_vsgis(struct kvm *kvm)
+ 	kvm_arm_resume_guest(kvm);
+ }
+ 
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++static void vgic_v4_enable_vtimer(struct kvm_vcpu *vcpu)
++{
++	struct vgic_cpu *vgic_cpu = &vcpu->arch.vgic_cpu;
++	struct vtimer_info *vtimer = &vgic_cpu->vtimer;
++	struct its_vpe *vpe = &vcpu->arch.vgic_cpu.vgic_v3.its_vpe;
++	struct vgic_irq *irq;
++	struct irq_desc *desc;
++	int ret;
++
++	if (!vgic_cpu->vtimer_irqbypass)
++		return;
++
++	irq = vgic_get_irq(vcpu->kvm, vcpu, vtimer->intid);
++	irq->host_irq = irq_find_mapping(vpe->sgi_domain, vtimer->intid);
++
++	/* Transfer the full irq state to the vPE */
++	vgic_v4_sync_sgi_config(vpe, irq);
++	desc = irq_to_desc(irq->host_irq);
++	ret = irq_domain_activate_irq(irq_desc_get_irq_data(desc),
++				      false);
++	if (!WARN_ON(ret)) {
++		/* Transfer pending state */
++		ret = irq_set_irqchip_state(irq->host_irq,
++					    IRQCHIP_STATE_PENDING,
++					    irq->pending_latch);
++		WARN_ON(ret);
++		irq->pending_latch = false;
++
++		/* Transfer active state */
++		vtimer->set_active_stat(vcpu, irq->intid, irq->active);
++		irq->active = false;
++	}
++
++	vgic_put_irq(vcpu->kvm, irq);
++}
++
++/* Must be called with the kvm lock held */
++void vgic_v4_configure_vtimer(struct kvm *kvm)
++{
++	struct kvm_vcpu *vcpu;
++	unsigned long i;
++
++	kvm_for_each_vcpu(i, vcpu, kvm)
++		vgic_v4_enable_vtimer(vcpu);
++}
++#endif
++
+ /*
+  * Must be called with GICv4.1 and the vPE unmapped, which
+  * indicates the invalidation of any VPT caches associated
+diff --git a/arch/arm64/kvm/vgic/vgic.h b/arch/arm64/kvm/vgic/vgic.h
+index 6d4dd97ff03e..a939fd5bb7e5 100644
+--- a/arch/arm64/kvm/vgic/vgic.h
++++ b/arch/arm64/kvm/vgic/vgic.h
+@@ -176,7 +176,7 @@ static inline bool vgic_direct_sgi_or_ppi(struct vgic_irq *irq)
+ 
+ 	return direct_sgi || direct_ppi;
+ #else
+-	return direct_sgi
++	return direct_sgi;
+ #endif
+ }
+ 
+@@ -377,6 +377,9 @@ void vgic_v4_teardown(struct kvm *kvm);
+ void vgic_v4_configure_vsgis(struct kvm *kvm);
+ void vgic_v4_get_vlpi_state(struct vgic_irq *irq, bool *val);
+ int vgic_v4_request_vpe_irq(struct kvm_vcpu *vcpu, int irq);
++#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
++void vgic_v4_configure_vtimer(struct kvm *kvm);
++#endif
+ 
+ static inline bool kvm_has_gicv3(struct kvm *kvm)
+ {
+-- 
+2.43.0
+

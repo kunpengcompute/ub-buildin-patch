@@ -1,0 +1,111 @@
+From 5849c6a19f5c48043d0794442b3adb00ed15ffdc Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Thu, 21 Nov 2024 09:30:10 +0800
+Subject: [PATCH 886/960] downstream: iommu: Fix kabi breakage due to "iommufd:
+ Introduce IOMMUFD_OBJ_VIOMMU and its related struct"
+
+Fix kabi breakage due to "iommufd: Introduce IOMMUFD_OBJ_VIOMMU and
+its related struct".
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Deng Guangxing <dengguangxing@huawei.com>
+Signed-off-by: Wang Xin <wangxin667@h-partners.com>
+Signed-off-by: Yuhao Zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Zhang Guangzhi <zhangguangzhi3@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/fault.c | 21 ++++++++++++---------
+ include/linux/iommu.h         |  8 ++++----
+ 2 files changed, 16 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/iommu/iommufd/fault.c b/drivers/iommu/iommufd/fault.c
+index 5559c96c7552..bd890d49937b 100644
+--- a/drivers/iommu/iommufd/fault.c
++++ b/drivers/iommu/iommufd/fault.c
+@@ -108,7 +108,8 @@ static void iommufd_auto_response_faults(struct iommufd_hw_pagetable *hwpt,
+ 					 struct iommufd_attach_handle *handle)
+ {
+ 	struct iommufd_fault *fault = hwpt->fault;
+-	struct iopf_group *group, *next;
++	struct iopf_group *group;
++	struct iopf_group_extend *group_extend, *next;
+ 	struct list_head free_list;
+ 	unsigned long index;
+ 
+@@ -118,17 +119,17 @@ static void iommufd_auto_response_faults(struct iommufd_hw_pagetable *hwpt,
+ 
+ 	mutex_lock(&fault->mutex);
+ 	spin_lock(&fault->lock);
+-	list_for_each_entry_safe(group, next, &fault->deliver, node) {
+-		if (group->attach_handle != &handle->handle)
++	list_for_each_entry_safe(group_extend, next, &fault->deliver, node) {
++		if (group_extend->iopf_group.attach_handle != &handle->handle)
+ 			continue;
+-		list_move(&group->node, &free_list);
++		list_move(&group_extend->node, &free_list);
+ 	}
+ 	spin_unlock(&fault->lock);
+ 
+-	list_for_each_entry_safe(group, next, &free_list, node) {
+-		list_del(&group->node);
+-		iopf_group_response(group, IOMMU_PAGE_RESP_INVALID);
+-		iopf_free_group(group);
++	list_for_each_entry_safe(group_extend, next, &free_list, node) {
++		list_del(&group_extend->node);
++		iopf_group_response(&group_extend->iopf_group, IOMMU_PAGE_RESP_INVALID);
++		iopf_free_group(&group_extend->iopf_group);
+ 	}
+ 
+ 	xa_for_each(&fault->response, index, group) {
+@@ -464,12 +465,14 @@ int iommufd_fault_iopf_handler(struct iopf_group *group)
+ {
+ 	struct iommufd_hw_pagetable *hwpt;
+ 	struct iommufd_fault *fault;
++	struct iopf_group_extend *group_extend =
++		container_of(group, struct iopf_group_extend, iopf_group);
+ 
+ 	hwpt = group->attach_handle->domain->fault_data;
+ 	fault = hwpt->fault;
+ 
+ 	spin_lock(&fault->lock);
+-	list_add_tail(&group->node, &fault->deliver);
++	list_add_tail(&group_extend->node, &fault->deliver);
+ 	spin_unlock(&fault->lock);
+ 
+ 	wake_up_interruptible(&fault->wait_queue);
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index 9adde719b7a9..e80bd139fa2a 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -657,10 +657,6 @@ struct iommu_ops {
+ 	void (*remove_dev_pasid)(struct device *dev, ioasid_t pasid,
+ 				struct iommu_domain *domain);
+ 
+-	struct iommufd_viommu *(*viommu_alloc)(
+-		struct device *dev, struct iommu_domain *parent_domain,
+-		struct iommufd_ctx *ictx, unsigned int viommu_type);
+-
+ 	const struct iommu_domain_ops *default_domain_ops;
+ 	unsigned long pgsize_bitmap;
+ 	struct module *owner;
+@@ -670,6 +666,9 @@ struct iommu_ops {
+ 	u8 user_pasid_table:1;
+ 	struct iommu_domain *(*domain_alloc_sva)(struct device *dev,
+ 				struct mm_struct *mm);
++	struct iommufd_viommu *(*viommu_alloc)(
++			struct device *dev, struct iommu_domain *parent_domain,
++			struct iommufd_ctx *ictx, unsigned int viommu_type);
+ };
+ 
+ /**
+@@ -739,6 +738,7 @@ struct iommu_domain_ops {
+ 				    dma_addr_t iova);
+ 
+ 	bool (*enforce_cache_coherency)(struct iommu_domain *domain);
++	int (*enable_nesting)(struct iommu_domain *domain);
+ 	int (*set_pgtable_quirks)(struct iommu_domain *domain,
+ 				  unsigned long quirks);
+ 
+-- 
+2.43.0
+

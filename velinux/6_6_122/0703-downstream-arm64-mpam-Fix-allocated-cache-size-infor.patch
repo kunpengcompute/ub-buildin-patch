@@ -1,0 +1,33 @@
+From 6fca70c07513e41ea2317edf0b6f27687360e123 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 23 Apr 2025 18:51:46 +0800
+Subject: [PATCH 703/960] downstream: arm64/mpam: Fix allocated cache size
+ information
+
+Fix struct rdt_resource initialization about cache level in
+mpam_resctrl_resource_init(), otherwise when obtaining allocated cache
+size by size file under control group, it would be found that the cache
+level is uninitialized.
+
+Fixes: 1ca491c7bbcd ("arm_mpam: resctrl: Pick the caches we will use as resctrl resources")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index e3acda04bd3a..21c7081d3a8d 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -749,6 +749,7 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
+ 		r->fflags = RFTYPE_RES_CACHE;
+ 		r->default_ctrl = BIT_MASK(class->props.cpbm_wd) - 1;
+ 		r->data_width = (class->props.cpbm_wd + 3) / 4;
++		r->cache_level = class->level;
+ 
+ 		/*
+ 		 * Which bits are shared with other ...things...
+-- 
+2.43.0
+

@@ -1,0 +1,73 @@
+From 3b6dec93a1f96219088e59651fada50af6b808e8 Mon Sep 17 00:00:00 2001
+From: Dmitry Baryshkov <dmitry.baryshkov@linaro.org>
+Date: Tue, 13 Feb 2024 13:31:56 +0200
+Subject: [PATCH 291/960] Revert "iommu/arm-smmu: Convert to
+ domain_alloc_paging()"
+
+commit b419c5e2d9787a98c1410dbe1d4a25906b96f000 upstream.
+
+This reverts commit 9b3febc3a3da ("iommu/arm-smmu: Convert to
+domain_alloc_paging()"). It breaks Qualcomm MSM8996 platform. Calling
+arm_smmu_write_context_bank() from new codepath results in the platform
+being reset because of the unclocked hardware access.
+
+Fixes: 9b3febc3a3da ("iommu/arm-smmu: Convert to domain_alloc_paging()")
+Signed-off-by: Dmitry Baryshkov <dmitry.baryshkov@linaro.org>
+Acked-by: Robin Murphy <robin.murphy@arm.com>
+Link: https://lore.kernel.org/r/20240213-iommu-revert-domain-alloc-v1-1-325ff55dece4@linaro.org
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu/arm-smmu.c | 17 ++++++-----------
+ 1 file changed, 6 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu/arm-smmu.c b/drivers/iommu/arm/arm-smmu/arm-smmu.c
+index 4dd8645755b3..f6979a3a6d95 100644
+--- a/drivers/iommu/arm/arm-smmu/arm-smmu.c
++++ b/drivers/iommu/arm/arm-smmu/arm-smmu.c
+@@ -859,10 +859,14 @@ static void arm_smmu_destroy_domain_context(struct arm_smmu_domain *smmu_domain)
+ 	arm_smmu_rpm_put(smmu);
+ }
+ 
+-static struct iommu_domain *arm_smmu_domain_alloc_paging(struct device *dev)
++static struct iommu_domain *arm_smmu_domain_alloc(unsigned type)
+ {
+ 	struct arm_smmu_domain *smmu_domain;
+ 
++	if (type != IOMMU_DOMAIN_UNMANAGED) {
++		if (using_legacy_binding || type != IOMMU_DOMAIN_DMA)
++			return NULL;
++	}
+ 	/*
+ 	 * Allocate the domain and initialise some of its data structures.
+ 	 * We can't really do anything meaningful until we've added a
+@@ -875,15 +879,6 @@ static struct iommu_domain *arm_smmu_domain_alloc_paging(struct device *dev)
+ 	mutex_init(&smmu_domain->init_mutex);
+ 	spin_lock_init(&smmu_domain->cb_lock);
+ 
+-	if (dev) {
+-		struct arm_smmu_master_cfg *cfg = dev_iommu_priv_get(dev);
+-
+-		if (arm_smmu_init_domain_context(smmu_domain, cfg->smmu, dev)) {
+-			kfree(smmu_domain);
+-			return NULL;
+-		}
+-	}
+-
+ 	return &smmu_domain->domain;
+ }
+ 
+@@ -1613,7 +1608,7 @@ static struct iommu_ops arm_smmu_ops = {
+ 	.identity_domain	= &arm_smmu_identity_domain,
+ 	.blocked_domain		= &arm_smmu_blocked_domain,
+ 	.capable		= arm_smmu_capable,
+-	.domain_alloc_paging	= arm_smmu_domain_alloc_paging,
++	.domain_alloc		= arm_smmu_domain_alloc,
+ 	.probe_device		= arm_smmu_probe_device,
+ 	.release_device		= arm_smmu_release_device,
+ 	.probe_finalize		= arm_smmu_probe_finalize,
+-- 
+2.43.0
+

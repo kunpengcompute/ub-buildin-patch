@@ -1,0 +1,73 @@
+From 0c31b09c24918ea683be4906757d3f40e8736679 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Wed, 27 Mar 2024 10:24:14 +0800
+Subject: [PATCH 737/960] downstream: ACPI: processor: Register CPUs that are
+ online, but not described in the DSDT
+
+ACPI has two descriptions of CPUs, one in the MADT/APIC table, the other
+in the DSDT. Both are required. (ACPI 6.5's 8.4 "Declaring Processors"
+says "Each processor in the system must be declared in the ACPI
+namespace"). Having two descriptions allows firmware authors to get
+this wrong.
+
+If CPUs are described in the MADT/APIC, they will be brought online
+early during boot. Once the register_cpu() calls are moved to ACPI,
+they will be based on the DSDT description of the CPUs. When CPUs are
+missing from the DSDT description, they will end up online, but not
+registered.
+
+Add a helper that runs after acpi_init() has completed to register
+CPUs that are online, but weren't found in the DSDT. Any CPU that
+is registered by this code triggers a firmware-bug warning and kernel
+taint.
+
+Qemu TCG only describes the first CPU in the DSDT, unless cpu-hotplug
+is configured.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Reviewed-by: Jonathan Cameron <Jonathan.Cameron@huawei.com>
+Reviewed-by: Gavin Shan <gshan@redhat.com>
+Tested-by: Miguel Luis <miguel.luis@oracle.com>
+Tested-by: Vishnu Pajjuri <vishnu@os.amperecomputing.com>
+Tested-by: Jianyong Wu <jianyong.wu@arm.com>
+Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Signed-off-by: liwei <liwei728@huawei.com>
+Signed-off-by: nzq-hw <nizhiqiang1@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/acpi_processor.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/drivers/acpi/acpi_processor.c b/drivers/acpi/acpi_processor.c
+index c000aff4bf61..ab912aea5e44 100644
+--- a/drivers/acpi/acpi_processor.c
++++ b/drivers/acpi/acpi_processor.c
+@@ -770,6 +770,25 @@ void __init acpi_processor_init(void)
+ 	acpi_pcc_cpufreq_init();
+ }
+ 
++static int __init acpi_processor_register_missing_cpus(void)
++{
++	int cpu;
++
++	if (acpi_disabled)
++		return 0;
++
++	for_each_online_cpu(cpu) {
++		if (!get_cpu_device(cpu)) {
++			pr_err_once(FW_BUG "CPU %u has no ACPI namespace description!\n", cpu);
++			add_taint(TAINT_FIRMWARE_WORKAROUND, LOCKDEP_STILL_OK);
++			arch_register_cpu(cpu);
++		}
++	}
++
++	return 0;
++}
++subsys_initcall_sync(acpi_processor_register_missing_cpus);
++
+ #ifdef CONFIG_ACPI_PROCESSOR_CSTATE
+ /**
+  * acpi_processor_claim_cst_control - Request _CST control from the platform.
+-- 
+2.43.0
+

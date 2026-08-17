@@ -1,0 +1,47 @@
+From bdc752ad24ed96281a7efdbb555d95f261dc0a01 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@ziepe.ca>
+Date: Wed, 27 Mar 2024 15:07:50 -0300
+Subject: [PATCH 320/960] iommu/arm-smmu-v3: Do not ATC invalidate the entire
+ domain
+
+commit 86e5ca098dd9f8c5b80a6205395aea0535018837 upstream.
+
+At this point we know which master we are going to change the PCI config
+on, this is the only device we need to invalidate. Switch
+arm_smmu_atc_inv_domain() for arm_smmu_atc_inv_master().
+
+Tested-by: Nicolin Chen <nicolinc@nvidia.com>
+Tested-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Reviewed-by: Michael Shavit <mshavit@google.com>
+Reviewed-by: Nicolin Chen <nicolinc@nvidia.com>
+Reviewed-by: Moritz Fischer <moritzf@google.com>
+Reviewed-by: Mostafa Saleh <smostafa@google.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Link: https://lore.kernel.org/r/4-v6-228e7adf25eb+4155-smmuv3_newapi_p2_jgg@nvidia.com
+Signed-off-by: Will Deacon <will@kernel.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+index 0104f5de0619..bd5bd84ecbf7 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3.c
+@@ -2418,7 +2418,10 @@ static void arm_smmu_enable_ats(struct arm_smmu_master *master,
+ 	pdev = to_pci_dev(master->dev);
+ 
+ 	atomic_inc(&smmu_domain->nr_ats_masters);
+-	arm_smmu_atc_inv_domain(smmu_domain, IOMMU_NO_PASID, 0, 0);
++	/*
++	 * ATC invalidation of PASID 0 causes the entire ATC to be flushed.
++	 */
++	arm_smmu_atc_inv_master(master);
+ 	if (pci_enable_ats(pdev, stu))
+ 		dev_err(master->dev, "Failed to enable ATS (STU %zu)\n", stu);
+ }
+-- 
+2.43.0
+

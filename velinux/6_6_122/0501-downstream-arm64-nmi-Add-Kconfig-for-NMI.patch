@@ -1,0 +1,47 @@
+From b9967de3cae236f03e4ac356b8ae91137ab81811 Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@kernel.org>
+Date: Tue, 11 Oct 2022 12:57:00 +0100
+Subject: [PATCH 501/960] downstream: arm64/nmi: Add Kconfig for NMI
+
+Since NMI handling is in some fairly hot paths we provide a Kconfig option
+which allows support to be compiled out when not needed.
+
+Signed-off-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Jie Liu <liujie375@h-partners.com>
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Qi Xi <xiqi2@huawei.com>
+Conflicts:
+	arch/arm64/Kconfig
+[ Context conflicts. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/arm64/Kconfig | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index ec082224f0c5..b5587cd150fc 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -2201,6 +2201,19 @@ config ARM64_HAFT
+ 	  The feature will only be enabled if all the CPUs in the system
+ 	  support this feature. If unsure, say Y.
+ 
++config ARM64_NMI
++	bool "Enable support for Non-maskable Interrupts (NMI)"
++	default y
++	help
++	  Non-maskable interrupts are an architecture and GIC feature
++	  which allow the system to configure some interrupts to be
++	  configured to have superpriority, allowing them to be handled
++	  before other interrupts and masked for shorter periods of time.
++
++	  The feature is detected at runtime, and will remain disabled
++	  if the cpu does not implement the feature. It will also be
++	  disabled if pseudo NMIs are enabled at runtime.
++
+ endmenu # "ARMv8.8 architectural features"
+ 
+ config ARM64_SVE
+-- 
+2.43.0
+

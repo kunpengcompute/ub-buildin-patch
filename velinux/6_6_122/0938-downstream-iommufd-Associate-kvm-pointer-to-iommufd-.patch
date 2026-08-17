@@ -1,0 +1,116 @@
+From 84617e70721278bc2cc370ed06aa8559118bde4e Mon Sep 17 00:00:00 2001
+From: YeBiaoXiang <yebiaoxiang@huawei.com>
+Date: Fri, 25 Apr 2025 18:17:19 +0800
+Subject: [PATCH 938/960] downstream: iommufd: Associate kvm pointer to iommufd
+ ctx
+
+Introduce an API to set the KVM pointer to the iommufd ctx
+and set the same when a vfio dev is bind to iommufd.
+
+Signed-off-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: YeBiaoXiang <yebiaoxiang@huawei.com>
+Signed-off-by: yuhao_zhang <yuhao.zhang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/iommu/iommufd/iommufd_private.h |  3 +++
+ drivers/iommu/iommufd/main.c            | 13 +++++++++++++
+ drivers/vfio/device_cdev.c              |  3 +++
+ include/linux/iommufd.h                 |  7 +++++++
+ 4 files changed, 26 insertions(+)
+
+diff --git a/drivers/iommu/iommufd/iommufd_private.h b/drivers/iommu/iommufd/iommufd_private.h
+index ae9cac05cb2a..a44d48cb9a7f 100644
+--- a/drivers/iommu/iommufd/iommufd_private.h
++++ b/drivers/iommu/iommufd/iommufd_private.h
+@@ -18,6 +18,7 @@ struct iommu_domain;
+ struct iommu_group;
+ struct iommu_option;
+ struct iommufd_device;
++struct kvm;
+ 
+ struct iommufd_ctx {
+ 	struct file *file;
+@@ -29,6 +30,8 @@ struct iommufd_ctx {
+ 	/* Compatibility with VFIO no iommu */
+ 	u8 no_iommu_mode;
+ 	struct iommufd_ioas *vfio_ioas;
++	/* Associated KVM pointer */
++	struct kvm *kvm;
+ };
+ 
+ /*
+diff --git a/drivers/iommu/iommufd/main.c b/drivers/iommu/iommufd/main.c
+index b4e2f98d14cc..df511b2b20ea 100644
+--- a/drivers/iommu/iommufd/main.c
++++ b/drivers/iommu/iommufd/main.c
+@@ -504,6 +504,19 @@ EXPORT_SYMBOL_NS_GPL(iommufd_ctx_put, IOMMUFD);
+ 			BUILD_BUG_ON_ZERO(!__same_type(                      \
+ 				struct file *, ((_struct *)NULL)->_filep)) + \
+ 			BUILD_BUG_ON_ZERO(offsetof(_struct, _obj)))
++/**
++ * iommufd_ctx_set_kvm - Called to set a KVM pointer to iommufd context
++ * @ictx: Context to operate on
++ * @kvm: KVM pointer with a reference taken using kvm_get_kvm_safe()
++ */
++void iommufd_ctx_set_kvm(struct iommufd_ctx *ictx, struct kvm *kvm)
++{
++	xa_lock(&ictx->objects);
++	if (!ictx->kvm)
++		ictx->kvm = kvm;
++	xa_unlock(&ictx->objects);
++}
++EXPORT_SYMBOL_NS_GPL(iommufd_ctx_set_kvm, IOMMUFD);
+ 
+ static const struct iommufd_object_ops iommufd_object_ops[] = {
+ 	[IOMMUFD_OBJ_ACCESS] = {
+diff --git a/drivers/vfio/device_cdev.c b/drivers/vfio/device_cdev.c
+index e75da0a70d1f..e75e96fb57cb 100644
+--- a/drivers/vfio/device_cdev.c
++++ b/drivers/vfio/device_cdev.c
+@@ -101,6 +101,9 @@ long vfio_df_ioctl_bind_iommufd(struct vfio_device_file *df,
+ 	 */
+ 	vfio_df_get_kvm_safe(df);
+ 
++	if (df->kvm)
++		iommufd_ctx_set_kvm(df->iommufd, df->kvm);
++
+ 	ret = vfio_df_open(df);
+ 	if (ret)
+ 		goto out_put_kvm;
+diff --git a/include/linux/iommufd.h b/include/linux/iommufd.h
+index 11110c749200..f3d921b8222f 100644
+--- a/include/linux/iommufd.h
++++ b/include/linux/iommufd.h
+@@ -22,6 +22,7 @@ struct iommufd_ctx;
+ struct iommufd_device;
+ struct iommufd_viommu_ops;
+ struct page;
++struct kvm;
+ 
+ enum iommufd_object_type {
+ 	IOMMUFD_OBJ_NONE,
+@@ -128,6 +129,7 @@ struct iommufd_ctx *iommufd_ctx_from_file(struct file *file);
+ struct iommufd_ctx *iommufd_ctx_from_fd(int fd);
+ void iommufd_ctx_put(struct iommufd_ctx *ictx);
+ bool iommufd_ctx_has_group(struct iommufd_ctx *ictx, struct iommu_group *group);
++void iommufd_ctx_set_kvm(struct iommufd_ctx *ictx, struct kvm *kvm);
+ 
+ int iommufd_access_pin_pages(struct iommufd_access *access, unsigned long iova,
+ 			     unsigned long length, struct page **out_pages,
+@@ -149,6 +151,11 @@ static inline void iommufd_ctx_put(struct iommufd_ctx *ictx)
+ {
+ }
+ 
++static inline void iommufd_ctx_set_kvm(struct iommufd_ctx *ictx,
++				       struct kvm *kvm)
++{
++}
++
+ static inline int iommufd_access_pin_pages(struct iommufd_access *access,
+ 					   unsigned long iova,
+ 					   unsigned long length,
+-- 
+2.43.0
+

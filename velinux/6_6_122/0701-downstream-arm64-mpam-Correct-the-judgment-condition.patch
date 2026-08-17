@@ -1,0 +1,49 @@
+From d93d2f744a5dbba2cd7aa9f42c4bc3738d10bfaa Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Wed, 23 Apr 2025 18:51:44 +0800
+Subject: [PATCH 701/960] downstream: arm64/mpam: Correct the judgment
+ condition of the CMAX feature
+
+To check whether hardware supports the CMAX feature or not, not only needs
+to check the CMAX_WD field of the MPAMF_CCAP_IDR register, but also needs
+to check the NO_CMAX field.
+
+Fixes: b1576ca4ed95 ("arm_mpam: Probe and reset the rest of the features")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  | 3 ++-
+ drivers/platform/mpam/mpam_internal.h | 3 +++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index e5aa397eccb7..e2a5d1379075 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -577,7 +577,8 @@ static void mpam_ris_hw_probe(struct mpam_msc_ris *ris)
+ 		u32 ccap_features = mpam_read_partsel_reg(msc, CCAP_IDR);
+ 
+ 		props->cmax_wd = FIELD_GET(MPAMF_CCAP_IDR_CMAX_WD, ccap_features);
+-		if (props->cmax_wd)
++		if (props->cmax_wd &&
++		   !FIELD_GET(MPAMF_CCAP_IDR_NO_CMAX, ccap_features))
+ 			mpam_set_feature(mpam_feat_ccap_part, props);
+ 	}
+ 
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index d91f6fb49b99..cfe06297c679 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -387,6 +387,9 @@ void mpam_resctrl_exit(void);
+ 
+ /* MPAMF_CCAP_IDR - MPAM features cache capacity partitioning ID register */
+ #define MPAMF_CCAP_IDR_CMAX_WD                  GENMASK(5, 0)
++#define MPAMF_CCAP_IDR_HAS_CMIN                 BIT(29)
++#define MPAMF_CCAP_IDR_NO_CMAX                  BIT(30)
++#define MPAMF_CCAP_IDR_HAS_CMAX_SOFTLIM         BIT(31)
+ 
+ /* MPAMF_MBW_IDR - MPAM features memory bandwidth partitioning ID register */
+ #define MPAMF_MBW_IDR_BWA_WD            GENMASK(5, 0)
+-- 
+2.43.0
+

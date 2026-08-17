@@ -1,0 +1,98 @@
+From 6ffa042b0c85782ef5c3d89378373547b7094325 Mon Sep 17 00:00:00 2001
+From: Jia Qingtong <jiaqingtong@huawei.com>
+Date: Thu, 2 Jan 2025 17:25:57 +0800
+Subject: [PATCH 611/960] downstream: irqchip/gic-v3-its: Move
+ build_devid_pools from its to acpi iort init
+
+Move build_devid_pools' call to iort init as  VIRT_PLAT_DEV depedent
+on ACPI IORT table's DeviceID info.
+
+Signed-off-by: Jia Qingtong <jiaqingtong@huawei.com>
+Signed-off-by: Jie Yang <yangjieyj.yang@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/acpi/arm64/iort.c        |  8 ++++++++
+ drivers/irqchip/irq-gic-v3-its.c | 21 +++++++++------------
+ 2 files changed, 17 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/acpi/arm64/iort.c b/drivers/acpi/arm64/iort.c
+index b9f3cced9c18..5da3732722be 100644
+--- a/drivers/acpi/arm64/iort.c
++++ b/drivers/acpi/arm64/iort.c
+@@ -2049,6 +2049,10 @@ static void __init iort_init_platform_devices(void)
+ 	}
+ }
+ 
++#ifdef CONFIG_VIRT_PLAT_DEV
++void build_devid_pools(void);
++#endif
++
+ void __init acpi_iort_init(void)
+ {
+ 	acpi_status status;
+@@ -2069,6 +2073,10 @@ void __init acpi_iort_init(void)
+ 	}
+ 
+ 	iort_init_platform_devices();
++
++#ifdef CONFIG_VIRT_PLAT_DEV
++	build_devid_pools();
++#endif
+ }
+ 
+ #ifdef CONFIG_ZONE_DMA
+diff --git a/drivers/irqchip/irq-gic-v3-its.c b/drivers/irqchip/irq-gic-v3-its.c
+index 1ea1bba10cf7..99e930928abe 100644
+--- a/drivers/irqchip/irq-gic-v3-its.c
++++ b/drivers/irqchip/irq-gic-v3-its.c
+@@ -93,8 +93,8 @@ struct rsv_devid_pool {
+ static LIST_HEAD(rsv_devid_pools);
+ static DEFINE_RAW_SPINLOCK(rsv_devid_pools_lock);
+ 
+-/* Do we have usable rsv_devid_pool? Initialized to be true. */
+-bool rsv_devid_pool_cap = true;
++/* Do we have usable rsv_devid_pool? Initialized to be false. */
++bool rsv_devid_pool_cap;
+ static u8 rsv_buses_start, rsv_buses_count;
+ 
+ static int __init rsv_buses_start_cfg(char *buf)
+@@ -420,15 +420,19 @@ EXPORT_SYMBOL(gic_data_rdist_get_vlpi_base);
+ /*
+  * Currently we only build *one* devid pool.
+  */
+-static int build_devid_pools(void)
++void build_devid_pools(void)
+ {
+ 	struct its_node *its;
+ 
+ 	its = list_first_entry(&its_nodes, struct its_node, entry);
+ 	if (readl_relaxed(its->base + GITS_IIDR) != 0x00051736)
+-		return -EINVAL;
++		return;
++
++	if (!probe_devid_pool_one())
++		rsv_devid_pool_cap = true;
+ 
+-	return probe_devid_pool_one();
++	if (rsv_devid_pool_cap)
++		pr_info("ITS: reserved device id pools enabled\n");
+ }
+ #endif
+ 
+@@ -6211,13 +6215,6 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
+ 			pr_err("ITS: Disabling GICv4 support\n");
+ 		}
+ 
+-#ifdef CONFIG_VIRT_PLAT_DEV
+-		if (build_devid_pools())
+-			rsv_devid_pool_cap = false;
+-
+-		if (rsv_devid_pool_cap)
+-			pr_info("ITS: reserved device id pools enabled\n");
+-#endif
+ 	}
+ 
+ 	register_syscore_ops(&its_syscore_ops);
+-- 
+2.43.0
+

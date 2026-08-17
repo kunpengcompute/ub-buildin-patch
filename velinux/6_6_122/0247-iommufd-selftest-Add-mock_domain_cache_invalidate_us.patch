@@ -1,0 +1,119 @@
+From d2ef7218caa28cff508c2d7ea7c1d0f2927f3c10 Mon Sep 17 00:00:00 2001
+From: Nicolin Chen <nicolinc@nvidia.com>
+Date: Wed, 10 Jan 2024 20:10:11 -0800
+Subject: [PATCH 247/960] iommufd/selftest: Add
+ mock_domain_cache_invalidate_user support
+
+commit ac8691203c07bb1897681d5c66374174336392fe upstream.
+
+Add mock_domain_cache_invalidate_user() data structure to support user
+space selftest program to cover user cache invalidation pathway.
+
+Link: https://lore.kernel.org/r/20240111041015.47920-5-yi.l.liu@intel.com
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Co-developed-by: Yi Liu <yi.l.liu@intel.com>
+Signed-off-by: Yi Liu <yi.l.liu@intel.com>
+Signed-off-by: Jason Gunthorpe <jgg@nvidia.com>
+Signed-off-by: Jason Zeng <jason.zeng@intel.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/iommufd/iommufd_test.h | 18 ++++++++++
+ drivers/iommu/iommufd/selftest.c     | 50 ++++++++++++++++++++++++++++
+ 2 files changed, 68 insertions(+)
+
+diff --git a/drivers/iommu/iommufd/iommufd_test.h b/drivers/iommu/iommufd/iommufd_test.h
+index 7910fbe1962d..09dfc8aa65c4 100644
+--- a/drivers/iommu/iommufd/iommufd_test.h
++++ b/drivers/iommu/iommufd/iommufd_test.h
+@@ -148,4 +148,22 @@ struct iommu_hwpt_selftest {
+ 	__u32 iotlb;
+ };
+ 
++/* Should not be equal to any defined value in enum iommu_hwpt_invalidate_data_type */
++#define IOMMU_HWPT_INVALIDATE_DATA_SELFTEST 0xdeadbeef
++#define IOMMU_HWPT_INVALIDATE_DATA_SELFTEST_INVALID 0xdadbeef
++
++/**
++ * struct iommu_hwpt_invalidate_selftest - Invalidation data for Mock driver
++ *                                         (IOMMU_HWPT_INVALIDATE_DATA_SELFTEST)
++ * @flags: Invalidate flags
++ * @iotlb_id: Invalidate iotlb entry index
++ *
++ * If IOMMU_TEST_INVALIDATE_ALL is set in @flags, @iotlb_id will be ignored
++ */
++struct iommu_hwpt_invalidate_selftest {
++#define IOMMU_TEST_INVALIDATE_FLAG_ALL	(1 << 0)
++	__u32 flags;
++	__u32 iotlb_id;
++};
++
+ #endif
+diff --git a/drivers/iommu/iommufd/selftest.c b/drivers/iommu/iommufd/selftest.c
+index 19fdc8bd554f..4794138167fd 100644
+--- a/drivers/iommu/iommufd/selftest.c
++++ b/drivers/iommu/iommufd/selftest.c
+@@ -488,9 +488,59 @@ static void mock_domain_free_nested(struct iommu_domain *domain)
+ 	kfree(mock_nested);
+ }
+ 
++static int
++mock_domain_cache_invalidate_user(struct iommu_domain *domain,
++				  struct iommu_user_data_array *array)
++{
++	struct mock_iommu_domain_nested *mock_nested =
++		container_of(domain, struct mock_iommu_domain_nested, domain);
++	struct iommu_hwpt_invalidate_selftest inv;
++	u32 processed = 0;
++	int i = 0, j;
++	int rc = 0;
++
++	if (array->type != IOMMU_HWPT_INVALIDATE_DATA_SELFTEST) {
++		rc = -EINVAL;
++		goto out;
++	}
++
++	for ( ; i < array->entry_num; i++) {
++		rc = iommu_copy_struct_from_user_array(&inv, array,
++						       IOMMU_HWPT_INVALIDATE_DATA_SELFTEST,
++						       i, iotlb_id);
++		if (rc)
++			break;
++
++		if (inv.flags & ~IOMMU_TEST_INVALIDATE_FLAG_ALL) {
++			rc = -EOPNOTSUPP;
++			break;
++		}
++
++		if (inv.iotlb_id > MOCK_NESTED_DOMAIN_IOTLB_ID_MAX) {
++			rc = -EINVAL;
++			break;
++		}
++
++		if (inv.flags & IOMMU_TEST_INVALIDATE_FLAG_ALL) {
++			/* Invalidate all mock iotlb entries and ignore iotlb_id */
++			for (j = 0; j < MOCK_NESTED_DOMAIN_IOTLB_NUM; j++)
++				mock_nested->iotlb[j] = 0;
++		} else {
++			mock_nested->iotlb[inv.iotlb_id] = 0;
++		}
++
++		processed++;
++	}
++
++out:
++	array->entry_num = processed;
++	return rc;
++}
++
+ static struct iommu_domain_ops domain_nested_ops = {
+ 	.free = mock_domain_free_nested,
+ 	.attach_dev = mock_domain_nop_attach,
++	.cache_invalidate_user = mock_domain_cache_invalidate_user,
+ };
+ 
+ static inline struct iommufd_hw_pagetable *
+-- 
+2.43.0
+

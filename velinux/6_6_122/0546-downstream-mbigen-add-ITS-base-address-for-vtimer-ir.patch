@@ -1,0 +1,48 @@
+From e4cf68e600052cc46789b048d46004bb5f795fb1 Mon Sep 17 00:00:00 2001
+From: Xie Xiaodong <xiexiaodong16@huawei.com>
+Date: Wed, 30 Apr 2025 15:07:29 +0800
+Subject: [PATCH 546/960] downstream: mbigen: add ITS base address for vtimer
+ irq bypass
+
+If the vtimer cannot find the base address of the ITS, the virtual
+machine will fail to start.
+
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: Xie Xiaodong <xiexiaodong16@huawei.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-mbigen.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/irqchip/irq-mbigen.c b/drivers/irqchip/irq-mbigen.c
+index 130e5e75a5e3..c5815b6e155c 100644
+--- a/drivers/irqchip/irq-mbigen.c
++++ b/drivers/irqchip/irq-mbigen.c
+@@ -659,19 +659,19 @@ static bool vtimer_mbigen_should_probe(struct mbigen_device *mgn_chip)
+ }
+ 
+ #define CHIP0_TA_MBIGEN_PHY_BASE	0x4604400000
+-#define CHIP0_TA_MBIGEN_ITS_BASE	0x84028
++#define CHIP0_TA_MBIGEN_ITS_BASE	0x46600
+ #define CHIP0_TA_PERI_PHY_BASE		0x4614002018
+ 
+ #define CHIP0_TB_MBIGEN_PHY_BASE	0xc604400000
+ #define CHIP0_TB_PERI_PHY_BASE		0xc614002018
+-#define CHIP0_TB_MBIGEN_ITS_BASE	0x4028
++#define CHIP0_TB_MBIGEN_ITS_BASE	0xc6600
+ 
+ #define CHIP1_TA_MBIGEN_PHY_BASE	0x204604400000
+ #define CHIP1_TA_PERI_PHY_BASE		0x204614002018
+-#define CHIP1_TA_MBIGEN_ITS_BASE	0x2084028
++#define CHIP1_TA_MBIGEN_ITS_BASE	0x2046600
+ 
+ #define CHIP1_TB_MBIGEN_PHY_BASE	0x20c604400000
+-#define CHIP1_TB_MBIGEN_ITS_BASE	0x2004028
++#define CHIP1_TB_MBIGEN_ITS_BASE	0x20c6600
+ #define CHIP1_TB_PERI_PHY_BASE		0x20c614002018
+ 
+ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
+-- 
+2.43.0
+

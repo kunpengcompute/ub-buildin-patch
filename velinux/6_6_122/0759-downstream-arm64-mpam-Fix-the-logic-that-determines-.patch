@@ -1,0 +1,95 @@
+From ab1a0ffa18a76f7d0fdb8a3a0d150f626aea0311 Mon Sep 17 00:00:00 2001
+From: Zeng Heng <zengheng4@huawei.com>
+Date: Sat, 30 Aug 2025 15:23:10 +0800
+Subject: [PATCH 759/960] downstream: arm64/mpam: Fix the logic that determines
+ whether an MPAM MSC should initialize
+
+In non-full core boot scenarios, L2 MSCs corresponding to offline CPUs
+should skip. The former logic used a boolean skipped flag to mark an MSC
+skipped, but this caused mpam_enable() to wrongly ignore MSCs that
+actually required initialization.
+
+This fix patch removes the skipped flag and instead relies on cpu_mask:
+if the MSC's accessibility mask contains no online CPUs, the MSC is left
+uninitialized.
+
+Fixes: ef5e3cfd0c6a ("arm64/mpam: Support partial-core boot for MPAM")
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_devices.c  | 17 +++++++++--------
+ drivers/platform/mpam/mpam_internal.h |  1 -
+ 2 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/platform/mpam/mpam_devices.c b/drivers/platform/mpam/mpam_devices.c
+index 60f7bcf2bfe8..3ed443c1f7d2 100644
+--- a/drivers/platform/mpam/mpam_devices.c
++++ b/drivers/platform/mpam/mpam_devices.c
+@@ -1528,11 +1528,8 @@ static int mpam_discovery_cpu_online(unsigned int cpu)
+ 
+ 	mutex_lock(&mpam_list_lock);
+ 	list_for_each_entry(msc, &mpam_all_msc, glbl_list) {
+-		if (!cpumask_test_cpu(cpu, &msc->accessibility)) {
+-			msc->probed = true;
+-			msc->skipped = true;
++		if (!cpumask_test_cpu(cpu, &msc->accessibility))
+ 			continue;
+-		}
+ 
+ 		mutex_lock(&msc->lock);
+ 		if (!msc->probed)
+@@ -1950,7 +1947,7 @@ static void mpam_enable_init_class_features(struct mpam_class *class)
+ 
+ 	list_for_each_entry(comp, &class->components, class_list) {
+ 		list_for_each_entry(ris, &comp->ris, comp_list) {
+-			if (!ris->msc->skipped)
++			if (ris->msc->probed)
+ 				break;
+ 		}
+ 	}
+@@ -1975,7 +1972,7 @@ static void mpam_enable_merge_features(void)
+ 
+ 		list_for_each_entry(comp, &class->components, class_list) {
+ 			list_for_each_entry(ris, &comp->ris, comp_list) {
+-				if (ris->msc->skipped)
++				if (!ris->msc->probed)
+ 					continue;
+ 
+ 				__resource_props_mismatch(ris, class);
+@@ -2351,6 +2348,7 @@ void mpam_disable(struct work_struct *ignored)
+  */
+ void mpam_enable(struct work_struct *work)
+ {
++	cpumask_t mask;
+ 	static atomic_t once;
+ 	struct mpam_msc *msc;
+ 	bool all_devices_probed = true;
+@@ -2358,8 +2356,11 @@ void mpam_enable(struct work_struct *work)
+ 	mutex_lock(&mpam_list_lock);
+ 	list_for_each_entry(msc, &mpam_all_msc, glbl_list) {
+ 		mutex_lock(&msc->lock);
+-		if (!msc->probed)
+-			all_devices_probed = false;
++		if (!msc->probed) {
++			cpumask_and(&mask, &msc->accessibility, cpu_online_mask);
++			if (!cpumask_empty(&mask))
++				all_devices_probed = false;
++		}
+ 		mutex_unlock(&msc->lock);
+ 
+ 		if (!all_devices_probed)
+diff --git a/drivers/platform/mpam/mpam_internal.h b/drivers/platform/mpam/mpam_internal.h
+index 21fc8a67dc0c..51e399186e0c 100644
+--- a/drivers/platform/mpam/mpam_internal.h
++++ b/drivers/platform/mpam/mpam_internal.h
+@@ -54,7 +54,6 @@ struct mpam_msc {
+ 
+ 	struct mutex		lock;
+ 	bool			probed;
+-	bool			skipped;
+ 	bool			error_irq_requested;
+ 	bool			error_irq_hw_enabled;
+ 	u16			partid_max;
+-- 
+2.43.0
+

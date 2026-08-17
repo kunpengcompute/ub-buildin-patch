@@ -1,0 +1,30 @@
+From ba39581b5d0e829c6cb7eb9b5270cd1a5fb0a3a7 Mon Sep 17 00:00:00 2001
+From: Slim6882 <15605196882@163.com>
+Date: Mon, 30 Jun 2025 16:00:42 +0800
+Subject: [PATCH 590/960] downstream: fix kernel boot bug
+
+fix the kernel boot bug
+
+Signed-off-by: Slim6882 <15605196882@163.com>
+Signed-off-by: chenyi <chenyi211@h-partners.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/irqchip/irq-gic-v3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 735024213ac7..076573aab6fa 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -154,7 +154,7 @@ static inline bool has_v3_3_nmi(void)
+ 
+ static bool system_is_nmi_capable(void)
+ {
+-	return gic_data.has_nmi && cpus_have_final_cap(ARM64_HAS_NMI);
++	return gic_data.has_nmi && cpus_have_cap(ARM64_HAS_NMI);
+ }
+ #else
+ static inline bool has_v3_3_nmi(void)
+-- 
+2.43.0
+

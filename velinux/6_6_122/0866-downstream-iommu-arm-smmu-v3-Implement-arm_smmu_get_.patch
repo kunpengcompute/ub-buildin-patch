@@ -1,0 +1,53 @@
+From 6c5742fbf3b7699ba54a04905adfd8d7ef7d83b9 Mon Sep 17 00:00:00 2001
+From: Nicolin Chen <nicolinc@nvidia.com>
+Date: Thu, 7 Jul 2022 00:15:58 -0700
+Subject: [PATCH 866/960] downstream: iommu/arm-smmu-v3: Implement
+ arm_smmu_get_msi_mapping_domain
+
+In a 1-stage translation setup, a device is attached to a paging domain.
+In a 2-stage translation setup, a device is attached to a nested domain,
+which does not have the mappings for the MSI page but only an s2_parent
+paging domain pointer that holds the mappings.
+
+Add arm_smmu_get_msi_mapping_domain in arm_smmu_nested_ops to return the
+correct paging domain.
+
+Signed-off-by: Nicolin Chen <nicolinc@nvidia.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Signed-off-by: Yihua Jin <jinyihua@huawei.com>
+Signed-off-by: Li Wei <liwei818@huawei.com>
+---
+ drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
+index ba7516b9c2bb..25b273f4c31a 100644
+--- a/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
++++ b/drivers/iommu/arm/arm-smmu-v3/arm-smmu-v3-iommufd.c
+@@ -30,6 +30,15 @@ void *arm_smmu_hw_info(struct device *dev, u32 *length, u32 *type)
+ 	return info;
+ }
+ 
++static struct iommu_domain *
++arm_smmu_get_msi_mapping_domain(struct iommu_domain *domain)
++{
++	struct arm_smmu_nested_domain *nested_domain =
++		container_of(domain, struct arm_smmu_nested_domain, domain);
++
++	return &nested_domain->vsmmu->s2_parent->domain;
++}
++
+ static void arm_smmu_make_nested_cd_table_ste(
+ 	struct arm_smmu_ste *target, struct arm_smmu_master *master,
+ 	struct arm_smmu_nested_domain *nested_domain, bool ats_enabled)
+@@ -134,6 +143,7 @@ static void arm_smmu_domain_nested_free(struct iommu_domain *domain)
+ }
+ 
+ static const struct iommu_domain_ops arm_smmu_nested_ops = {
++	.get_msi_mapping_domain	= arm_smmu_get_msi_mapping_domain,
+ 	.attach_dev = arm_smmu_attach_dev_nested,
+ 	.free = arm_smmu_domain_nested_free,
+ };
+-- 
+2.43.0
+

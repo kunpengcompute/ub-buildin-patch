@@ -1,0 +1,74 @@
+From ab58bbec07dea774acacf72d9db7a8d82dc7c328 Mon Sep 17 00:00:00 2001
+From: James Morse <james.morse@arm.com>
+Date: Mon, 22 Jan 2024 14:58:14 +0800
+Subject: [PATCH 662/960] downstream: arm_mpam: resctrl: Add rmid index helpers
+
+Because MPAM's pmg aren't identical to RDT's rmid, resctrl handles
+some datastructrues by index. This allows x86 to map indexes to
+RMID, and MPAM to map them to partid-and-pmg.
+
+Add the helpers to do this.
+
+Signed-off-by: James Morse <james.morse@arm.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ drivers/platform/mpam/mpam_resctrl.c | 28 ++++++++++++++++++++++++++++
+ include/linux/arm_mpam.h             |  3 +++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/drivers/platform/mpam/mpam_resctrl.c b/drivers/platform/mpam/mpam_resctrl.c
+index cdfa51af3374..968cdf0fa3b1 100644
+--- a/drivers/platform/mpam/mpam_resctrl.c
++++ b/drivers/platform/mpam/mpam_resctrl.c
+@@ -93,6 +93,34 @@ u32 resctrl_arch_get_num_closid(struct rdt_resource *ignored)
+ 	return min((u32)mpam_partid_max + 1, (u32)RESCTRL_MAX_CLOSID);
+ }
+ 
++u32 resctrl_arch_system_num_rmid_idx(void)
++{
++	u8 closid_shift = fls(mpam_pmg_max);
++	u32 num_partid = resctrl_arch_get_num_closid(NULL);
++
++	return num_partid << closid_shift;
++}
++
++u32 resctrl_arch_rmid_idx_encode(u32 closid, u32 rmid)
++{
++	u8 closid_shift = fls(mpam_pmg_max);
++
++	WARN_ON_ONCE(closid_shift > 8);
++
++	return (closid << closid_shift) | rmid;
++}
++
++void resctrl_arch_rmid_idx_decode(u32 idx, u32 *closid, u32 *rmid)
++{
++	u8 closid_shift = fls(mpam_pmg_max);
++	u32 pmg_mask = ~(~0 << closid_shift);
++
++	WARN_ON_ONCE(closid_shift > 8);
++
++	*closid = idx >> closid_shift;
++	*rmid = idx & pmg_mask;
++}
++
+ void resctrl_sched_in(struct task_struct *tsk)
+ {
+ 	lockdep_assert_preemption_disabled();
+diff --git a/include/linux/arm_mpam.h b/include/linux/arm_mpam.h
+index ab70cd072eb8..b23140c1e016 100644
+--- a/include/linux/arm_mpam.h
++++ b/include/linux/arm_mpam.h
+@@ -72,5 +72,8 @@ void resctrl_arch_set_cpu_default_closid(int cpu, u32 closid);
+ void resctrl_arch_set_closid_rmid(struct task_struct *tsk, u32 closid, u32 rmid);
+ void resctrl_arch_set_cpu_default_closid_rmid(int cpu, u32 closid, u32 pmg);
+ void resctrl_sched_in(struct task_struct *tsk);
++u32 resctrl_arch_rmid_idx_encode(u32 closid, u32 rmid);
++void resctrl_arch_rmid_idx_decode(u32 idx, u32 *closid, u32 *rmid);
++u32 resctrl_arch_system_num_rmid_idx(void);
+ 
+ #endif /* __LINUX_ARM_MPAM_H */
+-- 
+2.43.0
+

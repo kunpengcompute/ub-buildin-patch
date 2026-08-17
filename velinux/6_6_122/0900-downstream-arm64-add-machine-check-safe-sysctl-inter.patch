@@ -1,0 +1,101 @@
+From 7e47327bf113226cac4f59392cb4a9696f76ea8b Mon Sep 17 00:00:00 2001
+From: Tong Tiangen <tongtiangen@huawei.com>
+Date: Mon, 15 Apr 2024 15:39:31 +0800
+Subject: [PATCH 900/960] downstream: arm64: add machine check safe sysctl
+ interface
+
+Add /proc/sys/kernel/machine_check_safe_enable. Set 1(default value) to
+enable machine check safe support. Set 0(default) to disable machine
+check safe support.
+
+Signed-off-by: Tong Tiangen <tongtiangen@huawei.com>
+Signed-off-by: Zeng Heng <zengheng4@huawei.com>
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ Documentation/admin-guide/sysctl/kernel.rst | 14 ++++++++++
+ arch/arm64/mm/fault.c                       | 30 ++++++++++++++++++++-
+ 2 files changed, 43 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/admin-guide/sysctl/kernel.rst b/Documentation/admin-guide/sysctl/kernel.rst
+index cf33de56da27..ddd649f02151 100644
+--- a/Documentation/admin-guide/sysctl/kernel.rst
++++ b/Documentation/admin-guide/sysctl/kernel.rst
+@@ -540,6 +540,20 @@ if leaking kernel pointer values to unprivileged users is a concern.
+ When ``kptr_restrict`` is set to 2, kernel pointers printed using
+ %pK will be replaced with 0s regardless of privileges.
+ 
++machine_check_safe (arm64 only)
++================================
++
++This indicates whether the Machine Check safe memory copy feature enabled
++or not, which only exists on arm64 when ARCH_HAS_COPY_MC enabled.
++
++The value in this file determines the behaviour of the kernel when
++synchronous exception from memory copy.
++
++= ===================================================================
++0 the kernel will panic immediately.
++1 the kernel will recover since a memcpy-variant provided which can
++  safely fail when accessing to hwpoison.
++= ===================================================================
+ 
+ modprobe
+ ========
+diff --git a/arch/arm64/mm/fault.c b/arch/arm64/mm/fault.c
+index d99bcf07bcef..9c1ef0046bbc 100644
+--- a/arch/arm64/mm/fault.c
++++ b/arch/arm64/mm/fault.c
+@@ -25,6 +25,7 @@
+ #include <linux/perf_event.h>
+ #include <linux/preempt.h>
+ #include <linux/hugetlb.h>
++#include <linux/sysctl.h>
+ 
+ #include <asm/acpi.h>
+ #include <asm/bug.h>
+@@ -43,6 +44,31 @@
+ #include <asm/tlbflush.h>
+ #include <asm/traps.h>
+ 
++static int sysctl_machine_check_safe = IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC);
++
++#ifdef CONFIG_ARCH_HAS_COPY_MC
++static struct ctl_table machine_check_safe_sysctl_table[] = {
++	{
++		.procname       = "machine_check_safe",
++		.data           = &sysctl_machine_check_safe,
++		.maxlen         = sizeof(sysctl_machine_check_safe),
++		.mode           = 0644,
++		.proc_handler   = proc_dointvec_minmax,
++		.extra1         = SYSCTL_ZERO,
++		.extra2         = SYSCTL_ONE,
++	},
++};
++
++static int __init machine_check_safe_sysctl_init(void)
++{
++	if (!register_sysctl("kernel", machine_check_safe_sysctl_table))
++		return -EINVAL;
++	return 0;
++}
++
++core_initcall(machine_check_safe_sysctl_init);
++#endif
++
+ struct fault_info {
+ 	int	(*fn)(unsigned long far, unsigned long esr,
+ 		      struct pt_regs *regs);
+@@ -738,7 +764,9 @@ static bool do_apei_claim_sea(struct pt_regs *regs)
+ 		if (!apei_claim_sea(regs))
+ 			return true;
+ 	} else if (IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC)) {
+-		if (fixup_exception_me(regs) && !apei_claim_sea(regs))
++		if (sysctl_machine_check_safe &&
++		    fixup_exception_me(regs) &&
++		    !apei_claim_sea(regs))
+ 			return true;
+ 	}
+ 
+-- 
+2.43.0
+

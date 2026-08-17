@@ -1,0 +1,68 @@
+From 5cb57ae3c3b697b93c69cc77c1c37a469b2c0829 Mon Sep 17 00:00:00 2001
+From: Joao Martins <joao.m.martins@oracle.com>
+Date: Mon, 2 Dec 2024 20:10:46 +0800
+Subject: [PATCH 790/960] downstream: Kconfig: move ARCH_HAS_OPTIMIZED_POLL to
+ arch/Kconfig
+
+ARCH_HAS_OPTIMIZED_POLL gates selection of polling while idle in
+poll_idle(). Move the configuration option to arch/Kconfig to allow
+non-x86 architectures to select it.
+
+Note that ARCH_HAS_OPTIMIZED_POLL should probably be exclusive with
+GENERIC_IDLE_POLL_SETUP (which controls the generic polling logic in
+cpu_idle_poll()). However, that would remove boot options
+(hlt=, nohlt=). So, leave it untouched for now.
+
+Signed-off-by: Joao Martins <joao.m.martins@oracle.com>
+Signed-off-by: Mihai Carabas <mihai.carabas@oracle.com>
+Signed-off-by: Ankur Arora <ankur.a.arora@oracle.com>
+Signed-off-by: lishusen <lishusen2@huawei.com>
+Signed-off-by: yeyiyang <yeyiyang3@h-partners.com>
+Conflicts:
+	arch/x86/Kconfig
+[ Context conflicts. ]
+Signed-off-by: Liu Shixin <liushixin2@huawei.com>
+---
+ arch/Kconfig     | 3 +++
+ arch/x86/Kconfig | 4 +---
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/arch/Kconfig b/arch/Kconfig
+index 6943a9321e34..cd87383abb39 100644
+--- a/arch/Kconfig
++++ b/arch/Kconfig
+@@ -264,6 +264,9 @@ config HAVE_ARCH_TRACEHOOK
+ config HAVE_DMA_CONTIGUOUS
+ 	bool
+ 
++config ARCH_HAS_OPTIMIZED_POLL
++	bool
++
+ config GENERIC_SMP_IDLE_THREAD
+ 	bool
+ 
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index c95d46782eff..73b2eadf260d 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -133,6 +133,7 @@ config X86
+ 	select ARCH_WANTS_NO_INSTR
+ 	select ARCH_WANT_GENERAL_HUGETLB
+ 	select ARCH_WANT_HUGE_PMD_SHARE		if X86_64
++	select ARCH_HAS_OPTIMIZED_POLL
+ 	select ARCH_WANT_LD_ORPHAN_WARN
+ 	select ARCH_WANT_OPTIMIZE_DAX_VMEMMAP	if X86_64
+ 	select ARCH_WANT_OPTIMIZE_HUGETLB_VMEMMAP	if X86_64
+@@ -370,9 +371,6 @@ config ARCH_MAY_HAVE_PC_FDC
+ config GENERIC_CALIBRATE_DELAY
+ 	def_bool y
+ 
+-config ARCH_HAS_OPTIMIZED_POLL
+-	def_bool y
+-
+ config ARCH_HIBERNATION_POSSIBLE
+ 	def_bool y
+ 
+-- 
+2.43.0
+
